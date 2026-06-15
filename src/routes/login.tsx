@@ -48,7 +48,6 @@ function LoginPage() {
         },
       });
       if (error) throw error;
-      setTimeout(() => navigate({ to: "/dashboard", replace: true }), 0);
     } catch (err) {
       setSubmitting(false);
       toast.error(err instanceof Error ? err.message : "No se pudo iniciar sesión con Google");
@@ -59,13 +58,12 @@ function LoginPage() {
     setSubmitting(true);
     try {
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: "azure", // 'azure' es el identificador de Microsoft en Supabase
+        provider: "azure",
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
         },
       });
       if (error) throw error;
-      setTimeout(() => navigate({ to: "/dashboard", replace: true }), 0);
     } catch (err) {
       setSubmitting(false);
       toast.error(err instanceof Error ? err.message : "No se pudo iniciar sesión con Microsoft");
