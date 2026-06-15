@@ -1,7 +1,7 @@
-import defineConfig from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
-  nitro: true, // 👈 ¡AÑADE ESTA LÍNEA AQUÍ PARA FORZAR EL MOTOR!
+  nitro: true,
   tanstackStart: {
     server: { entry: "server" },
   },
