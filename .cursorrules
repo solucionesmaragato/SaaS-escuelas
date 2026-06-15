@@ -1,0 +1,88 @@
+# CRITICAL SECURITY AND EDITING RULES
+
+1. LOCKED FILES (READ-ONLY):
+   The following files and their corresponding hooks have been audited, validated in production, and are STRICTLY UNTOUCHABLE. You may not suggest changes, refactor them, or modify a single line under any circumstances, unless the user includes the keyword "PERMISO" in the prompt.
+
+   # 1. School and Configuration
+   - src/routes/_authenticated/escuela.tsx
+   - src/hooks/useCentros.ts
+   - src/hooks/useEmpresaCliente.ts
+   - src/hooks/useClientes.ts
+
+   # 2. Automated Messages
+   - src/routes/_authenticated/mensajesAutomaticos.tsx
+   - src/hooks/useHorarioComercial.ts
+
+   # 3. Users
+   - src/routes/_authenticated/usuarios.tsx
+   - src/hooks/usePerfiles.ts
+
+   # 4. Schedule Availability (Shifts)
+   - src/routes/_authenticated/turnos.tsx
+   - src/hooks/useTurnos.ts
+
+   # 5. Permissions (Absences and RBAC)
+   - src/routes/_authenticated/ausencias.tsx
+   - src/hooks/useAusencias.ts
+   - src/lib/rbac.ts
+   - src/lib/tenantQuery.ts
+
+   # 6. Pricing/Tariffs
+   - src/routes/_authenticated/tarifas.tsx
+   - src/hooks/useTarifas.ts
+
+   # 7. Leads
+   - src/routes/_authenticated/leads.tsx
+   - src/hooks/useLeads.ts
+
+   # 8. Groups
+   - src/routes/_authenticated/grupos.tsx
+   - src/hooks/useGrupos.ts
+   - src/hooks/useGruposHorarios.ts
+
+   # 9. Specialties
+   - src/routes/_authenticated/especialidades.tsx
+   - src/hooks/useEspecialidades.ts
+
+   # 10. Classrooms
+   - src/routes/_authenticated/aulas.tsx
+   - src/hooks/useAulas.ts
+
+   # 11. Teachers
+   - src/routes/_authenticated/profesores.tsx
+   - src/routes/_authenticated/profesores.mi-perfil.tsx
+   - src/hooks/useProfesores.ts
+   - src/hooks/useTeacherHorarios.ts
+
+   # 12. Matriculas
+   - src/routes/_authenticated/matriculas.tsx
+   - src/hooks/useMatriculas.ts
+
+   # 13. Alumnos
+   - src/routes/_authenticated/alumnos.tsx
+   - src/hooks/useAlumnos.ts
+   - src/hooks/useAlumnosTree.ts
+   - src/hooks/useAlumnoMatriculas.ts
+   - src/hooks/useAlumnoMatriculasIncidencias.ts
+   - src/lib/alumnoSchema.ts
+   - src/lib/alumnoPaymentUtils.ts
+
+   # 14. Material Loans (Préstamos de Material)
+   - src/routes/_authenticated/prestamosMaterial.tsx
+   - src/hooks/usePrestamosMaterial.ts
+
+   
+
+
+2. PRIOR AUDIT PROTOCOL (MODIFICATION OF LOCKED FILES):
+   If, to complete a task, you consider it STRICTLY NECESSARY to modify any of the locked files in point 1, YOU ARE FORBIDDEN from doing so directly. Instead, you must stop and write to the user specifying:
+   - Which file you need to touch.
+   - The exact lines you want to modify.
+   - The technical justification for why it is indispensable.
+   You may only proceed if the user responds validating the change and including the keyword "PERMISO".
+
+3. ZERO INVENTIONS/HALLUCINATIONS POLICY:
+   If you need to understand how one of these views works to program a different screen, YOU MAY READ these files for context, but you are forbidden from altering them in the process.
+
+4. DATABASES AND SQL (SUPABASE):
+   Do not assume names of tables, views, RPCs, or columns. Do not attempt to fix network errors (400, 404, 500) or timeouts using loops in the frontend (e.g., do not use useEffect to bypass failures). If a table fails or a field is missing, notify the user clearly so they can audit the database and fix it in the backend.
