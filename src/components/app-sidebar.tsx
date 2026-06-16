@@ -119,8 +119,7 @@ const NAV: NavGroup[] = [
 ];
 
 export function AppSidebar() {
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { isMobile } = useSidebar();
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const { rol, cliente, perfil } = useActiveTenant();
   const { activePerfil, signOut } = useApp();
@@ -129,7 +128,7 @@ export function AppSidebar() {
   const showGruposNav = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible={isMobile ? "icon" : "none"}>
       <SidebarHeader className="border-b">
         <div className="flex items-center gap-2 px-2 py-2">
           <Avatar className="h-8 w-8 rounded-md">
@@ -138,14 +137,12 @@ export function AppSidebar() {
               {(cliente?.NOMBRE_ESCUELA ?? "ME").slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold">{cliente?.NOMBRE_ESCUELA ?? "Mi escuela"}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
-              </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{cliente?.NOMBRE_ESCUELA ?? "Mi escuela"}</div>
+            <div className="truncate text-xs text-muted-foreground">
+              {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
             </div>
-          )}
+          </div>
         </div>
       </SidebarHeader>
 
@@ -162,7 +159,7 @@ export function AppSidebar() {
           if (visible.length === 0) return null;
           return (
             <SidebarGroup key={group.label}>
-              {!collapsed && <SidebarGroupLabel>{group.label}</SidebarGroupLabel>}
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {visible.map((item) => {
@@ -175,7 +172,7 @@ export function AppSidebar() {
                         <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
                           <Link to={item.to} className="flex items-center gap-2">
                             <item.icon className="h-4 w-4 shrink-0" />
-                            {!collapsed && <span>{item.title}</span>}
+                            <span className="truncate">{item.title}</span>
                           </Link>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -195,14 +192,12 @@ export function AppSidebar() {
               {(activePerfil?.NOMBRE ?? "??").slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-xs font-medium">{activePerfil?.NOMBRE}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
-              </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-medium">{activePerfil?.NOMBRE}</div>
+            <div className="truncate text-xs text-muted-foreground">
+              {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
             </div>
-          )}
+          </div>
           <Button variant="ghost" size="icon" onClick={() => signOut()} title="Cerrar sesión">
             <LogOut className="h-4 w-4" />
           </Button>

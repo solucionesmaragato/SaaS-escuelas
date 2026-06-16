@@ -2,22 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import type { AvisosInternos } from "@/types/database";
 
 /** Raw row from VISTA_AVISOS_INTERNOS. ID_* fields kept for internal actions (e.g. reassign schedule). */
-export type AvisoInternoRaw = {
-  ID_AVISO: string;
-  ID_CLIENTE: string;
-  ID_ALUMNO: string | null;
-  ID_ESPECIALIDAD: string | null;
-  ID_CENTRO: string | null;
-  ID_CURSO: string | null;
-  ID_HORARIO: string | null;
-  ID_PROFESOR?: string | null;
-  TIPO?: string | null;
-  MENSAJE?: string | null;
-  ESTADO?: string | null;
-  FECHA?: string | null;
-  LEIDO?: boolean | null;
+export type AvisoInternoRaw = AvisosInternos & {
   NOMBRE_LEAD?: string | null;
 };
 

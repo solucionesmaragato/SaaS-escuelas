@@ -470,6 +470,22 @@ export interface FiltroSesion {
   [key: string]: unknown;
 }
 
+export interface AvisosInternos {
+  ID_AVISO: UUID;
+  ID_CLIENTE: UUID;
+  ID_ALUMNO: UUID | null;
+  ID_ESPECIALIDAD: UUID | null;
+  ID_CENTRO: UUID | null;
+  ID_CURSO: UUID | null;
+  ID_HORARIO: UUID | null;
+  ID_PROFESOR?: string | null;
+  TIPO: string | null;
+  MENSAJE: string | null;
+  ESTADO: string | null;
+  FECHA: ISODateTime | null;
+  LEIDO: boolean | null;
+}
+
 // ============================================================================
 // SANDBOX (isolated schedule builder prototype)
 // ============================================================================

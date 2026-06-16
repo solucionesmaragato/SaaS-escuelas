@@ -6,7 +6,7 @@ import {
   centerFilterQueryKey,
   fetchAlumnoIdsForCenter,
 } from "@/lib/centroFilter";
-import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import { scopeTenantQuery, tenantListKey, isProfesorRole } from "@/lib/tenantQuery";
 
 export type ColorIncidencia = "rojo" | "verde" | null;
 
@@ -281,7 +281,7 @@ export function useSesiones(
   dateRange: SesionesDateRange,
   filterCenterId?: string | null,
 ) {
-  const { tenantId, rol } = useActiveTenant();
+  const { tenantId, rol, perfil } = useActiveTenant();
   const queryKey = [
     ...tenantListKey("sesiones", rol, tenantId),
     dateRange.startDate,
@@ -292,30 +292,63 @@ export function useSesiones(
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<SesionesQueryData> => {
-      // SESIONES has no ID_CENTRO — scope by ALUMNOS.ID_CENTRO via ID_ALUMNO.
-      const alumnoIds = await fetchAlumnoIdsForCenter(tenantId, rol, filterCenterId);
-      if (alumnoIds && alumnoIds.length === 0) return EMPTY_SESIONES_QUERY;
+      let sesiones: SesionRow[];
+      let alumnoIds: string[] | null = null;
 
-      let query = supabase.from("SESIONES").select("*");
-      query = scopeTenantQuery(query, rol, tenantId);
-      query = query
-        .gte("FECHA_EXACTA", dateRange.startDate)
-        .lte("FECHA_EXACTA", dateRange.endDate);
-      const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
-      if (scoped === "empty") return EMPTY_SESIONES_QUERY;
+      if (isProfesorRole(rol)) {
+        if (!perfil?.ID_PROFESOR) return EMPTY_SESIONES_QUERY;
 
-      const { data: sesiones, error } = await scoped.order("FECHA_EXACTA", {
-        ascending: true,
-      });
+        let query = supabase.from("SESIONES").select("*");
+        query = scopeTenantQuery(query, rol, tenantId);
+        query = query
+          .eq("ID_PROFESOR", perfil.ID_PROFESOR)
+          .gte("FECHA_EXACTA", dateRange.startDate)
+          .lte("FECHA_EXACTA", dateRange.endDate);
 
-      if (error) throw error;
+        const { data, error } = await query.order("FECHA_EXACTA", { ascending: true });
+        if (error) throw error;
+        sesiones = (data ?? []) as SesionRow[];
+      } else {
+        // ADMIN, SECRETARIA, DIRECCION — scope by ALUMNOS.ID_CENTRO via ID_ALUMNO.
+        alumnoIds = await fetchAlumnoIdsForCenter(tenantId, rol, filterCenterId);
+        if (alumnoIds && alumnoIds.length === 0) return EMPTY_SESIONES_QUERY;
 
-      let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
-      alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
-      if (alumnoIds) {
-        alumnosQuery = alumnosQuery.in("ID_ALUMNO", alumnoIds);
+        let query = supabase.from("SESIONES").select("*");
+        query = scopeTenantQuery(query, rol, tenantId);
+        query = query
+          .gte("FECHA_EXACTA", dateRange.startDate)
+          .lte("FECHA_EXACTA", dateRange.endDate);
+        const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
+        if (scoped === "empty") return EMPTY_SESIONES_QUERY;
+
+        const { data, error } = await scoped.order("FECHA_EXACTA", { ascending: true });
+        if (error) throw error;
+        sesiones = (data ?? []) as SesionRow[];
       }
-      const { data: alumnos } = await alumnosQuery;
+
+      let targetIds: string[] | null = alumnoIds;
+      if (targetIds == null) {
+        const uniqueSessionAlumnoIds = Array.from(
+          new Set(sesiones.map((s) => s.ID_ALUMNO).filter(Boolean)),
+        ) as string[];
+        targetIds = uniqueSessionAlumnoIds;
+      }
+
+      let alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string }[];
+      if (targetIds.length > 0) {
+        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
+        alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
+        alumnosQuery = alumnosQuery.in("ID_ALUMNO", targetIds);
+        const { data } = await alumnosQuery;
+        alumnos = data ?? [];
+      } else if (isProfesorRole(rol)) {
+        alumnos = [];
+      } else {
+        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
+        alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
+        const { data } = await alumnosQuery;
+        alumnos = data ?? [];
+      }
 
       let profesoresQuery = supabase.from("PROFESOR").select("ID_PROFESOR, NOMBRE_PROFESOR");
       profesoresQuery = scopeTenantQuery(profesoresQuery, rol, tenantId);
@@ -330,8 +363,8 @@ export function useSesiones(
       const { data: esp } = await espQuery;
 
       const mapped = mapSesiones(
-        (sesiones ?? []) as SesionRow[],
-        alumnos ?? [],
+        sesiones,
+        alumnos,
         profesores ?? [],
         aulas ?? [],
         esp ?? [],

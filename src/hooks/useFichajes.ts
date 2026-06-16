@@ -3,9 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import { CORRECCION_APROBADA, CORRECCION_PENDIENTE } from "@/lib/fichajeEidas";
 import {
-  appendIdInFilter,
+  appendCenterFilter,
   centerFilterQueryKey,
-  fetchProfesorIdsForCenter,
 } from "@/lib/centroFilter";
 import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 
@@ -73,6 +72,7 @@ export type ProfesorFichajeRow = {
 };
 
 export type ProfesorFichajeCreateInput = FichajeSealedCreateInput & {
+  ID_CLIENTE?: string;
   NOTAS?: string | null;
   ID_CENTRO?: string | null;
 };
@@ -84,6 +84,7 @@ export type FichajeSealedCreateInput = {
   IP_FICHAJE: string;
   USER_AGENT: string;
   LATITUD_LONGITUD: string;
+  ID_CENTRO?: string | null;
   METODO?: string | null;
   MODALIDAD?: string | null;
   ID_FICHAJE_CORREGIDO?: string | null;
@@ -104,6 +105,26 @@ export type FichajeCreateInput = Omit<
   TOTAL_HORAS_INTERVALO?: number | null;
   TOTAL_HORAS_ACUMULADAS_DIA?: number | null;
 };
+
+function buildFichajeInsertPayload(
+  tenantId: string,
+  input: FichajeSealedCreateInput,
+): Record<string, unknown> {
+  return {
+    ID_CLIENTE: tenantId,
+    ID_PROFESOR: input.ID_PROFESOR,
+    ID_CENTRO: input.ID_CENTRO ?? null,
+    TIPO_MOVIMIENTO: input.TIPO_MOVIMIENTO,
+    IP_FICHAJE: input.IP_FICHAJE,
+    USER_AGENT: input.USER_AGENT,
+    LATITUD_LONGITUD: input.LATITUD_LONGITUD,
+    METODO: input.METODO ?? null,
+    MODALIDAD: input.MODALIDAD ?? null,
+    ID_FICHAJE_CORREGIDO: input.ID_FICHAJE_CORREGIDO ?? null,
+    FECHA_HORA_MANUAL: input.FECHA_HORA_MANUAL ?? null,
+    MOTIVO_MODIFICACION: input.MOTIVO_MODIFICACION ?? null,
+  };
+}
 
 export type FichajeUpdateInput = Partial<FichajeCreateInput> & {
   ID_FICHAJE_CORREGIDO?: string | null;
@@ -148,20 +169,11 @@ export function useFichajes(filterCenterId?: string | null) {
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<FichajesQueryData> => {
-      // FICHAJES has no ID_CENTRO — scope by PERFILES.ID_CENTRO via ID_PROFESOR.
-      const profesorIds = await fetchProfesorIdsForCenter(tenantId, filterCenterId);
-      if (profesorIds && profesorIds.length === 0) {
-        return { fichajes: [], profesores: [] };
-      }
-
       let query = supabase.from("V_HISTORIAL_FICHAJES_LEGAL").select("*");
       query = scopeTenantQuery(query, rol, tenantId);
-      const scoped = appendIdInFilter(query, "ID_PROFESOR", profesorIds);
-      if (scoped === "empty") {
-        return { fichajes: [], profesores: [] };
-      }
+      query = appendCenterFilter(query, filterCenterId);
 
-      const { data: fichajes, error } = await scoped.order("FECHA_HORA_REAL", {
+      const { data: fichajes, error } = await query.order("FECHA_HORA_REAL", {
         ascending: false,
       });
 
@@ -172,9 +184,6 @@ export function useFichajes(filterCenterId?: string | null) {
         .select("ID_PROFESOR, NOMBRE_PROFESOR, FECHA_BAJA")
         .order("NOMBRE_PROFESOR", { ascending: true });
       profesoresQuery = scopeTenantQuery(profesoresQuery, rol, tenantId);
-      if (profesorIds) {
-        profesoresQuery = profesoresQuery.in("ID_PROFESOR", profesorIds);
-      }
       const { data: profesores, error: profError } = await profesoresQuery;
       if (profError) throw profError;
 
@@ -200,9 +209,25 @@ export function useFichajes(filterCenterId?: string | null) {
 
   const create = useMutation({
     mutationFn: async (input: FichajeCreateInput) => {
-      const { FECHA_HORA, ...rest } = input;
-      const payload: Record<string, unknown> = { ...rest, ID_CLIENTE: tenantId };
-      if (FECHA_HORA) payload.FECHA_HORA = FECHA_HORA;
+      const payload: Record<string, unknown> = {
+        ID_CLIENTE: tenantId,
+        ID_PROFESOR: input.ID_PROFESOR,
+        ID_CENTRO: input.ID_CENTRO ?? null,
+        TIPO_MOVIMIENTO: input.TIPO_MOVIMIENTO,
+        IP_FICHAJE: input.IP_FICHAJE ?? null,
+        USER_AGENT: input.USER_AGENT ?? null,
+        LATITUD_LONGITUD: input.LATITUD_LONGITUD ?? null,
+        METODO: input.METODO ?? null,
+        MODALIDAD: input.MODALIDAD ?? null,
+        UBICACION: input.UBICACION ?? null,
+        NOTAS: input.NOTAS ?? null,
+        TOTAL_HORAS_INTERVALO: input.TOTAL_HORAS_INTERVALO ?? null,
+        TOTAL_HORAS_ACUMULADAS_DIA: input.TOTAL_HORAS_ACUMULADAS_DIA ?? null,
+        ID_FICHAJE_CORREGIDO: input.ID_FICHAJE_CORREGIDO ?? null,
+        FECHA_HORA_MANUAL: input.FECHA_HORA_MANUAL ?? null,
+        MOTIVO_MODIFICACION: input.MOTIVO_MODIFICACION ?? null,
+      };
+      if (input.FECHA_HORA) payload.FECHA_HORA = input.FECHA_HORA;
       const { data, error } = await supabase
         .from("FICHAJES")
         .insert(payload)
@@ -218,7 +243,7 @@ export function useFichajes(filterCenterId?: string | null) {
     mutationFn: async (input: FichajeSealedCreateInput) => {
       const { data, error } = await supabase
         .from("FICHAJES")
-        .insert({ ...input, ID_CLIENTE: tenantId })
+        .insert(buildFichajeInsertPayload(tenantId, input))
         .select()
         .single();
       if (error) throw error;
@@ -341,9 +366,13 @@ export function useProfesorFichajes() {
 
   const insert = useMutation({
     mutationFn: async (input: ProfesorFichajeCreateInput) => {
+      const payload = {
+        ...buildFichajeInsertPayload(tenantId, input),
+        NOTAS: input.NOTAS ?? null,
+      };
       const { data, error } = await supabase
         .from("FICHAJES")
-        .insert({ ...input, ID_CLIENTE: tenantId })
+        .insert(payload)
         .select()
         .single();
       if (error) throw error;

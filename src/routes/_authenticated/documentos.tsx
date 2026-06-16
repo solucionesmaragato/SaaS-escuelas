@@ -9,7 +9,6 @@ import {
   FileText,
   Check,
   Upload,
-  ExternalLink,
 } from "lucide-react";
 import {
   useDocumentos,
@@ -18,7 +17,7 @@ import {
   type DocumentoUpdateInput,
   type ProfesorLookup,
 } from "@/hooks/useDocumentos";
-import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
+import { useAdminCentroFilter, type CentroData } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import {
@@ -91,6 +90,8 @@ const CATEGORIA_OPTIONS = [
   "Formación obligatoria",
   "Otro",
 ] as const;
+
+const GLOBAL_CENTRO_VALUE = "__global__";
 
 function estadoFirmaKey(estado: string | null | undefined): string {
   return (estado ?? "").trim().toLowerCase();
@@ -444,6 +445,7 @@ function DocumentosPage() {
         submitLabel="Registrar documento"
         submitting={create.isPending}
         profesores={profesores}
+        centros={centrosOrdenados}
         onSubmit={async (values: DocumentoCreateInput) => {
           try {
             await create.mutateAsync(values);
@@ -464,6 +466,7 @@ function DocumentosPage() {
           initial={editing}
           submitting={update.isPending}
           profesores={profesores}
+          centros={centrosOrdenados}
           onSubmit={async (patch: DocumentoUpdateInput) => {
             try {
               await update.mutateAsync({ id: editing.ID_DOCUMENTO, patch });
@@ -482,7 +485,7 @@ function DocumentosPage() {
         perfilProfesorId={perfil?.ID_PROFESOR}
         onClose={() => setSigningDoc(null)}
         submitting={update.isPending}
-        onSubmit={async (urlFirmado) => {
+        onSubmit={async (signedFile) => {
           if (!signingDoc) return;
           if (!isOwnDocument(signingDoc, perfil?.ID_PROFESOR)) {
             toast.error("Solo puedes firmar tus propios documentos.");
@@ -491,7 +494,7 @@ function DocumentosPage() {
           try {
             await update.mutateAsync({
               id: signingDoc.ID_DOCUMENTO,
-              patch: { URL_FIRMADO: urlFirmado },
+              patch: { signedFile },
             });
             toast.success("Documento firmado enviado correctamente");
             setSigningDoc(null);
@@ -541,6 +544,7 @@ type DocumentoFormDialogCreateProps = {
   initial?: undefined;
   submitting: boolean;
   profesores: ProfesorLookup[];
+  centros: CentroData[];
   onSubmit: (values: DocumentoCreateInput) => void;
 };
 
@@ -552,26 +556,29 @@ type DocumentoFormDialogEditProps = {
   initial: DocumentoData;
   submitting: boolean;
   profesores: ProfesorLookup[];
+  centros: CentroData[];
   onSubmit: (values: DocumentoUpdateInput) => void;
 };
 
 type DocumentoFormDialogProps = DocumentoFormDialogCreateProps | DocumentoFormDialogEditProps;
 
 function DocumentoFormDialog(props: DocumentoFormDialogProps) {
-  const { open, onClose, title, submitLabel, submitting, profesores } = props;
+  const { open, onClose, title, submitLabel, submitting, profesores, centros } = props;
   const initial = "initial" in props ? props.initial : undefined;
   const isEdit = initial != null;
 
   const [idProfesor, setIdProfesor] = useState("");
+  const [idCentro, setIdCentro] = useState("");
   const [categoria, setCategoria] = useState<string>(CATEGORIA_OPTIONS[0]);
   const [categoriaCustom, setCategoriaCustom] = useState("");
-  const [urlOriginal, setUrlOriginal] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [requiereFirma, setRequiereFirma] = useState(false);
   const [fechaCaducidad, setFechaCaducidad] = useState("");
 
   useEffect(() => {
     if (!open) return;
     setIdProfesor(initial?.ID_PROFESOR ?? "");
+    setIdCentro(initial?.ID_CENTRO ?? "");
     const cat = initial?.CATEGORIA ?? CATEGORIA_OPTIONS[0];
     if (CATEGORIA_OPTIONS.includes(cat as (typeof CATEGORIA_OPTIONS)[number])) {
       setCategoria(cat);
@@ -580,7 +587,7 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
       setCategoria("Otro");
       setCategoriaCustom(cat);
     }
-    setUrlOriginal(initial?.URL_ORIGINAL ?? "");
+    setFile(null);
     setRequiereFirma(initial?.REQUIERE_FIRMA ?? false);
     setFechaCaducidad(initial?.FECHA_CADUCIDAD ?? "");
   }, [open, initial]);
@@ -601,13 +608,14 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!idProfesor || !categoriaFinal || !urlOriginal.trim()) return;
+            if (!idProfesor || !categoriaFinal) return;
+            if (!isEdit && !file) return;
 
             if (isEdit && initial) {
               const patch: DocumentoUpdateInput = {
                 ID_PROFESOR: idProfesor,
+                ID_CENTRO: idCentro || null,
                 CATEGORIA: categoriaFinal,
-                URL_ORIGINAL: urlOriginal.trim(),
                 REQUIERE_FIRMA: requiereFirma,
                 FECHA_CADUCIDAD: fechaCaducidad || null,
               };
@@ -617,8 +625,9 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
 
             const payload: DocumentoCreateInput = {
               ID_PROFESOR: idProfesor,
+              ID_CENTRO: idCentro || null,
               CATEGORIA: categoriaFinal,
-              URL_ORIGINAL: urlOriginal.trim(),
+              file: file ?? undefined,
               REQUIERE_FIRMA: requiereFirma,
               FECHA_CADUCIDAD: fechaCaducidad || null,
             };
@@ -636,6 +645,28 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
                 {profesoresSelector.map((p) => (
                   <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
                     {formatProfesorOptionLabel(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Centro</Label>
+            <Select
+              value={idCentro || GLOBAL_CENTRO_VALUE}
+              onValueChange={(v) => setIdCentro(v === GLOBAL_CENTRO_VALUE ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar centro" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={GLOBAL_CENTRO_VALUE}>
+                  Global (Válido para todas las sedes)
+                </SelectItem>
+                {centros.map((centro) => (
+                  <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                    {centro.NOMBRE_CENTRO}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -667,12 +698,12 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
           </div>
 
           <div className="space-y-2">
-            <Label>URL original (Drive) *</Label>
+            <Label>Archivo PDF *</Label>
             <Input
-              value={urlOriginal}
-              onChange={(e) => setUrlOriginal(e.target.value)}
-              placeholder="https://drive.google.com/..."
-              required
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              required={!isEdit}
             />
           </div>
 
@@ -723,13 +754,13 @@ function ProfesorFirmaDialog({
   perfilProfesorId: string | null | undefined;
   onClose: () => void;
   submitting: boolean;
-  onSubmit: (urlFirmado: string) => void;
+  onSubmit: (signedFile: File) => void;
 }) {
   const canSign = doc != null && isOwnDocument(doc, perfilProfesorId);
-  const [urlFirmado, setUrlFirmado] = useState("");
+  const [signedFile, setSignedFile] = useState<File | null>(null);
 
   useEffect(() => {
-    if (open) setUrlFirmado("");
+    if (open) setSignedFile(null);
   }, [open, doc?.ID_DOCUMENTO]);
 
   return (
@@ -746,16 +777,16 @@ function ProfesorFirmaDialog({
               {doc.NOMBRE_PROFESOR}
             </p>
             <div className="space-y-2">
-              <Label>URL del documento firmado (Drive) *</Label>
+              <Label>Documento firmado (PDF) *</Label>
               <Input
-                value={urlFirmado}
-                onChange={(e) => setUrlFirmado(e.target.value)}
-                placeholder="https://drive.google.com/..."
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setSignedFile(e.target.files?.[0] || null)}
               />
             </div>
             <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
-              <ExternalLink className="h-3 w-3" />
-              Pega el enlace público o compartido del PDF firmado.
+              <Upload className="h-3 w-3" />
+              Sube el PDF firmado desde tu dispositivo.
             </p>
           </div>
         )}
@@ -769,8 +800,8 @@ function ProfesorFirmaDialog({
             Cancelar
           </Button>
           <Button
-            disabled={submitting || !canSign || !urlFirmado.trim()}
-            onClick={() => onSubmit(urlFirmado.trim())}
+            disabled={submitting || !canSign || !signedFile}
+            onClick={() => signedFile && onSubmit(signedFile)}
           >
             {submitting ? "Enviando..." : "Enviar firma"}
           </Button>

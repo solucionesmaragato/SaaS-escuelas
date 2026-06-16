@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Plus, Search, Trash2, Pencil, Eye, Calendar, Clock } from "lucide-react";
-import { useIncidencias } from "@/hooks/useIncidencias";
+import { useIncidencias, type IncidenciaData } from "@/hooks/useIncidencias";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
@@ -63,17 +63,32 @@ function IncidenciasPage() {
 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<any | null>(null);
-  const [viewing, setViewing] = useState<any | null>(null);
+  const [editing, setEditing] = useState<IncidenciaData | null>(null);
+  const [viewing, setViewing] = useState<IncidenciaData | null>(null);
   const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState<IncidenciaData | null>(null);
+  const [updatingEstadoId, setUpdatingEstadoId] = useState<string | null>(null);
+
+  const handleEstadoConsultaChange = async (incidenciaId: string, nextEstado: string) => {
+    setUpdatingEstadoId(incidenciaId);
+    try {
+      await update.mutateAsync({
+        id: incidenciaId,
+        patch: { ESTADO_CONSULTA: nextEstado },
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo actualizar el estado.");
+    } finally {
+      setUpdatingEstadoId(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     const rows = list.data ?? [];
     const q = query.trim().toLowerCase();
     const filteredRows = !q
       ? rows
-      : rows.filter((inc: any) =>
+      : rows.filter((inc) =>
           inc.ALUMNOS?.NOMBRE_ALUMNO?.toLowerCase().includes(q) ||
           inc.PROFESOR?.NOMBRE_PROFESOR?.toLowerCase().includes(q) ||
           inc.TIPO_INCIDENCIA?.toLowerCase().includes(q) ||
@@ -82,10 +97,10 @@ function IncidenciasPage() {
           inc.NOTAS?.toLowerCase().includes(q)
         );
 
-    return filteredRows.sort((a: any, b: any) => {
+    return filteredRows.sort((a, b) => {
       const order: Record<string, number> = { Consulta: 1, Falta: 2, Recuperación: 3 };
-      const weightA = order[a.TIPO_INCIDENCIA] || 99;
-      const weightB = order[b.TIPO_INCIDENCIA] || 99;
+      const weightA = order[a.TIPO_INCIDENCIA ?? ""] || 99;
+      const weightB = order[b.TIPO_INCIDENCIA ?? ""] || 99;
       if (weightA !== weightB) return weightA - weightB;
       const dateA = a.FECHA_EXACTA || "";
       const dateB = b.FECHA_EXACTA || "";
@@ -159,7 +174,7 @@ function IncidenciasPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                pageRows.map((inc: any) => (
+                pageRows.map((inc) => (
                   <TableRow key={inc.ID_INCIDENCIA}>
                     <TableCell className="text-sm">
                       <div className="font-medium flex items-center gap-1">
@@ -201,12 +216,10 @@ function IncidenciasPage() {
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Select
                         value={inc.ESTADO_CONSULTA ?? "Pendiente"}
-                        disabled={!canWrite}
+                        disabled={!canWrite || updatingEstadoId === inc.ID_INCIDENCIA}
                         onValueChange={(val) => {
-                          update.mutate({
-                            id: inc.ID_INCIDENCIA,
-                            patch: { ESTADO_CONSULTA: val },
-                          });
+                          if (val === (inc.ESTADO_CONSULTA ?? "Pendiente")) return;
+                          void handleEstadoConsultaChange(inc.ID_INCIDENCIA, val);
                         }}
                       >
                         <SelectTrigger className="h-8 w-[120px] border-0 bg-muted/50 text-xs">
@@ -551,7 +564,7 @@ function IncidenciaFormDialog({
   onClose: () => void;
   title: string;
   submitLabel: string;
-  initial?: Record<string, unknown> | null;
+  initial?: IncidenciaData | null;
   submitting: boolean;
   filterCenterId?: string | null;
   onSubmit: (values: IncidenciaFormValues) => void;

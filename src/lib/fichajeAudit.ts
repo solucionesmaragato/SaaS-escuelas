@@ -13,17 +13,17 @@ export type FichajeAuditPayload = {
 export async function logFichajeRejection(payload: FichajeAuditPayload): Promise<void> {
   try {
     const { error } = await supabase.from("AUDITORIA_LOGS").insert({
+      TABLA_AFECTADA: "FICHAJES",
+      ACCION: "FICHAJE_RECHAZADO",
+      ID_REGISTRO: payload.idProfesor ?? payload.idUsuario ?? "unknown",
+      ID_PROFESOR: payload.idUsuario,
       ID_CLIENTE: payload.tenantId,
-      TIPO_EVENTO: "FICHAJE_RECHAZADO",
-      MENSAJE: payload.errorMessage,
-      DETALLE: JSON.stringify({
+      DETALLES: {
+        errorMessage: payload.errorMessage,
         tipoMovimiento: payload.tipoMovimiento,
-        idProfesor: payload.idProfesor,
-        idUsuario: payload.idUsuario,
+        idProfesorFichaje: payload.idProfesor,
         attemptedPayload: payload.attemptedPayload ?? null,
-      }),
-      ID_PROFESOR: payload.idProfesor,
-      ID_USUARIO: payload.idUsuario,
+      },
     });
     if (error) {
       console.error("AUDITORIA_LOGS insert failed", error);

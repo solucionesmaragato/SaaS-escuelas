@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import jsQR from "jsqr";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft,
@@ -139,6 +140,38 @@ function fichajeRealTimestamp(f: FichajeData): string {
   return f.FECHA_HORA_REAL ?? f.FECHA_HORA;
 }
 
+function normalizeServerTimestamp(timestamp: string): string {
+  const trimmed = timestamp.trim();
+  if (/Z$/i.test(trimmed)) return trimmed;
+  if (/[+-]\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  return `${trimmed}Z`;
+}
+
+function parseServerDate(timestamp: string | null | undefined): Date | null {
+  if (!timestamp?.trim()) return null;
+  return new Date(normalizeServerTimestamp(timestamp));
+}
+
+function localDateKeyFromServerTimestamp(timestamp: string): string {
+  const date = parseServerDate(timestamp);
+  if (!date) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatDateForDatetimeLocal(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Converts a datetime-local value (browser local) to UTC wall-clock for the DB. */
+function localDatetimeToServerTimestamp(localValue: string): string {
+  const date = new Date(localValue);
+  return date.toISOString().slice(0, 19);
+}
+
 function isFichajeAnulado(estadoLegal: string | null | undefined): boolean {
   return estadoLegal === ESTADO_LEGAL_ANULADO;
 }
@@ -162,11 +195,11 @@ function normalizeMovimiento(mov: string | null | undefined): string {
 }
 
 function isRecordToday(f: FichajeData): boolean {
-  return fichajeRealTimestamp(f).split("T")[0] === todayDateKey();
+  return localDateKeyFromServerTimestamp(fichajeRealTimestamp(f)) === todayDateKey();
 }
 
 function isRecordTodayProfesor(f: ProfesorFichajeRow): boolean {
-  return f.FECHA_HORA_REAL.split("T")[0] === todayDateKey();
+  return localDateKeyFromServerTimestamp(f.FECHA_HORA_REAL) === todayDateKey();
 }
 
 function deriveProfesorClockState(todayRecords: ProfesorFichajeRow[]): {
@@ -192,7 +225,7 @@ function deriveProfesorClockState(todayRecords: ProfesorFichajeRow[]): {
   if (last === "Salida") return { state: "out", resumeAt: null, pausedAt: null };
 
   if (last === "Inicio Pausa") {
-    const pausedAt = new Date(sorted[0].FECHA_HORA_REAL);
+    const pausedAt = parseServerDate(sorted[0].FECHA_HORA_REAL);
     const resumeRecord = sorted.find((r) => {
       const mov = normalizeMovimiento(r.TIPO_MOVIMIENTO);
       return (
@@ -202,13 +235,17 @@ function deriveProfesorClockState(todayRecords: ProfesorFichajeRow[]): {
     });
     return {
       state: "paused",
-      resumeAt: resumeRecord ? new Date(resumeRecord.FECHA_HORA_REAL) : null,
+      resumeAt: resumeRecord ? parseServerDate(resumeRecord.FECHA_HORA_REAL) : null,
       pausedAt,
     };
   }
 
   if (last === "Entrada" || last === "Fin de Pausa") {
-    return { state: "active", resumeAt: new Date(sorted[0].FECHA_HORA_REAL), pausedAt: null };
+    return {
+      state: "active",
+      resumeAt: parseServerDate(sorted[0].FECHA_HORA_REAL),
+      pausedAt: null,
+    };
   }
 
   return { state: "out", resumeAt: null, pausedAt: null };
@@ -235,9 +272,10 @@ function buildShiftBlocks(records: ProfesorFichajeRow[]): ShiftBlock[] {
     if (mov === "Entrada" || mov === "Fin de Pausa") {
       openStart = record;
     } else if ((mov === "Inicio Pausa" || mov === "Salida") && openStart) {
+      const finAt = parseServerDate(record.FECHA_HORA_REAL);
+      const inicioAt = parseServerDate(openStart.FECHA_HORA_REAL);
       const ms =
-        new Date(record.FECHA_HORA_REAL).getTime() -
-        new Date(openStart.FECHA_HORA_REAL).getTime();
+        finAt && inicioAt ? finAt.getTime() - inicioAt.getTime() : 0;
       blocks.push({
         id: `${openStart.ID_FICHAJE}-${record.ID_FICHAJE}`,
         inicio: openStart.FECHA_HORA_REAL,
@@ -282,7 +320,7 @@ function deriveClockState(todayRecords: FichajeData[]): {
       fichajeRealTimestamp(a).localeCompare(fichajeRealTimestamp(b)),
     )[0];
   const entradaAt = entradaRecord
-    ? new Date(fichajeRealTimestamp(entradaRecord))
+    ? parseServerDate(fichajeRealTimestamp(entradaRecord))
     : null;
 
   if (last === "Salida") return { state: "out", entradaAt: null };
@@ -303,15 +341,13 @@ function formatElapsed(ms: number): string {
 
 function toLocalDatetimeValue(iso: string | null | undefined): string {
   if (!iso) {
-    const now = new Date();
-    return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
+    return formatDateForDatetimeLocal(new Date());
   }
-  const date = new Date(iso);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  const date = parseServerDate(iso);
+  if (!date) {
+    return formatDateForDatetimeLocal(new Date());
+  }
+  return formatDateForDatetimeLocal(date);
 }
 
 type ManualFichajeStage = "action_type" | "form_entry";
@@ -319,7 +355,19 @@ type ManualFichajeAction = "nuevo" | "modificacion";
 
 function formatFechaHora(value: string | null | undefined): string {
   if (!value) return "—";
-  return value.replace("T", " ").substring(0, 16);
+  const date = parseServerDate(value);
+  if (!date) return "—";
+  const datePart = date.toLocaleDateString("es-ES", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const timePart = date.toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${datePart} ${timePart}`;
 }
 
 function movimientoBadgeVariant(mov: string | null | undefined) {
@@ -565,6 +613,53 @@ function FichajeQrPosterDialog({
 // QR Scanner overlay
 // ---------------------------------------------------------------------------
 
+function startJsQrVideoScan(
+  video: HTMLVideoElement,
+  scanningRef: MutableRefObject<boolean>,
+  getCancelled: () => boolean,
+  onDetected: (rawValue: string) => void,
+): () => void {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    return () => {
+      scanningRef.current = false;
+    };
+  }
+
+  let raf = 0;
+  scanningRef.current = true;
+
+  const scan = () => {
+    if (!scanningRef.current || getCancelled()) return;
+
+    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert",
+      });
+      if (code?.data) {
+        scanningRef.current = false;
+        cancelAnimationFrame(raf);
+        onDetected(code.data);
+        return;
+      }
+    }
+
+    raf = requestAnimationFrame(scan);
+  };
+
+  raf = requestAnimationFrame(scan);
+
+  return () => {
+    scanningRef.current = false;
+    cancelAnimationFrame(raf);
+  };
+}
+
 function QrScannerOverlay({
   open,
   tenantId,
@@ -609,14 +704,10 @@ function QrScannerOverlay({
     }
 
     let stream: MediaStream | null = null;
-    let raf = 0;
+    let stopScan: (() => void) | null = null;
     let cancelled = false;
 
     async function startScanner() {
-      const BarcodeDetectorCtor = (
-        window as Window & { BarcodeDetector?: new (opts: { formats: string[] }) => { detect: (src: ImageBitmapSource) => Promise<{ rawValue: string }[]> } }
-      ).BarcodeDetector;
-
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
@@ -626,30 +717,12 @@ function QrScannerOverlay({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
 
-        if (!BarcodeDetectorCtor) {
-          setError("Escáner no disponible en este navegador. Introduce el ID manualmente.");
-          return;
-        }
-
-        const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
-        scanningRef.current = true;
-
-        const scan = async () => {
-          if (cancelled || !scanningRef.current || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes.length > 0) {
-              scanningRef.current = false;
-              validateAndSuccess(codes[0].rawValue);
-              return;
-            }
-          } catch {
-            /* frame skip */
-          }
-          raf = requestAnimationFrame(() => void scan());
-        };
-
-        void scan();
+        stopScan = startJsQrVideoScan(
+          videoRef.current,
+          scanningRef,
+          () => cancelled,
+          (rawValue) => validateAndSuccess(rawValue),
+        );
       } catch {
         setError("No se pudo acceder a la cámara. Introduce el ID de escuela manualmente.");
       }
@@ -660,7 +733,7 @@ function QrScannerOverlay({
     return () => {
       cancelled = true;
       scanningRef.current = false;
-      cancelAnimationFrame(raf);
+      stopScan?.();
       stream?.getTracks().forEach((t) => t.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
@@ -764,18 +837,10 @@ function ProfesorQrScanner({
 
   useEffect(() => {
     let stream: MediaStream | null = null;
-    let raf = 0;
+    let stopScan: (() => void) | null = null;
     let cancelled = false;
 
     async function startScanner() {
-      const BarcodeDetectorCtor = (
-        window as Window & {
-          BarcodeDetector?: new (opts: { formats: string[] }) => {
-            detect: (src: ImageBitmapSource) => Promise<{ rawValue: string }[]>;
-          };
-        }
-      ).BarcodeDetector;
-
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
@@ -785,30 +850,12 @@ function ProfesorQrScanner({
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
 
-        if (!BarcodeDetectorCtor) {
-          setError("Escáner no disponible en este navegador.");
-          return;
-        }
-
-        const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
-        scanningRef.current = true;
-
-        const scan = async () => {
-          if (cancelled || !scanningRef.current || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes.length > 0) {
-              scanningRef.current = false;
-              validateAndSuccess(codes[0].rawValue);
-              return;
-            }
-          } catch {
-            /* frame skip */
-          }
-          raf = requestAnimationFrame(() => void scan());
-        };
-
-        void scan();
+        stopScan = startJsQrVideoScan(
+          videoRef.current,
+          scanningRef,
+          () => cancelled,
+          (rawValue) => validateAndSuccess(rawValue),
+        );
       } catch {
         setError("No se pudo acceder a la cámara.");
       }
@@ -819,7 +866,7 @@ function ProfesorQrScanner({
     return () => {
       cancelled = true;
       scanningRef.current = false;
-      cancelAnimationFrame(raf);
+      stopScan?.();
       stream?.getTracks().forEach((t) => t.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
     };
@@ -864,6 +911,8 @@ function ProfesorFichajesView({
   const [now, setNow] = useState(Date.now());
   const [desplazamientoOpen, setDesplazamientoOpen] = useState(false);
   const [desplazamientoMotivo, setDesplazamientoMotivo] = useState("");
+  const [isFichando, setIsFichando] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const todayRecords = useMemo(
     () => fichajes.filter((f) => isRecordTodayProfesor(f)),
@@ -911,9 +960,13 @@ function ProfesorFichajesView({
       return;
     }
 
+    if (isProcessing) return;
+
+    setIsProcessing(true);
     try {
       const compliance = await collectFichajeComplianceMetadata();
       await onClockAction({
+        ID_CLIENTE: tenantId,
         ID_PROFESOR: profesorId,
         TIPO_MOVIMIENTO: tipo,
         METODO: metodo,
@@ -926,7 +979,10 @@ function ProfesorFichajesView({
       });
       toast.success(successMessage);
     } catch (err) {
-      toast.error(formatFichajeErrorMessage(err));
+      toast.error("No se ha podido registrar");
+    } finally {
+      setIsFichando(false);
+      setIsProcessing(false);
     }
   };
 
@@ -972,22 +1028,50 @@ function ProfesorFichajesView({
           <div className="flex w-full flex-col items-center gap-4 text-center">
             {state === "out" && (
               <>
-                <div className="w-full space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Escanea el QR del centro para fichar
-                  </p>
-                  <ProfesorQrScanner tenantId={tenantId} onSuccess={(id) => void handleQrSuccess(id)} />
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="h-14 w-full text-base"
-                  disabled={isPending}
-                  onClick={() => setDesplazamientoOpen(true)}
-                >
-                  <MapPin className="mr-2 h-5 w-5" />
-                  Fichar fuera del centro (Desplazamiento)
-                </Button>
+                {!isFichando ? (
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-16 w-full gap-3 text-lg"
+                    disabled={isPending}
+                    onClick={() => setIsFichando(true)}
+                  >
+                    <QrCode className="h-6 w-6" />
+                    Registrar Entrada
+                  </Button>
+                ) : (
+                  <div className="w-full animate-in fade-in slide-in-from-bottom-2 space-y-4">
+                    <div className="w-full space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">
+                        Escanea el QR del centro para fichar
+                      </p>
+                      <ProfesorQrScanner
+                        tenantId={tenantId}
+                        onSuccess={(id) => void handleQrSuccess(id)}
+                      />
+                    </div>
+                    <div className="flex w-full flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-14 w-full text-base"
+                        disabled={isPending}
+                        onClick={() => setDesplazamientoOpen(true)}
+                      >
+                        <MapPin className="mr-2 h-5 w-5" />
+                        Fichar fuera del centro
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-14 w-full text-base"
+                        onClick={() => setIsFichando(false)}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
@@ -1533,11 +1617,100 @@ function ControlHorarioView({
     return rows;
   }, [conciliacionRows, filtroProfesor, query, profById, allowedProfIds]);
 
+  const formatConciliacionHoraReal = (fechaHoraReal: string) => {
+    const date = parseServerDate(fechaHoraReal);
+    if (!date) return "—";
+    return date.toLocaleTimeString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
+
+  const jornadas = useMemo(() => {
+    type ConciliacionJornadaRow = {
+      id: string;
+      idProfesor: string;
+      nombreProfesor: string;
+      entrada: FichajeConciliacionAdminRow;
+      salida: FichajeConciliacionAdminRow | null;
+      totalHoras: number | null;
+      estadoTolerancia: "Alerta" | "Correcto";
+      anulado: boolean;
+    };
+
+    const byProfesor = new Map<string, FichajeConciliacionAdminRow[]>();
+    for (const row of filtered) {
+      const group = byProfesor.get(row.ID_PROFESOR) ?? [];
+      group.push(row);
+      byProfesor.set(row.ID_PROFESOR, group);
+    }
+
+    const blocks: ConciliacionJornadaRow[] = [];
+
+    for (const [idProfesor, marks] of byProfesor) {
+      const sorted = [...marks].sort((a, b) =>
+        a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL),
+      );
+
+      let openEntrada: FichajeConciliacionAdminRow | null = null;
+
+      const pushBlock = (
+        entrada: FichajeConciliacionAdminRow,
+        salida: FichajeConciliacionAdminRow | null,
+      ) => {
+        const inicioAt = parseServerDate(entrada.FECHA_HORA_REAL);
+        const finAt = salida ? parseServerDate(salida.FECHA_HORA_REAL) : null;
+        const totalHoras =
+          inicioAt && finAt ? (finAt.getTime() - inicioAt.getTime()) / 3_600_000 : null;
+        const hasAlerta =
+          entrada.ESTADO_TOLERANCIA === "Alerta" ||
+          salida?.ESTADO_TOLERANCIA === "Alerta";
+
+        blocks.push({
+          id: salida
+            ? `${entrada.ID_FICHAJE}-${salida.ID_FICHAJE}`
+            : `${entrada.ID_FICHAJE}-open`,
+          idProfesor,
+          nombreProfesor: conciliacionProfesorNombre(entrada, profById),
+          entrada,
+          salida,
+          totalHoras,
+          estadoTolerancia: hasAlerta ? "Alerta" : "Correcto",
+          anulado:
+            isFichajeAnulado(entrada.ESTADO_LEGAL) ||
+            (salida ? isFichajeAnulado(salida.ESTADO_LEGAL) : false),
+        });
+      };
+
+      for (const mark of sorted) {
+        const mov = normalizeMovimiento(mark.TIPO_MOVIMIENTO);
+        if (mov === "Entrada") {
+          if (openEntrada) {
+            pushBlock(openEntrada, null);
+          }
+          openEntrada = mark;
+        } else if (mov === "Salida" && openEntrada) {
+          pushBlock(openEntrada, mark);
+          openEntrada = null;
+        }
+      }
+
+      if (openEntrada) {
+        pushBlock(openEntrada, null);
+      }
+    }
+
+    return blocks.sort((a, b) =>
+      b.entrada.FECHA_HORA_REAL.localeCompare(a.entrada.FECHA_HORA_REAL),
+    );
+  }, [filtered, profById]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          {filtered.length} marcas conciliadas el {selectedDate}
+          {jornadas.length} jornada{jornadas.length === 1 ? "" : "s"} el {selectedDate}
         </p>
         {(canGenerateQrPoster || canManual) && (
           <div className="flex flex-wrap gap-2">
@@ -1626,10 +1799,9 @@ function ControlHorarioView({
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="h-9 text-xs font-semibold">Profesor</TableHead>
-                <TableHead className="h-9 text-xs font-semibold">Movimiento</TableHead>
-                <TableHead className="h-9 text-xs font-semibold">Hora Real</TableHead>
-                <TableHead className="h-9 text-xs font-semibold">Hora Teórica Ideal</TableHead>
-                <TableHead className="h-9 text-xs font-semibold text-right">Desfase</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Entrada</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Salida</TableHead>
+                <TableHead className="h-9 text-xs font-semibold text-right">Total Horas</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Estado</TableHead>
               </TableRow>
             </TableHeader>
@@ -1637,60 +1809,52 @@ function ControlHorarioView({
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={6} className="py-2">
+                    <TableCell colSpan={5} className="py-2">
                       <Skeleton className="h-7 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
-              ) : filtered.length === 0 ? (
+              ) : jornadas.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={5}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    Sin registros de conciliación para esta fecha.
+                    Sin jornadas de conciliación para esta fecha.
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((row) => {
-                  const anulado = isFichajeAnulado(row.ESTADO_LEGAL);
-                  const nombre = conciliacionProfesorNombre(row, profById);
-                  return (
-                    <TableRow
-                      key={row.ID_FICHAJE}
-                      className={anuladoRowClass(anulado)}
-                    >
-                      <TableCell className="py-2 text-sm font-semibold">
-                        {nombre}
-                        {anulado && (
-                          <Badge variant="outline" className="ml-2 text-[10px]">
-                            Anulado
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <Badge
-                          variant={movimientoBadgeVariant(row.TIPO_MOVIMIENTO)}
-                          className="text-[10px] capitalize"
-                        >
-                          {row.TIPO_MOVIMIENTO}
+                jornadas.map((jornada) => (
+                  <TableRow
+                    key={jornada.id}
+                    className={anuladoRowClass(jornada.anulado)}
+                  >
+                    <TableCell className="py-2 text-sm font-semibold">
+                      {jornada.nombreProfesor}
+                      {jornada.anulado && (
+                        <Badge variant="outline" className="ml-2 text-[10px]">
+                          Anulado
                         </Badge>
-                      </TableCell>
-                      <TableCell className="py-2 text-sm font-medium">
-                        {row.HORA_REAL || formatFechaHora(row.FECHA_HORA_REAL)}
-                      </TableCell>
-                      <TableCell className="py-2 text-sm text-muted-foreground">
-                        {row.HORA_TEORICA_IDEAL || "—"}
-                      </TableCell>
-                      <TableCell className="py-2 text-right font-mono text-xs">
-                        {formatDesfaseMinutos(row.DIFERENCIA_MINUTOS)}
-                      </TableCell>
-                      <TableCell className="py-2">
-                        <ToleranciaBadge estado={row.ESTADO_TOLERANCIA} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                      )}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm font-medium">
+                      {formatConciliacionHoraReal(jornada.entrada.FECHA_HORA_REAL)}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm font-medium">
+                      {jornada.salida ? (
+                        formatConciliacionHoraReal(jornada.salida.FECHA_HORA_REAL)
+                      ) : (
+                        <span className="text-muted-foreground italic">En curso</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="py-2 text-right font-mono text-sm">
+                      {formatHorasBlock(jornada.totalHoras)}
+                    </TableCell>
+                    <TableCell className="py-2">
+                      <ToleranciaBadge estado={jornada.estadoTolerancia} />
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
@@ -1888,7 +2052,7 @@ function ManualFichajeDialog({
               await onSubmitNuevo({
                 ID_PROFESOR: idProfesor,
                 TIPO_MOVIMIENTO: tipoMovimiento,
-                FECHA_HORA: new Date(fechaHora).toISOString(),
+                FECHA_HORA: localDatetimeToServerTimestamp(fechaHora),
                 METODO: "Manual Web",
                 MODALIDAD: "Presencial",
                 ...complianceNullFields,
@@ -1966,7 +2130,7 @@ function ManualFichajeDialog({
                 TIPO_MOVIMIENTO: CORRECCION_APROBADA,
                 ID_FICHAJE_CORREGIDO: idFichajeCorregido,
                 FECHA_HORA_MANUAL: fechaHora
-                  ? new Date(fechaHora).toISOString()
+                  ? localDatetimeToServerTimestamp(fechaHora)
                   : undefined,
                 MOTIVO_MODIFICACION: motivo,
                 NOTAS: motivo,

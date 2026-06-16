@@ -17,7 +17,7 @@ import {
 } from "@/lib/tenantQuery";
 
 const DOCUMENTO_SELECT_COLUMNS =
-  "ID_DOCUMENTO, ID_CLIENTE, ID_PROFESOR, CATEGORIA, URL_ORIGINAL, URL_FIRMADO, ABIERTO_ADMIN, ABIERTO_PROFESOR, REQUIERE_FIRMA, ESTADO_FIRMA, FECHA_SUBIDA, FECHA_FIRMA, FECHA_CADUCIDAD" as const;
+  "ID_DOCUMENTO, ID_CLIENTE, ID_PROFESOR, ID_CENTRO, CATEGORIA, URL_ORIGINAL, URL_FIRMADO, ABIERTO_ADMIN, ABIERTO_PROFESOR, REQUIERE_FIRMA, ESTADO_FIRMA, FECHA_SUBIDA, FECHA_FIRMA, FECHA_CADUCIDAD" as const;
 
 const PROFESOR_LOOKUP_COLUMNS = "ID_PROFESOR, NOMBRE_PROFESOR, FECHA_BAJA" as const;
 
@@ -31,6 +31,7 @@ export interface DocumentoData {
   ID_DOCUMENTO: string;
   ID_CLIENTE: string;
   ID_PROFESOR: string;
+  ID_CENTRO?: string | null;
   CATEGORIA: string;
   URL_ORIGINAL: string | null;
   URL_FIRMADO: string | null;
@@ -46,20 +47,23 @@ export interface DocumentoData {
 
 export type DocumentoCreateInput = {
   ID_PROFESOR: string;
+  ID_CENTRO?: string | null;
   CATEGORIA: string;
-  URL_ORIGINAL: string;
+  file?: File;
   REQUIERE_FIRMA?: boolean;
   FECHA_CADUCIDAD?: string | null;
   ID_CLIENTE?: string;
 };
 
 export type DocumentoUpdateInput = Partial<
-  DocumentoCreateInput & {
-    URL_FIRMADO: string | null;
+  Omit<DocumentoCreateInput, "file"> & {
+    signedFile?: File;
     ABIERTO_ADMIN: boolean;
     ABIERTO_PROFESOR: boolean;
   }
 >;
+
+const DOCUMENTOS_LEGALES_BUCKET = "documentos-legales" as const;
 
 export type DocumentosQueryData = {
   documentos: DocumentoData[];
@@ -70,6 +74,7 @@ type DocumentoRow = {
   ID_DOCUMENTO: string;
   ID_CLIENTE: string;
   ID_PROFESOR: string;
+  ID_CENTRO?: string | null;
   CATEGORIA: string;
   URL_ORIGINAL: string | null;
   URL_FIRMADO: string | null;
@@ -103,8 +108,34 @@ function isEmployeeDocumentRole(rol: string | null | undefined): boolean {
 function buildProfesorUpdatePatch(patch: DocumentoUpdateInput): DocumentoUpdateInput {
   const result: DocumentoUpdateInput = {};
   if (patch.ABIERTO_PROFESOR !== undefined) result.ABIERTO_PROFESOR = patch.ABIERTO_PROFESOR;
-  if (patch.URL_FIRMADO !== undefined) result.URL_FIRMADO = patch.URL_FIRMADO;
+  if (patch.signedFile !== undefined) result.signedFile = patch.signedFile;
   return result;
+}
+
+async function uploadDocumentoLegalFile(filePath: string, file: File): Promise<string> {
+  const { error } = await supabase.storage.from(DOCUMENTOS_LEGALES_BUCKET).upload(filePath, file);
+  if (error) throw error;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(DOCUMENTOS_LEGALES_BUCKET).getPublicUrl(filePath);
+  return publicUrl;
+}
+
+async function resolveDocumentoDbPatch(
+  patch: DocumentoUpdateInput,
+  tenantId: string,
+  documentoId: string,
+): Promise<Record<string, unknown>> {
+  const { signedFile, ...rest } = patch;
+  const dbPatch: Record<string, unknown> = { ...rest };
+
+  if (signedFile) {
+    const filePath = `${tenantId}/signed_${documentoId}_${crypto.randomUUID()}.pdf`;
+    dbPatch.URL_FIRMADO = await uploadDocumentoLegalFile(filePath, signedFile);
+  }
+
+  return dbPatch;
 }
 
 function mapDocumentoRow(row: DocumentoRow, nombreProfesor: string): DocumentoData {
@@ -112,6 +143,7 @@ function mapDocumentoRow(row: DocumentoRow, nombreProfesor: string): DocumentoDa
     ID_DOCUMENTO: row.ID_DOCUMENTO,
     ID_CLIENTE: row.ID_CLIENTE,
     ID_PROFESOR: row.ID_PROFESOR,
+    ID_CENTRO: row.ID_CENTRO ?? null,
     CATEGORIA: row.CATEGORIA,
     URL_ORIGINAL: row.URL_ORIGINAL,
     URL_FIRMADO: row.URL_FIRMADO,
@@ -226,17 +258,22 @@ export function useDocumentos(filterCenterId?: string | null) {
   const create = useMutation({
     mutationFn: async (newDoc: DocumentoCreateInput) => {
       assertCanCreate(rol);
+      if (!tenantId) throw new Error("No hay un tenant activo.");
+      if (!newDoc.file) throw new Error("Debes seleccionar un archivo PDF.");
+
+      const fileExt = newDoc.file.name.split(".").pop() || "pdf";
+      const filePath = `${tenantId}/original_${crypto.randomUUID()}.${fileExt}`;
+      const publicUrl = await uploadDocumentoLegalFile(filePath, newDoc.file);
 
       const payload = {
         ID_PROFESOR: newDoc.ID_PROFESOR || null,
+        ID_CENTRO: newDoc.ID_CENTRO || null,
         CATEGORIA: newDoc.CATEGORIA,
-        URL_ORIGINAL: newDoc.URL_ORIGINAL,
+        URL_ORIGINAL: publicUrl,
         REQUIERE_FIRMA: newDoc.REQUIERE_FIRMA || false,
         FECHA_CADUCIDAD: newDoc.FECHA_CADUCIDAD || null,
         CREADO_POR: perfil?.EMAIL || null,
       };
-
-      console.log("PAYLOAD SENT TO SUPABASE (CREATE):", payload);
 
       const { data, error } = await supabase
         .from("DOCUMENTOS_LEGALES_V2")
@@ -282,9 +319,12 @@ export function useDocumentos(filterCenterId?: string | null) {
         throw new Error("No tienes permiso para modificar documentos.");
       }
 
+      if (!tenantId) throw new Error("No hay un tenant activo.");
+      const dbPatch = await resolveDocumentoDbPatch(finalPatch, tenantId, id);
+
       let query = supabase
         .from("DOCUMENTOS_LEGALES_V2")
-        .update(finalPatch)
+        .update(dbPatch)
         .eq("ID_DOCUMENTO", id);
 
       if (!isMasterRole(rol)) {
