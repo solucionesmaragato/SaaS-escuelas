@@ -87,7 +87,9 @@ function MenuCard({ item }: { item: MenuItem }) {
       >
         <Icon className="h-6 w-6 stroke-[2.5]" strokeWidth={2.5} />
       </div>
-      <span className={cn("text-xs font-medium leading-tight", labelClasses)}>{item.title}</span>
+      <span className={cn("break-words text-center text-xs font-medium leading-tight", labelClasses)}>
+        {item.title}
+      </span>
     </Card>
   );
 
@@ -105,7 +107,7 @@ function MenuCard({ item }: { item: MenuItem }) {
 export function ProfesorMobileMenuGrid() {
   return (
     <div className="px-4 py-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 min-[350px]:grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
         {MENU_ITEMS.map((item) => (
           <MenuCard key={item.title} item={item} />
         ))}
