@@ -1,18 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { MoreHorizontal, Plus, Search, Trash2, Pencil, Eye, Calendar, Clock } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, Calendar, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
 import { useIncidencias, type IncidenciaData } from "@/hooks/useIncidencias";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import { canWriteUi } from "@/lib/rbac";
-import {
-  appendCenterFilter,
-  appendIdInFilter,
-  fetchAlumnoIdsForCenter,
-} from "@/lib/centroFilter";
+import { appendCenterFilter, appendIdInFilter, fetchAlumnoIdsForCenter } from "@/lib/centroFilter";
 import { scopeTenantQuery } from "@/lib/tenantQuery";
+import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EntityLink } from "@/components/navigation/EntityLink";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,17 +21,36 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
   Select,
@@ -41,13 +60,256 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated/incidencias")({
   component: IncidenciasPage,
 });
 
 const PAGE_SIZE = 10;
+const ESTADO_CONSULTA_OPTIONS = ["Pendiente", "Resuelto", "Justificada"] as const;
+
+type IncidenciaFormValues = {
+  ID_ALUMNO: string;
+  ID_PROFESOR: string | null;
+  ID_ESPECIALIDAD: string | null;
+  TIPO_INCIDENCIA: string | null;
+  FECHA_EXACTA: string | null;
+  HORA_INICIO: string | null;
+  HORA_FIN: string | null;
+  ESTADO_CONSULTA: string | null;
+  NOTAS: string | null;
+  ID_MATRICULA: string | null;
+  ID_HORARIO: string | null;
+  ID_SESION: string | null;
+  ID_AULA: string | null;
+};
+
+function IncidenciaDetailOverlay({
+  open,
+  mode,
+  incidencia,
+  canWrite,
+  submitting,
+  filterCenterId,
+  onClose,
+  onEdit,
+  onCancelEdit,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "detail" | "edit";
+  incidencia: IncidenciaData | null;
+  canWrite: boolean;
+  submitting: boolean;
+  filterCenterId?: string | null;
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmit: (values: IncidenciaFormValues) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === "edit") onCancelEdit();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, mode, onClose, onCancelEdit]);
+
+  if (!open) return null;
+
+  if (!incidencia) {
+    return createPortal(
+      <>
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/10"
+          aria-label="Cerrar"
+          onClick={onClose}
+        />
+        <div
+          className={cn(
+            ALUMNO_OVERLAY_PANEL_CLASS,
+            "max-w-xl flex items-center justify-center p-6",
+          )}
+        >
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-40 bg-black/10"
+        aria-label="Cerrar detalle de la incidencia"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="incidencia-overlay-title"
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-xl p-6")}
+      >
+        {mode === "edit" ? (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 shrink-0"
+                  onClick={onCancelEdit}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver
+                </Button>
+                <h2 id="incidencia-overlay-title" className="truncate text-xl font-semibold">
+                  Modificar incidencia
+                </h2>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar"
+                onClick={onClose}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </header>
+            <IncidenciaFormDialog
+              open
+              embedded
+              title="Modificar Incidencia"
+              submitLabel="Guardar Cambios"
+              initial={incidencia}
+              submitting={submitting}
+              filterCenterId={filterCenterId}
+              onClose={onCancelEdit}
+              onSubmit={onSubmit}
+            />
+            <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={onCancelEdit}>
+                Cancelar
+              </Button>
+              <Button type="submit" form="incidencia-form" disabled={submitting}>
+                {submitting ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 id="incidencia-overlay-title" className="truncate text-xl font-semibold">
+                  Detalle de la incidencia
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {canWrite && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    onClick={onEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Cerrar"
+                  onClick={onClose}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </header>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Fecha exacta</dt>
+                <dd>{incidencia.FECHA_EXACTA ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Estado de consulta</dt>
+                <dd>{incidencia.ESTADO_CONSULTA ?? "Pendiente"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Horario del bloque</dt>
+                <dd>
+                  {incidencia.HORA_INICIO ?? "—"} a {incidencia.HORA_FIN ?? "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Tipo de Incidencia</dt>
+                <dd>{incidencia.TIPO_INCIDENCIA ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Tipo de Falta</dt>
+                <dd>{incidencia.TIPO_FALTA ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Especialidad</dt>
+                <dd>
+                  {incidencia.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}
+                </dd>
+              </div>
+              <div className="col-span-2 border-t pt-2 mt-1">
+                <dt className="text-muted-foreground font-semibold mb-1">Personas implicadas</dt>
+                <dd>
+                  <b>Alumno:</b>{" "}
+                  {incidencia.ALUMNOS?.NOMBRE_ALUMNO ? (
+                    <EntityLink type="alumno" id={incidencia.ID_ALUMNO}>
+                      {incidencia.ALUMNOS.NOMBRE_ALUMNO}
+                    </EntityLink>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+                <dd>
+                  <b>Profesor:</b>{" "}
+                  {incidencia.PROFESOR?.NOMBRE_PROFESOR ? (
+                    <EntityLink type="profesor" id={incidencia.ID_PROFESOR}>
+                      {incidencia.PROFESOR.NOMBRE_PROFESOR}
+                    </EntityLink>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+              </div>
+              <div className="col-span-2 border-t pt-2">
+                <dt className="text-muted-foreground font-semibold">Notas y Observaciones</dt>
+                <dd className="mt-1 rounded-md bg-muted p-2 whitespace-pre-wrap text-xs">
+                  {incidencia.NOTAS ?? "Sin anotaciones"}
+                </dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
 
 function IncidenciasPage() {
   const { rol } = useActiveTenant();
@@ -63,11 +325,23 @@ function IncidenciasPage() {
 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<IncidenciaData | null>(null);
-  const [viewing, setViewing] = useState<IncidenciaData | null>(null);
+  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<IncidenciaData | null>(null);
   const [updatingEstadoId, setUpdatingEstadoId] = useState<string | null>(null);
+
+  const overlayIncidencia = useMemo(
+    () => (list.data ?? []).find((inc) => inc.ID_INCIDENCIA === overlay?.id) ?? null,
+    [list.data, overlay?.id],
+  );
+
+  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
+  }, []);
 
   const handleEstadoConsultaChange = async (incidenciaId: string, nextEstado: string) => {
     setUpdatingEstadoId(incidenciaId);
@@ -88,13 +362,14 @@ function IncidenciasPage() {
     const q = query.trim().toLowerCase();
     const filteredRows = !q
       ? rows
-      : rows.filter((inc) =>
-          inc.ALUMNOS?.NOMBRE_ALUMNO?.toLowerCase().includes(q) ||
-          inc.PROFESOR?.NOMBRE_PROFESOR?.toLowerCase().includes(q) ||
-          inc.TIPO_INCIDENCIA?.toLowerCase().includes(q) ||
-          inc.TIPO_FALTA?.toLowerCase().includes(q) ||
-          inc.ESTADO_CONSULTA?.toLowerCase().includes(q) ||
-          inc.NOTAS?.toLowerCase().includes(q)
+      : rows.filter(
+          (inc) =>
+            inc.ALUMNOS?.NOMBRE_ALUMNO?.toLowerCase().includes(q) ||
+            inc.PROFESOR?.NOMBRE_PROFESOR?.toLowerCase().includes(q) ||
+            inc.TIPO_INCIDENCIA?.toLowerCase().includes(q) ||
+            inc.TIPO_FALTA?.toLowerCase().includes(q) ||
+            inc.ESTADO_CONSULTA?.toLowerCase().includes(q) ||
+            inc.NOTAS?.toLowerCase().includes(q),
         );
 
     return filteredRows.sort((a, b) => {
@@ -113,19 +388,17 @@ function IncidenciasPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Incidencias Académicas</h1>
-          <p className="text-sm text-muted-foreground">
-            {list.data?.length ?? 0} registros de asistencia e incidencias controlados
-          </p>
-        </div>
-        {canWrite && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nueva incidencia
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Incidencias Académicas"
+        description={`${list.data?.length ?? 0} registros de asistencia e incidencias controlados`}
+        actions={
+          canWrite && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nueva incidencia
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -134,7 +407,10 @@ function IncidenciasPage() {
             <Input
               placeholder="Buscar por alumno, profesor, tipo, estado o comentarios..."
               value={query}
-              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
               className="pl-9"
             />
           </div>
@@ -143,7 +419,10 @@ function IncidenciasPage() {
               id="incidencias-centro-filter"
               centros={centrosOrdenados}
               value={selectedCenterId}
-              onChange={(v) => { setSelectedCenterId(v); setPage(1); }}
+              onChange={(v) => {
+                setSelectedCenterId(v);
+                setPage(1);
+              }}
             />
           )}
         </div>
@@ -157,14 +436,16 @@ function IncidenciasPage() {
                 <TableHead>Profesor</TableHead>
                 <TableHead>Tipo Incidencia</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead className="w-12" />
+                <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {list.isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={6}><Skeleton className="h-8 w-full" /></TableCell>
+                    <TableCell colSpan={6}>
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
                   </TableRow>
                 ))
               ) : pageRows.length === 0 ? (
@@ -175,38 +456,50 @@ function IncidenciasPage() {
                 </TableRow>
               ) : (
                 pageRows.map((inc) => (
-                  <TableRow key={inc.ID_INCIDENCIA}>
+                  <TableRow
+                    key={inc.ID_INCIDENCIA}
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
+                    onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "detail" })}
+                  >
                     <TableCell className="text-sm">
-                      <div className="font-medium flex items-center gap-1">
-                        <Calendar className="h-3 w-3 text-muted-foreground" /> {inc.FECHA_EXACTA ?? "—"}
-                      </div>
-                      {(inc.HORA_INICIO || inc.HORA_FIN) && (
-                        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                          <Clock className="h-3 w-3" /> {inc.HORA_INICIO ?? "—"} a {inc.HORA_FIN ?? "—"}
-                        </div>
+                      <IncidenciaFechaHorarioCell inc={inc} />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
+                        <EntityLink type="alumno" id={inc.ID_ALUMNO}>
+                          {inc.ALUMNOS.NOMBRE_ALUMNO}
+                        </EntityLink>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">
+                          {inc.ID_ALUMNO || "—"}
+                        </span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {inc.ALUMNOS?.NOMBRE_ALUMNO ?? <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>}
-                    </TableCell>
-                    <TableCell>
-                      {inc.PROFESOR?.NOMBRE_PROFESOR ?? <span className="text-muted-foreground text-xs">{inc.ID_PROFESOR || "—"}</span>}
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {inc.PROFESOR?.NOMBRE_PROFESOR ? (
+                        <EntityLink type="profesor" id={inc.ID_PROFESOR}>
+                          {inc.PROFESOR.NOMBRE_PROFESOR}
+                        </EntityLink>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">
+                          {inc.ID_PROFESOR || "—"}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">
-                      <Badge
-                        variant="outline"
-                        className={
+                      <StatusBadge
+                        status={
                           inc.TIPO_INCIDENCIA === "Consulta"
-                            ? "border-transparent bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                            ? "info"
                             : inc.TIPO_INCIDENCIA === "Falta"
-                              ? "border-transparent bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              ? "destructive"
                               : inc.TIPO_INCIDENCIA === "Recuperación"
-                                ? "border-transparent bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : undefined
+                                ? "success"
+                                : "neutral"
                         }
                       >
                         {inc.TIPO_INCIDENCIA ?? "—"}
-                      </Badge>
+                      </StatusBadge>
                       {inc.TIPO_FALTA && (
                         <div className="mt-1 text-xs text-muted-foreground">
                           Detalle: {inc.TIPO_FALTA}
@@ -234,27 +527,23 @@ function IncidenciasPage() {
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setViewing(inc)}>
-                            <Eye className="mr-2 h-4 w-4" /> Ver detalle
-                          </DropdownMenuItem>
-                          {canWrite && (
-                            <DropdownMenuItem onClick={() => setEditing(inc)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {canWrite ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "edit" })}
+                            >
+                              Editar
                             </DropdownMenuItem>
-                          )}
-                          {canWrite && (
-                            <DropdownMenuItem onClick={() => setDeleting(inc)} className="text-destructive focus:text-destructive">
-                              <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))
@@ -270,10 +559,20 @@ function IncidenciasPage() {
               Página {page} de {totalPages}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
                 Anterior
               </Button>
-              <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
                 Siguiente
               </Button>
             </div>
@@ -281,40 +580,27 @@ function IncidenciasPage() {
         )}
       </Card>
 
-      {/* View Modal */}
-      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Detalle de la Incidencia</DialogTitle>
-            <DialogDescription>Información del registro de asistencia</DialogDescription>
-          </DialogHeader>
-          {viewing && (
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-muted-foreground">Fecha exacta</dt><dd>{viewing.FECHA_EXACTA ?? "—"}</dd></div>
-              <div><dt className="text-muted-foreground">Estado de consulta</dt><dd>{viewing.ESTADO_CONSULTA ?? "Pendiente"}</dd></div>
-              <div><dt className="text-muted-foreground">Horario del bloque</dt><dd>{viewing.HORA_INICIO ?? "—"} a {viewing.HORA_FIN ?? "—"}</dd></div>
-              <div><dt className="text-muted-foreground">Tipo de Incidencia</dt><dd>{viewing.TIPO_INCIDENCIA ?? "—"}</dd></div>
-              <div><dt className="text-muted-foreground">Tipo de Falta</dt><dd>{viewing.TIPO_FALTA ?? "—"}</dd></div>
-              <div><dt className="text-muted-foreground">Especialidad (ID)</dt><dd>{viewing.ESPECIALIDADES?.ESPECIALIDAD ?? viewing.ID_ESPECIALIDAD ?? "—"}</dd></div>
-              <div className="col-span-2 border-t pt-2 mt-1">
-                <dt className="text-muted-foreground font-semibold mb-1">Personas implicadas</dt>
-                <dd><b>Alumno:</b> {viewing.ALUMNOS?.NOMBRE_ALUMNO ?? viewing.ID_ALUMNO}</dd>
-                <dd><b>Profesor:</b> {viewing.PROFESOR?.NOMBRE_PROFESOR ?? viewing.ID_PROFESOR}</dd>
-              </div>
-              <div className="col-span-2 border-t pt-2">
-                <dt className="text-muted-foreground text-xs">IDs Técnicos Relacionales (Por mapear)</dt>
-                <dd className="text-xs text-muted-foreground/80 font-mono">
-                  Matrícula: {viewing.ID_MATRICULA || "—"} | Horario: {viewing.ID_HORARIO || "—"} | Sesión: {viewing.ID_SESION || "—"}
-                </dd>
-              </div>
-              <div className="col-span-2 border-t pt-2">
-                <dt className="text-muted-foreground font-semibold">Notas y Observaciones</dt>
-                <dd className="mt-1 rounded-md bg-muted p-2 whitespace-pre-wrap text-xs">{viewing.NOTAS ?? "Sin anotaciones"}</dd>
-              </div>
-            </dl>
-          )}
-        </DialogContent>
-      </Dialog>
+      <IncidenciaDetailOverlay
+        open={!!overlay}
+        mode={overlay?.mode ?? "detail"}
+        incidencia={overlayIncidencia}
+        canWrite={canWrite}
+        submitting={update.isPending}
+        filterCenterId={filterCenterId}
+        onClose={handleCloseOverlay}
+        onEdit={handleEditOverlay}
+        onCancelEdit={handleCancelEditOverlay}
+        onSubmit={async (values) => {
+          if (!overlay?.id) return;
+          try {
+            await update.mutateAsync({ id: overlay.id, patch: values });
+            toast.success("Incidencia actualizada correctamente");
+            setOverlay({ id: overlay.id, mode: "detail" });
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Error al actualizar");
+          }
+        }}
+      />
 
       {/* Create Modal */}
       <IncidenciaFormDialog
@@ -335,39 +621,21 @@ function IncidenciasPage() {
         }}
       />
 
-      {/* Edit Modal */}
-      <IncidenciaFormDialog
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        title="Modificar Incidencia"
-        submitLabel="Guardar Cambios"
-        initial={editing}
-        submitting={update.isPending}
-        filterCenterId={filterCenterId}
-        onSubmit={async (values) => {
-          if (!editing) return;
-          try {
-            await update.mutateAsync({ id: editing.ID_INCIDENCIA, patch: values });
-            toast.success("Incidencia actualizada correctamente");
-            setEditing(null);
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Error al actualizar");
-          }
-        }}
-      />
-
       {/* Delete Modal */}
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar este registro?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se borrará de forma permanente la incidencia del alumno <b>{deleting?.ALUMNOS?.NOMBRE_ALUMNO || deleting?.ID_ALUMNO}</b>. Esta operación es irreversible.
+              Se borrará de forma permanente la incidencia del alumno{" "}
+              <b>{deleting?.ALUMNOS?.NOMBRE_ALUMNO || deleting?.ID_ALUMNO}</b>. Esta operación es
+              irreversible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={remove.isPending}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              disabled={remove.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
                 if (!deleting) return;
@@ -406,7 +674,6 @@ const EMPTY_REC_AULAS = "__empty_rec_aulas__";
 const LOADING_REC_AULAS = "__loading_rec_aulas__";
 const LOADING_REC_PROFESORES = "__loading_rec_profesores__";
 const TIPO_INCIDENCIA_OPTIONS = ["Consulta", "Falta", "Recuperación"] as const;
-const ESTADO_CONSULTA_OPTIONS = ["Pendiente", "Resuelto", "Justificada"] as const;
 
 type TipoIncidencia = (typeof TIPO_INCIDENCIA_OPTIONS)[number];
 
@@ -428,22 +695,6 @@ type SesionRow = {
   ID_AULA: string | null;
 };
 
-type IncidenciaFormValues = {
-  ID_ALUMNO: string;
-  ID_PROFESOR: string | null;
-  ID_ESPECIALIDAD: string | null;
-  TIPO_INCIDENCIA: string | null;
-  FECHA_EXACTA: string | null;
-  HORA_INICIO: string | null;
-  HORA_FIN: string | null;
-  ESTADO_CONSULTA: string | null;
-  NOTAS: string | null;
-  ID_MATRICULA: string | null;
-  ID_HORARIO: string | null;
-  ID_SESION: string | null;
-  ID_AULA: string | null;
-};
-
 function toDateInputValue(value: string | null | undefined): string {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
@@ -462,9 +713,7 @@ function resolveEspecialidadId(
   if (!value) return "";
   const list = Array.isArray(especialidades) ? especialidades : [];
   if (list.some((e) => e?.ID_ESPECIALIDAD === value)) return value;
-  const byName = list.find(
-    (e) => e?.ESPECIALIDAD?.toLowerCase() === value.toLowerCase(),
-  );
+  const byName = list.find((e) => e?.ESPECIALIDAD?.toLowerCase() === value.toLowerCase());
   return byName?.ID_ESPECIALIDAD ?? value;
 }
 
@@ -483,6 +732,87 @@ function normalizeTipoIncidencia(value: unknown): TipoIncidencia {
   if (value === "Consulta") return "Consulta";
   if (value === "Recuperación") return "Recuperación";
   return "Falta";
+}
+
+function incidenciaSchedulePlaceholder(tipo: string | null | undefined): string {
+  return tipo === "Consulta" ? "Pendiente de programar" : "N/A";
+}
+
+function formatHorarioRange(
+  horaInicio: string | null | undefined,
+  horaFin: string | null | undefined,
+): string | null {
+  const inicio = horaInicio?.trim().slice(0, 5);
+  const fin = horaFin?.trim().slice(0, 5);
+  if (inicio && fin) return `${inicio} a ${fin}`;
+  if (inicio) return inicio;
+  if (fin) return fin;
+  return null;
+}
+
+function SchedulePlaceholderBadge({
+  tipo,
+  className,
+}: {
+  tipo: string | null | undefined;
+  className?: string;
+}) {
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        "border-transparent bg-muted/80 text-muted-foreground font-normal",
+        className,
+      )}
+    >
+      {incidenciaSchedulePlaceholder(tipo)}
+    </Badge>
+  );
+}
+
+function IncidenciaFechaHorarioCell({ inc }: { inc: IncidenciaData }) {
+  const hasFecha = Boolean(inc.FECHA_EXACTA?.trim());
+  const horario = formatHorarioRange(inc.HORA_INICIO, inc.HORA_FIN);
+
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1 font-medium">
+        <Calendar className="h-3 w-3 shrink-0 text-muted-foreground" />
+        {hasFecha ? inc.FECHA_EXACTA : <SchedulePlaceholderBadge tipo={inc.TIPO_INCIDENCIA} />}
+      </div>
+      <div className="flex items-center gap-1 text-xs">
+        <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+        {horario ? (
+          <span className="text-muted-foreground">{horario}</span>
+        ) : (
+          <SchedulePlaceholderBadge
+            tipo={inc.TIPO_INCIDENCIA}
+            className="px-1.5 py-0 text-[10px]"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyFormField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex min-h-10 w-full items-center rounded-md border border-input bg-muted/40 px-3 py-2 text-sm">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function formatIncidenciaSessionSummary(inc: IncidenciaData): string {
+  const fecha = inc.FECHA_EXACTA?.trim();
+  const horario = formatHorarioRange(inc.HORA_INICIO, inc.HORA_FIN);
+  const esp = inc.ESPECIALIDADES?.ESPECIALIDAD?.trim();
+  const prof = inc.PROFESOR?.NOMBRE_PROFESOR?.trim();
+  const parts = [fecha, horario, prof, esp].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : incidenciaSchedulePlaceholder(inc.TIPO_INCIDENCIA);
 }
 
 function dedupeSelectOptions<T>(
@@ -508,9 +838,7 @@ function normalizeRpcEspecialidades(data: unknown): EspecialidadLookup[] {
       const record = row as Record<string, unknown>;
       return {
         ID_ESPECIALIDAD: String(record.ID_ESPECIALIDAD ?? record.id_especialidad ?? ""),
-        ESPECIALIDAD: String(
-          record.ESPECIALIDAD ?? record.especialidad ?? record.NOMBRE ?? "—",
-        ),
+        ESPECIALIDAD: String(record.ESPECIALIDAD ?? record.especialidad ?? record.NOMBRE ?? "—"),
       };
     }),
     (item) => item.ID_ESPECIALIDAD,
@@ -557,6 +885,7 @@ function IncidenciaFormDialog({
   submitLabel,
   initial,
   submitting,
+  embedded,
   filterCenterId,
   onSubmit,
 }: {
@@ -566,32 +895,46 @@ function IncidenciaFormDialog({
   submitLabel: string;
   initial?: IncidenciaData | null;
   submitting: boolean;
+  embedded?: boolean;
   filterCenterId?: string | null;
   onSubmit: (values: IncidenciaFormValues) => void;
 }) {
   const { tenantId, rol } = useActiveTenant();
 
-  const [idAlumno, setIdAlumno] = useState("");
-  const [idProfesor, setIdProfesor] = useState("");
-  const [idEspecialidad, setIdEspecialidad] = useState("");
-  const [idAula, setIdAula] = useState("");
-  const [tipoIncidencia, setTipoIncidencia] = useState<TipoIncidencia>("Falta");
-  const [fechaExacta, setFechaExacta] = useState("");
-  const [horaInicio, setHoraInicio] = useState("");
-  const [horaFin, setHoraFin] = useState("");
-  const [estadoConsulta, setEstadoConsulta] = useState("Pendiente");
-  const [notas, setNotas] = useState("");
-  const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [idMatricula, setIdMatricula] = useState("");
-  const [idHorario, setIdHorario] = useState("");
-  const [idSesion, setIdSesion] = useState("");
+  const [idAlumno, setIdAlumno] = useState(() => String(initial?.ID_ALUMNO ?? ""));
+  const [idProfesor, setIdProfesor] = useState(() => String(initial?.ID_PROFESOR ?? ""));
+  const [idEspecialidad, setIdEspecialidad] = useState(() =>
+    String(initial?.ID_ESPECIALIDAD ?? ""),
+  );
+  const [idAula, setIdAula] = useState(() => String(initial?.ID_AULA ?? ""));
+  const [tipoIncidencia, setTipoIncidencia] = useState<TipoIncidencia>(() =>
+    normalizeTipoIncidencia(initial?.TIPO_INCIDENCIA),
+  );
+  const [fechaExacta, setFechaExacta] = useState(() =>
+    toDateInputValue(initial?.FECHA_EXACTA ?? ""),
+  );
+  const [horaInicio, setHoraInicio] = useState(() =>
+    toTimeInputValue(initial?.HORA_INICIO ?? ""),
+  );
+  const [horaFin, setHoraFin] = useState(() => toTimeInputValue(initial?.HORA_FIN ?? ""));
+  const [estadoConsulta, setEstadoConsulta] = useState(() =>
+    String(initial?.ESTADO_CONSULTA ?? "Pendiente"),
+  );
+  const [notas, setNotas] = useState(() => String(initial?.NOTAS ?? ""));
+  const [selectedSessionId, setSelectedSessionId] = useState(() =>
+    String(initial?.ID_SESION ?? ""),
+  );
+  const [idMatricula, setIdMatricula] = useState(() => String(initial?.ID_MATRICULA ?? ""));
+  const [idHorario, setIdHorario] = useState(() => String(initial?.ID_HORARIO ?? ""));
+  const [idSesion, setIdSesion] = useState(() => String(initial?.ID_SESION ?? ""));
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<IncidenciaFormValues | null>(null);
 
   const formInitKeyRef = useRef<string | null>(null);
   const prevTipoRef = useRef<TipoIncidencia | null>(null);
 
-  const editingKey = initial?.ID_INCIDENCIA
-    ? String(initial.ID_INCIDENCIA)
-    : "create";
+  const editingKey = initial?.ID_INCIDENCIA ? String(initial.ID_INCIDENCIA) : "create";
+  const isEditing = Boolean(initial?.ID_INCIDENCIA);
   const selectedAlumnoId = idAlumno.trim();
 
   const isConsulta = tipoIncidencia === "Consulta";
@@ -658,7 +1001,10 @@ function IncidenciaFormDialog({
     },
   });
 
-  const recuperacionAulas = recuperacionAulasQuery.data ?? [];
+  const recuperacionAulas = useMemo(
+    () => recuperacionAulasQuery.data ?? [],
+    [recuperacionAulasQuery.data],
+  );
   const recuperacionAulasLoading = recuperacionAulasQuery.isLoading;
 
   const lookupsQuery = useQuery({
@@ -728,7 +1074,9 @@ function IncidenciaFormDialog({
   });
 
   const alumnos = Array.isArray(lookupsQuery.data?.alumnos) ? lookupsQuery.data.alumnos : [];
-  const profesores = Array.isArray(lookupsQuery.data?.profesores) ? lookupsQuery.data.profesores : [];
+  const profesores = Array.isArray(lookupsQuery.data?.profesores)
+    ? lookupsQuery.data.profesores
+    : [];
   const especialidades = Array.isArray(lookupsQuery.data?.especialidades)
     ? lookupsQuery.data.especialidades
     : [];
@@ -753,10 +1101,7 @@ function IncidenciaFormDialog({
       ),
     [especialidades],
   );
-  const alumnosOptions = useMemo(
-    () => dedupeSelectOptions(alumnos, (a) => a.ID_ALUMNO),
-    [alumnos],
-  );
+  const alumnosOptions = useMemo(() => dedupeSelectOptions(alumnos, (a) => a.ID_ALUMNO), [alumnos]);
   const profesoresOptions = useMemo(
     () => dedupeSelectOptions(profesores, (p) => p.ID_PROFESOR),
     [profesores],
@@ -897,13 +1242,18 @@ function IncidenciaFormDialog({
   };
 
   const showScheduleFields =
-    isRecuperacion || (!isConsulta && (!isFalta || Boolean(selectedSessionId)));
-  const showPersonFields = isConsulta || (isFalta && Boolean(selectedSessionId));
+    !isEditing &&
+    (isRecuperacion || (!isConsulta && (!isFalta || Boolean(selectedSessionId))));
+  const showPersonFields =
+    !isEditing && (isConsulta || (isFalta && Boolean(selectedSessionId)));
 
   const alumnoSelectValue =
     alumnosOptions.length === 0
       ? EMPTY_ALUMNOS
-      : safeSelectValue(idAlumno, alumnosOptions.map((a) => ({ id: a.ID_ALUMNO })));
+      : safeSelectValue(
+          idAlumno,
+          alumnosOptions.map((a) => ({ id: a.ID_ALUMNO })),
+        );
   const sessionSelectValue = sesionesQuery.isLoading
     ? LOADING_SESIONES
     : sesionesOptions.length === 0
@@ -949,80 +1299,107 @@ function IncidenciaFormDialog({
         ...recuperacionAulasOptions.map((a) => ({ id: a.ID_AULA })),
       ]);
 
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="sr-only">
-            Formulario para registrar o editar una incidencia o recuperación.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!lookupsReady) return;
-            if (!idAlumno.trim()) {
-              toast.error("Selecciona un alumno.");
-              return;
-            }
-            if (isFalta && !selectedSessionId) {
-              toast.error("Selecciona la sesión a la que corresponde la falta.");
-              return;
-            }
-            if (isRecuperacion && !idEspecialidad.trim()) {
-              toast.error("Selecciona una especialidad.");
-              return;
-            }
-            if (isRecuperacion && !idProfesor.trim()) {
-              toast.error("Selecciona un profesor.");
-              return;
-            }
+  const confirmSaveDialog = (
+    <AlertDialog
+      open={confirmOpen}
+      onOpenChange={(open) => {
+        setConfirmOpen(open);
+        if (!open) setPendingPayload(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Confirmar modificaciones?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Estás a punto de guardar los cambios en esta incidencia.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={submitting}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={submitting || !pendingPayload}
+            onClick={() => {
+              if (!pendingPayload) return;
+              onSubmit(pendingPayload);
+              setConfirmOpen(false);
+              setPendingPayload(null);
+            }}
+          >
+            Confirmar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
-            const payload: IncidenciaFormValues = {
-              ID_ALUMNO: idAlumno.trim(),
-              TIPO_INCIDENCIA: tipoIncidencia,
-              NOTAS: notas.trim() || null,
-              ID_PROFESOR: idProfesor || null,
-              ID_ESPECIALIDAD: idEspecialidad || null,
-              FECHA_EXACTA: null,
-              HORA_INICIO: null,
-              HORA_FIN: null,
-              ESTADO_CONSULTA: null,
-              ID_MATRICULA: null,
-              ID_HORARIO: null,
-              ID_SESION: null,
-              ID_AULA: null,
-            };
+  const formBody = (
+    <form
+      id="incidencia-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!lookupsReady && !isEditing) return;
+        if (!idAlumno.trim()) {
+          toast.error("Selecciona un alumno.");
+          return;
+        }
+        if (isFalta && !selectedSessionId) {
+          toast.error("Selecciona la sesión a la que corresponde la falta.");
+          return;
+        }
+        if (isRecuperacion && !idEspecialidad.trim()) {
+          toast.error("Selecciona una especialidad.");
+          return;
+        }
+        if (isRecuperacion && !idProfesor.trim()) {
+          toast.error("Selecciona un profesor.");
+          return;
+        }
 
-            if (isConsulta) {
-              payload.ESTADO_CONSULTA = estadoConsulta || null;
-            } else if (isFalta) {
-              payload.FECHA_EXACTA = fechaExacta || null;
-              payload.HORA_INICIO = horaInicio || null;
-              payload.HORA_FIN = horaFin || null;
-              payload.ID_SESION = idSesion || null;
-              payload.ID_MATRICULA = idMatricula || null;
-              payload.ID_HORARIO = idHorario || null;
-            } else if (isRecuperacion) {
-              payload.FECHA_EXACTA = fechaExacta || null;
-              payload.HORA_INICIO = horaInicio || null;
-              payload.HORA_FIN = horaFin || null;
-              payload.ID_AULA = idAula || null;
-            }
+        const payload: IncidenciaFormValues = {
+          ID_ALUMNO: idAlumno.trim(),
+          TIPO_INCIDENCIA: tipoIncidencia,
+          NOTAS: notas.trim() || null,
+          ID_PROFESOR: idProfesor || null,
+          ID_ESPECIALIDAD: idEspecialidad || null,
+          FECHA_EXACTA: null,
+          HORA_INICIO: null,
+          HORA_FIN: null,
+          ESTADO_CONSULTA: null,
+          ID_MATRICULA: null,
+          ID_HORARIO: null,
+          ID_SESION: null,
+          ID_AULA: null,
+        };
 
-            onSubmit(payload);
-          }}
-          className="space-y-4 pt-2"
-        >
-          {!lookupsReady ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              {lookupsQuery.isError
-                ? "No se pudieron cargar los datos del formulario."
-                : "Cargando datos del formulario..."}
-            </div>
-          ) : (
-            <>
+        if (isConsulta) {
+          payload.ESTADO_CONSULTA = estadoConsulta || null;
+        } else if (isFalta) {
+          payload.FECHA_EXACTA = fechaExacta || null;
+          payload.HORA_INICIO = horaInicio || null;
+          payload.HORA_FIN = horaFin || null;
+          payload.ID_SESION = idSesion || null;
+          payload.ID_MATRICULA = idMatricula || null;
+          payload.ID_HORARIO = idHorario || null;
+        } else if (isRecuperacion) {
+          payload.FECHA_EXACTA = fechaExacta || null;
+          payload.HORA_INICIO = horaInicio || null;
+          payload.HORA_FIN = horaFin || null;
+          payload.ID_AULA = idAula || null;
+        }
+
+        setPendingPayload(payload);
+        setConfirmOpen(true);
+      }}
+      className="space-y-4 pt-2"
+    >
+      {!lookupsReady && !isEditing ? (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          {lookupsQuery.isError
+            ? "No se pudieron cargar los datos del formulario."
+            : "Cargando datos del formulario..."}
+        </div>
+      ) : (
+        <>
           <div className="space-y-2">
             <Label>Tipo de Incidencia *</Label>
             <Select
@@ -1042,35 +1419,47 @@ function IncidenciaFormDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Alumno *</Label>
-            <Select
-              value={alumnoSelectValue}
-              onValueChange={(v) => {
-                if (v === EMPTY_ALUMNOS) return;
-                handleAlumnoChange(v === NONE_VALUE ? "" : v);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar alumno" />
-              </SelectTrigger>
-              <SelectContent>
-                {alumnosOptions.length === 0 ? (
-                  <SelectItem key={EMPTY_ALUMNOS} value={EMPTY_ALUMNOS} disabled>
-                    No hay alumnos disponibles
-                  </SelectItem>
-                ) : (
-                  alumnosOptions.map((a) => (
-                    <SelectItem key={a.ID_ALUMNO} value={a.ID_ALUMNO}>
-                      {a.NOMBRE_ALUMNO ?? "—"}
+          {isEditing && initial ? (
+            <ReadOnlyFormField
+              label="Alumno *"
+              value={initial.ALUMNOS?.NOMBRE_ALUMNO?.trim() || "Sin alumno asignado"}
+            />
+          ) : (
+            <div className="space-y-2">
+              <Label>Alumno *</Label>
+              <Select
+                value={alumnoSelectValue}
+                onValueChange={(v) => {
+                  if (v === EMPTY_ALUMNOS) return;
+                  handleAlumnoChange(v === NONE_VALUE ? "" : v);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar alumno" />
+                </SelectTrigger>
+                <SelectContent>
+                  {alumnosOptions.length === 0 ? (
+                    <SelectItem key={EMPTY_ALUMNOS} value={EMPTY_ALUMNOS} disabled>
+                      No hay alumnos disponibles
                     </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+                  ) : (
+                    alumnosOptions.map((a) => (
+                      <SelectItem key={a.ID_ALUMNO} value={a.ID_ALUMNO}>
+                        {a.NOMBRE_ALUMNO ?? "—"}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          {isFalta && selectedAlumnoId ? (
+          {isEditing && isFalta && initial ? (
+            <ReadOnlyFormField
+              label="Sesión programada"
+              value={formatIncidenciaSessionSummary(initial)}
+            />
+          ) : !isEditing && isFalta && selectedAlumnoId ? (
             <div className="space-y-2">
               <Label>Sesión programada *</Label>
               <Select
@@ -1113,17 +1502,41 @@ function IncidenciaFormDialog({
             </div>
           ) : null}
 
-          {isRecuperacion && selectedAlumnoId ? (
+          {isEditing && isRecuperacion && initial ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <ReadOnlyFormField
+                label="Fecha"
+                value={
+                  initial.FECHA_EXACTA?.trim() ||
+                  incidenciaSchedulePlaceholder(initial.TIPO_INCIDENCIA)
+                }
+              />
+              <ReadOnlyFormField
+                label="Horario"
+                value={
+                  formatHorarioRange(initial.HORA_INICIO, initial.HORA_FIN) ||
+                  incidenciaSchedulePlaceholder(initial.TIPO_INCIDENCIA)
+                }
+              />
+              <ReadOnlyFormField
+                label="Profesor"
+                value={initial.PROFESOR?.NOMBRE_PROFESOR?.trim() || "N/A"}
+              />
+              <ReadOnlyFormField
+                label="Especialidad"
+                value={initial.ESPECIALIDADES?.ESPECIALIDAD?.trim() || "N/A"}
+              />
+            </div>
+          ) : null}
+
+          {!isEditing && isRecuperacion && selectedAlumnoId ? (
             <>
               <div className="space-y-2">
                 <Label>Especialidad *</Label>
                 <Select
                   value={recuperacionEspecialidadSelectValue}
                   onValueChange={(v) => {
-                    if (
-                      v === LOADING_REC_ESPECIALIDADES ||
-                      v === EMPTY_REC_ESPECIALIDADES
-                    ) {
+                    if (v === LOADING_REC_ESPECIALIDADES || v === EMPTY_REC_ESPECIALIDADES) {
                       return;
                     }
                     handleRecuperacionEspecialidadChange(v);
@@ -1200,11 +1613,7 @@ function IncidenciaFormDialog({
                         Cargando profesores...
                       </SelectItem>
                     ) : (recuperacionProfQuery.data ?? []).length === 0 ? (
-                      <SelectItem
-                        key={EMPTY_REC_PROFESORES}
-                        value={EMPTY_REC_PROFESORES}
-                        disabled
-                      >
+                      <SelectItem key={EMPTY_REC_PROFESORES} value={EMPTY_REC_PROFESORES} disabled>
                         No hay profesores disponibles
                       </SelectItem>
                     ) : (
@@ -1231,9 +1640,7 @@ function IncidenciaFormDialog({
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        recuperacionAulasLoading
-                          ? "Cargando aulas..."
-                          : "Seleccionar aula"
+                        recuperacionAulasLoading ? "Cargando aulas..." : "Seleccionar aula"
                       }
                     />
                   </SelectTrigger>
@@ -1400,30 +1807,56 @@ function IncidenciaFormDialog({
             />
           </div>
 
-          {faltaFieldsLocked ? (
+          {faltaFieldsLocked && !isEditing ? (
             <p className="text-xs text-muted-foreground">
-              Los datos de la sesión seleccionada (
-              {fechaExacta || "—"} · {horaInicio || "—"}–{horaFin || "—"} ·{" "}
-              {profesorById.get(idProfesor) ?? "—"} ·{" "}
+              Los datos de la sesión seleccionada ({fechaExacta || "—"} · {horaInicio || "—"}–
+              {horaFin || "—"} · {profesorById.get(idProfesor) ?? "—"} ·{" "}
               {especialidadById.get(idEspecialidad) ??
                 resolveEspecialidadLabel(idEspecialidad, especialidades)}
-              {idAula ? ` · ${aulaById.get(idAula) ?? idAula}` : ""}
-              ) provienen del calendario y no se pueden modificar.
+              {idAula ? ` · ${aulaById.get(idAula) ?? idAula}` : ""}) provienen del calendario y no
+              se pueden modificar.
             </p>
           ) : null}
-            </>
-          )}
+        </>
+      )}
 
-          <DialogFooter className="pt-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={submitting || !lookupsReady}>
-              {submitting ? "Guardando..." : submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      {!embedded ? (
+        <DialogFooter className="pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={submitting || (!lookupsReady && !isEditing)}>
+            {submitting ? "Guardando..." : submitLabel}
+          </Button>
+        </DialogFooter>
+      ) : null}
+    </form>
+  );
+
+  if (embedded) {
+    if (!open) return null;
+    return (
+      <>
+        {formBody}
+        {confirmSaveDialog}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="sr-only">
+              Formulario para registrar o editar una incidencia o recuperación.
+            </DialogDescription>
+          </DialogHeader>
+          {formBody}
+        </DialogContent>
+      </Dialog>
+      {confirmSaveDialog}
+    </>
   );
 }

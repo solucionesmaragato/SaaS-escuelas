@@ -169,12 +169,13 @@ function mapDocumentos(
   );
 }
 
-export function useDocumentos(filterCenterId?: string | null) {
+export function useDocumentos(filterCenterId?: string | null, profesorId?: string | null) {
   const { tenantId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("documentos", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    profesorId ?? "all",
   ] as const;
 
   const list = useQuery({
@@ -197,6 +198,7 @@ export function useDocumentos(filterCenterId?: string | null) {
           return { documentos: [], profesores: [] };
         }
         documentoQuery = scoped;
+        if (profesorId) documentoQuery = documentoQuery.eq("ID_PROFESOR", profesorId);
       }
 
       let profesorQuery = supabase.from("PROFESOR").select(PROFESOR_LOOKUP_COLUMNS);

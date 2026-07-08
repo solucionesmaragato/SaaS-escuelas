@@ -20,17 +20,16 @@ import {
 } from "@/hooks/useGrupos";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
-import {
-  getActiveCursoEscolar,
-  type CentroData,
-  type CursoEscolarData,
-} from "@/hooks/useCentros";
+import { getActiveCursoEscolar, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
 import { useTarifas } from "@/hooks/useTarifas";
 import { useActiveTenant } from "@/context/AppContext";
 import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
 import { hasPermission } from "@/lib/rbac";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { EntityLink } from "@/components/navigation/EntityLink";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -78,12 +77,17 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import {
-  formatProfesorOptionLabel,
-  profesorSelectorOptions,
-} from "@/lib/profesorSelector";
+import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
+
+type GruposSearch = {
+  grupoId?: string;
+};
 
 export const Route = createFileRoute("/_authenticated/grupos")({
+  validateSearch: (search: Record<string, unknown>): GruposSearch => {
+    const grupoId = search.grupoId;
+    return typeof grupoId === "string" && grupoId ? { grupoId } : {};
+  },
   component: GruposPage,
 });
 
@@ -134,9 +138,7 @@ function formatHora(hora: string | null | undefined): string {
   return hora?.slice(0, 5) ?? "—";
 }
 
-function formatHorarioSlotCell(
-  horario: GrupoData["GRUPOS_HORARIOS"][number],
-): string {
+function formatHorarioSlotCell(horario: GrupoData["GRUPOS_HORARIOS"][number]): string {
   const dia = horario.DIA_SEMANA ?? "—";
   const inicio = formatHora(horario.HORA_INICIO);
   const fin = formatHora(horario.HORA_FIN);
@@ -172,8 +174,7 @@ function occupancyBadge(count: number, max: number | null) {
     );
   }
   const ratio = count / max;
-  const variant =
-    ratio >= 1 ? "destructive" : ratio >= 0.8 ? "default" : "secondary";
+  const variant = ratio >= 1 ? "destructive" : ratio >= 0.8 ? "default" : "secondary";
   return (
     <Badge variant={variant} className="text-xs font-normal tabular-nums">
       {count} / {max}
@@ -351,11 +352,13 @@ function GrupoEstadoToggle({
       className={cn(
         "inline-flex min-w-[2rem] items-center justify-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-opacity",
         active
-          ? "bg-green-100 text-green-800 hover:bg-green-200"
-          : "bg-red-100 text-red-800 hover:bg-red-200",
+          ? "bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 dark:hover:bg-green-900/40"
+          : "bg-red-100 text-red-800 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/40",
         (disabled || loading) && "pointer-events-none opacity-60",
       )}
-      aria-label={active ? "Grupo activo. Pulsa para desactivar." : "Grupo inactivo. Pulsa para activar."}
+      aria-label={
+        active ? "Grupo activo. Pulsa para desactivar." : "Grupo inactivo. Pulsa para activar."
+      }
     >
       {loading ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
@@ -378,13 +381,7 @@ function GrupoEstadoToggle({
 function GrupoEstadoBadge({ estado }: { estado: string | null | undefined }) {
   const active = isGrupoEstadoActivo(estado);
   return (
-    <Badge
-      variant="secondary"
-      className={cn(
-        "font-medium",
-        active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800",
-      )}
-    >
+    <StatusBadge status={active ? "success" : "destructive"} className="font-medium">
       <span
         className={cn(
           "mr-1.5 inline-block h-2 w-2 rounded-full md:hidden",
@@ -393,7 +390,7 @@ function GrupoEstadoBadge({ estado }: { estado: string | null | undefined }) {
         aria-hidden
       />
       <span className="hidden md:inline">{active ? "Activo" : "Inactivo"}</span>
-    </Badge>
+    </StatusBadge>
   );
 }
 
@@ -431,6 +428,8 @@ function editFormFromGrupo(g: GrupoData): EditFormState {
 }
 
 function GruposPage() {
+  const { grupoId } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const { rol, perfil, centerId } = useActiveTenant();
   const canWrite = hasPermission(rol, "grupos:write");
   const canDelete = isMasterRole(rol) || isAdminRole(rol);
@@ -468,11 +467,23 @@ function GruposPage() {
 
   const { list, create, update, remove } = useGrupos(filterCenterId);
 
-  const grupos = list.data?.grupos ?? [];
-  const diccionarioAlumnos = list.data?.diccionarioAlumnos ?? [];
-  const diccionarioProfesores = list.data?.diccionarioProfesores ?? [];
-  const diccionarioAulas = list.data?.diccionarioAulas ?? [];
-  const diccionarioEspecialidades = list.data?.diccionarioEspecialidades ?? [];
+  const grupos = useMemo(() => list.data?.grupos ?? [], [list.data?.grupos]);
+  const diccionarioAlumnos = useMemo(
+    () => list.data?.diccionarioAlumnos ?? [],
+    [list.data?.diccionarioAlumnos],
+  );
+  const diccionarioProfesores = useMemo(
+    () => list.data?.diccionarioProfesores ?? [],
+    [list.data?.diccionarioProfesores],
+  );
+  const diccionarioAulas = useMemo(
+    () => list.data?.diccionarioAulas ?? [],
+    [list.data?.diccionarioAulas],
+  );
+  const diccionarioEspecialidades = useMemo(
+    () => list.data?.diccionarioEspecialidades ?? [],
+    [list.data?.diccionarioEspecialidades],
+  );
 
   const alumnosOrdenados = useMemo(
     () =>
@@ -565,15 +576,10 @@ function GruposPage() {
       list.push(g);
       map.set(key, list);
     }
-    return Array.from(map.entries()).sort(
-      ([a], [b]) => getDaySortKey(a) - getDaySortKey(b),
-    );
+    return Array.from(map.entries()).sort(([a], [b]) => getDaySortKey(a) - getDaySortKey(b));
   }, [activeFiltered]);
 
-  const inactiveGruposSorted = useMemo(
-    () => sortGrupos(inactiveFiltered),
-    [inactiveFiltered],
-  );
+  const inactiveGruposSorted = useMemo(() => sortGrupos(inactiveFiltered), [inactiveFiltered]);
 
   const enrolledAlumnos = useMemo(() => {
     return localAlumnoIds
@@ -587,26 +593,26 @@ function GruposPage() {
 
   const availableAlumnos = useMemo(() => {
     const enrolled = new Set(localAlumnoIds);
-    
+
     let pool = diccionarioAlumnos.filter((a) => {
       const notEnrolled = !enrolled.has(a.ID_ALUMNO);
       const hasCorrectTarifa = a.MATRICULAS?.some((m) => m.ID_TARIFA === managing?.ID_TARIFA);
       const matchesCentro = a.ID_CENTRO === managing?.ID_CENTRO;
       return notEnrolled && (!managing?.ID_TARIFA || hasCorrectTarifa) && matchesCentro;
     });
-    
+
     if (addSearch.trim()) {
       const q = addSearch.toLowerCase();
       pool = pool.filter((a) => a.NOMBRE_ALUMNO?.toLowerCase().includes(q));
     }
-    
+
     return pool;
   }, [diccionarioAlumnos, localAlumnoIds, addSearch, managing?.ID_TARIFA, managing?.ID_CENTRO]);
 
   const createAlumnosFiltered = useMemo(() => {
     if (!createForm.ID_CENTRO) return [];
 
-    let pool = alumnosOrdenados.filter((a) => a.ID_CENTRO === createForm.ID_CENTRO);
+    const pool = alumnosOrdenados.filter((a) => a.ID_CENTRO === createForm.ID_CENTRO);
 
     if (!createAlumnoSearch.trim()) return pool;
     const q = createAlumnoSearch.toLowerCase();
@@ -614,17 +620,6 @@ function GruposPage() {
   }, [alumnosOrdenados, createAlumnoSearch, createForm.ID_CENTRO]);
 
   const canViewPage = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
-
-  if (isProfesor && !list.isLoading && !canViewPage) {
-    return (
-      <div className="mx-auto max-w-lg p-12 text-center">
-        <h1 className="text-lg font-semibold mb-2">Acceso restringido</h1>
-        <p className="text-sm text-muted-foreground">
-          No tienes grupos asignados. Consulta tu calendario de sesiones para ver tus clases.
-        </p>
-      </div>
-    );
-  }
 
   const persistAlumnoIds = async (nextIds: string[]) => {
     if (!managing) return;
@@ -672,11 +667,7 @@ function GruposPage() {
   };
 
   const openCreateModal = () => {
-    const initialCentro =
-      selectedCenterId ??
-      centrosOrdenados[0]?.ID_CENTRO ??
-      centerId ??
-      "";
+    const initialCentro = selectedCenterId ?? centrosOrdenados[0]?.ID_CENTRO ?? centerId ?? "";
     setCreateForm({
       ...emptyCreateForm(),
       ID_CENTRO: initialCentro,
@@ -695,6 +686,29 @@ function GruposPage() {
     () => cursosForCentro(centrosOrdenados, editForm.ID_CENTRO),
     [centrosOrdenados, editForm.ID_CENTRO],
   );
+
+  const handleCloseManaging = () => {
+    setManaging(null);
+    navigate({ search: (prev) => ({ ...prev, grupoId: undefined }), replace: true });
+  };
+
+  useEffect(() => {
+    if (grupoId && grupos.length > 0) {
+      const target = grupos.find((g) => g.ID_GRUPO === grupoId);
+      if (target) setManaging(target);
+    }
+  }, [grupoId, grupos]);
+
+  if (isProfesor && !list.isLoading && !canViewPage) {
+    return (
+      <div className="mx-auto max-w-lg p-12 text-center">
+        <h1 className="text-lg font-semibold mb-2">Acceso restringido</h1>
+        <p className="text-sm text-muted-foreground">
+          No tienes grupos asignados. Consulta tu calendario de sesiones para ver tus clases.
+        </p>
+      </div>
+    );
+  }
 
   const toggleCreateAlumno = (id: string) => {
     setCreateForm((f) => ({
@@ -748,10 +762,7 @@ function GruposPage() {
     }
 
     const selectedAlumnoIds = [...createForm.ID_ALUMNOS];
-    if (
-      pendingCreateAlumno &&
-      !selectedAlumnoIds.includes(pendingCreateAlumno.id)
-    ) {
+    if (pendingCreateAlumno && !selectedAlumnoIds.includes(pendingCreateAlumno.id)) {
       selectedAlumnoIds.push(pendingCreateAlumno.id);
     }
 
@@ -793,10 +804,7 @@ function GruposPage() {
     }));
   };
 
-  const updateEditScheduleSlot = (
-    idGrupoHorario: string,
-    patch: Partial<EditScheduleSlot>,
-  ) => {
+  const updateEditScheduleSlot = (idGrupoHorario: string, patch: Partial<EditScheduleSlot>) => {
     setEditForm((f) => ({
       ...f,
       scheduleSlots: f.scheduleSlots.map((slot) =>
@@ -870,11 +878,7 @@ function GruposPage() {
   const renderGroupRow = (g: GrupoData) => (
     <TableRow
       key={g.ID_GRUPO}
-      className={
-        canViewStudents
-          ? "cursor-pointer hover:bg-muted/50 transition-colors"
-          : undefined
-      }
+      className={canViewStudents ? "cursor-pointer hover:bg-muted/50 transition-colors" : undefined}
       onClick={canViewStudents ? () => setManaging(g) : undefined}
     >
       {isMaster && (
@@ -882,15 +886,16 @@ function GruposPage() {
           {g.ID_CLIENTE}
         </TableCell>
       )}
-      <TableCell className="font-medium truncate">{g.NOMBRE_GRUPO}</TableCell>
+      <TableCell className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
+        <EntityLink type="grupo" id={g.ID_GRUPO}>
+          {g.NOMBRE_GRUPO}
+        </EntityLink>
+      </TableCell>
       <TableCell className="text-sm align-top">
         {g.GRUPOS_HORARIOS.length > 0 ? (
           <div className="flex flex-col gap-1">
             {g.GRUPOS_HORARIOS.map((horario) => (
-              <span
-                key={horario.ID_GRUPO_HORARIO}
-                className="tabular-nums leading-snug"
-              >
+              <span key={horario.ID_GRUPO_HORARIO} className="tabular-nums leading-snug">
                 {formatHorarioSlotCell(horario)}
               </span>
             ))}
@@ -903,8 +908,18 @@ function GruposPage() {
         {g.GRUPOS_HORARIOS.length > 0 ? (
           <div className="flex flex-col gap-1">
             {g.GRUPOS_HORARIOS.map((horario) => (
-              <span key={`${horario.ID_GRUPO_HORARIO}-prof`} className="leading-snug">
-                {horario.PROFESOR?.NOMBRE_PROFESOR ?? "—"}
+              <span
+                key={`${horario.ID_GRUPO_HORARIO}-prof`}
+                className="leading-snug"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {horario.PROFESOR?.NOMBRE_PROFESOR ? (
+                  <EntityLink type="profesor" id={horario.ID_PROFESOR}>
+                    {horario.PROFESOR.NOMBRE_PROFESOR}
+                  </EntityLink>
+                ) : (
+                  "—"
+                )}
               </span>
             ))}
           </div>
@@ -916,8 +931,18 @@ function GruposPage() {
         {g.GRUPOS_HORARIOS.length > 0 ? (
           <div className="flex flex-col gap-1">
             {g.GRUPOS_HORARIOS.map((horario) => (
-              <span key={`${horario.ID_GRUPO_HORARIO}-aula`} className="leading-snug">
-                {horario.AULA?.NOMBRE_AULA ?? "—"}
+              <span
+                key={`${horario.ID_GRUPO_HORARIO}-aula`}
+                className="leading-snug"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {horario.AULA?.NOMBRE_AULA ? (
+                  <EntityLink type="aula" id={horario.ID_AULA}>
+                    {horario.AULA.NOMBRE_AULA}
+                  </EntityLink>
+                ) : (
+                  "—"
+                )}
               </span>
             ))}
           </div>
@@ -929,10 +954,7 @@ function GruposPage() {
       <TableCell className="whitespace-nowrap">
         {occupancyBadge(g.ID_ALUMNOS.length, g.PLAZAS_MAXIMAS)}
       </TableCell>
-      <TableCell
-        className="w-[88px]"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <TableCell className="w-[88px]" onClick={(e) => e.stopPropagation()}>
         {canWrite ? (
           <GrupoEstadoToggle
             estado={g.ESTADO}
@@ -988,20 +1010,18 @@ function GruposPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Gestión de Grupos</h1>
-          <p className="text-sm text-muted-foreground">
-            {grupos.length} grupos activos en el tenant
-          </p>
-        </div>
-        {canWrite && (
-          <Button onClick={openCreateModal}>
-            <Plus className="w-4 h-4 mr-2" />
-            Nuevo Grupo
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Gestión de Grupos"
+        description={`${grupos.length} grupos activos en el tenant`}
+        actions={
+          canWrite && (
+            <Button onClick={openCreateModal}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo Grupo
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -1120,9 +1140,13 @@ function GruposPage() {
         )}
       </Card>
 
-      <Dialog open={!!managing} onOpenChange={(o) => !o && setManaging(null)}>
+      <Dialog open={!!managing} onOpenChange={(o) => !o && handleCloseManaging()}>
         <DialogContent
-          className={`${isProfesor ? "max-w-lg" : "max-w-4xl"} max-h-[90vh] flex flex-col`}
+          className={cn(
+            isProfesor ? "max-w-lg" : "max-w-4xl",
+            "max-h-[90vh] flex flex-col",
+            "bg-card text-card-foreground border-border",
+          )}
         >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1137,8 +1161,21 @@ function GruposPage() {
                     managing.GRUPOS_HORARIOS.map((horario) => (
                       <span key={horario.ID_GRUPO_HORARIO} className="leading-snug">
                         {formatHorarioSlotCell(horario)} |{" "}
-                        {horario.PROFESOR?.NOMBRE_PROFESOR ?? "—"} |{" "}
-                        {horario.AULA?.NOMBRE_AULA ?? "—"}
+                        {horario.PROFESOR?.NOMBRE_PROFESOR ? (
+                          <EntityLink type="profesor" id={horario.ID_PROFESOR}>
+                            {horario.PROFESOR.NOMBRE_PROFESOR}
+                          </EntityLink>
+                        ) : (
+                          "—"
+                        )}{" "}
+                        |{" "}
+                        {horario.AULA?.NOMBRE_AULA ? (
+                          <EntityLink type="aula" id={horario.ID_AULA}>
+                            Aula {horario.AULA.NOMBRE_AULA}
+                          </EntityLink>
+                        ) : (
+                          "—"
+                        )}
                       </span>
                     ))
                   ) : (
@@ -1173,10 +1210,7 @@ function GruposPage() {
                   </li>
                 ) : (
                   enrolledAlumnos.map((alumno) => (
-                    <li
-                      key={alumno.id}
-                      className="flex items-center gap-3 rounded-md px-2 py-2"
-                    >
+                    <li key={alumno.id} className="flex items-center gap-3 rounded-md px-2 py-2">
                       <Avatar className="h-8 w-8 shrink-0">
                         <AvatarFallback className="text-xs bg-primary/10 text-primary">
                           {alumno.nombre
@@ -1187,7 +1221,11 @@ function GruposPage() {
                             .toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm truncate">{alumno.nombre}</span>
+                      <span className="text-sm truncate">
+                        <EntityLink type="alumno" id={alumno.id}>
+                          {alumno.nombre}
+                        </EntityLink>
+                      </span>
                     </li>
                   ))
                 )}
@@ -1213,15 +1251,17 @@ function GruposPage() {
                         key={alumno.id}
                         className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
                       >
-                        <span className="text-sm truncate">{alumno.nombre}</span>
+                        <span className="text-sm truncate">
+                          <EntityLink type="alumno" id={alumno.id}>
+                            {alumno.nombre}
+                          </EntityLink>
+                        </span>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                          onClick={() =>
-                            setPendingRemove({ id: alumno.id, nombre: alumno.nombre })
-                          }
+                          onClick={() => setPendingRemove({ id: alumno.id, nombre: alumno.nombre })}
                           disabled={update.isPending}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1258,7 +1298,11 @@ function GruposPage() {
                         key={alumno.ID_ALUMNO}
                         className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
                       >
-                        <span className="text-sm truncate">{alumno.NOMBRE_ALUMNO}</span>
+                        <span className="text-sm truncate">
+                          <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
+                            {alumno.NOMBRE_ALUMNO}
+                          </EntityLink>
+                        </span>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1283,7 +1327,7 @@ function GruposPage() {
           )}
 
           <DialogFooter className="shrink-0">
-            <Button variant="outline" onClick={() => setManaging(null)}>
+            <Button variant="outline" onClick={handleCloseManaging}>
               Cerrar
             </Button>
           </DialogFooter>
@@ -1301,7 +1345,12 @@ function GruposPage() {
           }
         }}
       >
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className={cn(
+            "max-w-2xl max-h-[90vh] overflow-y-auto",
+            "bg-card text-card-foreground border-border",
+          )}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-muted-foreground" />
@@ -1319,9 +1368,7 @@ function GruposPage() {
                 <Input
                   id="create-id-grupo"
                   value={createForm.ID_GRUPO}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, ID_GRUPO: e.target.value }))
-                  }
+                  onChange={(e) => setCreateForm((f) => ({ ...f, ID_GRUPO: e.target.value }))}
                   placeholder={`Auto: ${generateGrupoId()}`}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -1335,9 +1382,7 @@ function GruposPage() {
               <Input
                 id="create-nombre-grupo"
                 value={createForm.NOMBRE_GRUPO}
-                onChange={(e) =>
-                  setCreateForm((f) => ({ ...f, NOMBRE_GRUPO: e.target.value }))
-                }
+                onChange={(e) => setCreateForm((f) => ({ ...f, NOMBRE_GRUPO: e.target.value }))}
                 placeholder="Ej. Piano nivel 1"
               />
             </div>
@@ -1459,9 +1504,7 @@ function GruposPage() {
                   type="number"
                   min={1}
                   value={createForm.PLAZAS_MAXIMAS}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, PLAZAS_MAXIMAS: e.target.value }))
-                  }
+                  onChange={(e) => setCreateForm((f) => ({ ...f, PLAZAS_MAXIMAS: e.target.value }))}
                   placeholder="Ej. 8"
                 />
               </div>
@@ -1470,9 +1513,7 @@ function GruposPage() {
                 <Input
                   id="create-nivel"
                   value={createForm.NIVEL_ETAPA}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, NIVEL_ETAPA: e.target.value }))
-                  }
+                  onChange={(e) => setCreateForm((f) => ({ ...f, NIVEL_ETAPA: e.target.value }))}
                   placeholder="Ej. Iniciación"
                 />
               </div>
@@ -1635,7 +1676,11 @@ function GruposPage() {
                             toggleCreateAlumno(alumno.ID_ALUMNO);
                           }}
                         />
-                        <span className="text-sm truncate">{alumno.NOMBRE_ALUMNO}</span>
+                        <span className="text-sm truncate" onClick={(e) => e.stopPropagation()}>
+                          <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
+                            {alumno.NOMBRE_ALUMNO}
+                          </EntityLink>
+                        </span>
                       </label>
                     );
                   })
@@ -1664,7 +1709,12 @@ function GruposPage() {
       </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className={cn(
+            "max-w-2xl max-h-[90vh] overflow-y-auto",
+            "bg-card text-card-foreground border-border",
+          )}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-muted-foreground" />
@@ -1681,9 +1731,7 @@ function GruposPage() {
               <Input
                 id="nombre-grupo"
                 value={editForm.NOMBRE_GRUPO}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, NOMBRE_GRUPO: e.target.value }))
-                }
+                onChange={(e) => setEditForm((f) => ({ ...f, NOMBRE_GRUPO: e.target.value }))}
                 placeholder="Ej. Piano nivel 1"
               />
             </div>
@@ -1930,78 +1978,76 @@ function GruposPage() {
       </Dialog>
 
       {canWrite && (
-      <AlertDialog
-        open={!!pendingCreateAlumno}
-        onOpenChange={(o) => {
-          if (!o) {
-            if (skipCreateAlumnoCancelRef.current) {
-              skipCreateAlumnoCancelRef.current = false;
-              return;
+        <AlertDialog
+          open={!!pendingCreateAlumno}
+          onOpenChange={(o) => {
+            if (!o) {
+              if (skipCreateAlumnoCancelRef.current) {
+                skipCreateAlumnoCancelRef.current = false;
+                return;
+              }
+              handleCancelCreateAlumnoAdd();
             }
-            handleCancelCreateAlumnoAdd();
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Al añadir a {pendingCreateAlumno?.nombre} se generará automáticamente una
-              matrícula incompleta que deberás rellenar más adelante.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelCreateAlumnoAdd}>
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmCreateAlumnoAdd}>
-              Añadir alumno
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Estás seguro?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Al añadir a {pendingCreateAlumno?.nombre} se generará automáticamente una matrícula
+                incompleta que deberás rellenar más adelante.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleCancelCreateAlumnoAdd}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmCreateAlumnoAdd}>
+                Añadir alumno
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {canWrite && (
-      <AlertDialog open={!!pendingRemove} onOpenChange={(o) => !o && setPendingRemove(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Quitar alumno?</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Quitar a {pendingRemove?.nombre} de este grupo?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={handleConfirmRemove}
-              disabled={update.isPending}
-            >
-              {update.isPending ? "Quitando…" : "Quitar"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog open={!!pendingRemove} onOpenChange={(o) => !o && setPendingRemove(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Quitar alumno?</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Quitar a {pendingRemove?.nombre} de este grupo?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={update.isPending}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleConfirmRemove}
+                disabled={update.isPending}
+              >
+                {update.isPending ? "Quitando…" : "Quitar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {canWrite && (
-      <AlertDialog open={!!pendingAdd} onOpenChange={(o) => !o && setPendingAdd(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Añadir alumno?</AlertDialogTitle>
-            <AlertDialogDescription>
-              ¿Añadir a {pendingAdd?.nombre} a este grupo?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmAdd} disabled={update.isPending}>
-              {update.isPending ? "Añadiendo…" : "Añadir"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        <AlertDialog open={!!pendingAdd} onOpenChange={(o) => !o && setPendingAdd(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Añadir alumno?</AlertDialogTitle>
+              <AlertDialogDescription>
+                ¿Añadir a {pendingAdd?.nombre} a este grupo?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={update.isPending}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmAdd} disabled={update.isPending}>
+                {update.isPending ? "Añadiendo…" : "Añadir"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
@@ -2009,12 +2055,12 @@ function GruposPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar grupo?</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Estás seguro de que deseas eliminar el grupo «{deleting?.NOMBRE_GRUPO}»? Esta
-              acción es irreversible.
+              ¿Estás seguro de que deseas eliminar el grupo «{deleting?.NOMBRE_GRUPO}»? Esta acción
+              es irreversible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={remove.isPending}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={handleDelete}

@@ -41,12 +41,13 @@ export type IncidenciaUpdateInput = Partial<
   Omit<IncidenciaRow, "ID_INCIDENCIA" | "ID_CLIENTE" | "FECHA_CREACION" | "ULTIMA_MODIFICACION">
 >;
 
-export function useIncidencias(filterCenterId?: string | null) {
+export function useIncidencias(filterCenterId?: string | null, alumnoId?: string | null) {
   const { tenantId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("incidencias", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    alumnoId ?? "all",
   ] as const;
 
   const list = useQuery({
@@ -63,6 +64,7 @@ export function useIncidencias(filterCenterId?: string | null) {
           .select("*")
           .eq("ID_PROFESOR", perfil.ID_PROFESOR);
         query = scopeTenantQuery(query, rol, tenantId);
+        if (alumnoId) query = query.eq("ID_ALUMNO", alumnoId);
 
         const { data, error } = await query.order("FECHA_EXACTA", { ascending: false });
         if (error) throw error;
@@ -76,8 +78,9 @@ export function useIncidencias(filterCenterId?: string | null) {
         query = scopeTenantQuery(query, rol, tenantId);
         const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
         if (scoped === "empty") return [];
+        const finalQuery = alumnoId ? scoped.eq("ID_ALUMNO", alumnoId) : scoped;
 
-        const { data, error } = await scoped.order("FECHA_EXACTA", { ascending: false });
+        const { data, error } = await finalQuery.order("FECHA_EXACTA", { ascending: false });
         if (error) throw error;
         incidencias = (data ?? []) as IncidenciaRow[];
       }
@@ -85,7 +88,9 @@ export function useIncidencias(filterCenterId?: string | null) {
       // 2. Descargamos los diccionarios que ya tenemos creados para cruzar los nombres
       let alumnosQuery = supabase.from("ALUMNOS").select("*");
       alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
-      if (alumnoIds) {
+      if (alumnoId) {
+        alumnosQuery = alumnosQuery.eq("ID_ALUMNO", alumnoId);
+      } else if (alumnoIds) {
         alumnosQuery = alumnosQuery.in("ID_ALUMNO", alumnoIds);
       }
       const { data: alumnos } = await alumnosQuery;

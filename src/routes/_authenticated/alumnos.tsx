@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, MoreVertical, Plus, Search } from "lucide-react";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
-import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
-import { useAlumnosTree, type AlumnoTree } from "@/hooks/useAlumnosTree";
+import type { CentroData } from "@/hooks/useCentros";
+import { useAlumnosTree, type AlumnoCreateInput, type AlumnoTree } from "@/hooks/useAlumnosTree";
 import { useProfesores, type ProfesorData, type ProfesoresQueryData } from "@/hooks/useProfesores";
 import { toProfesorEntityOptions, type ProfesorSelectable } from "@/lib/profesorSelector";
 import { useAulas } from "@/hooks/useAulas";
@@ -12,15 +12,38 @@ import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useGruposHorarios, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { useActiveTenant } from "@/context/AppContext";
 import { canViewAlumnosModule } from "@/lib/tenantQuery";
-import { formToAlumnoPayload, resolveAlumnoCreateCenterId, shouldShowAlumnoCentroSelector, type AlumnoFormValues } from "@/lib/alumnoSchema";
+import type { OnNavigateToEntity } from "@/lib/entityNavigation";
+import {
+  formToAlumnoCreatePayload,
+  formToAlumnoUpdatePayload,
+  resolveAlumnoCreateCenterId,
+  shouldShowAlumnoCentroSelector,
+  type AlumnoFormValues,
+} from "@/lib/alumnoSchema";
 import { AlumnoDetailOverlay } from "@/components/alumnos/AlumnoDetailOverlay";
-import { AlumnoEstadoToggle } from "@/components/alumnos/AlumnoEstadoToggle";
-import { AlumnoFormDialog } from "@/components/alumnos/AlumnoFormDialog";
+import { AlumnoFormDialog, type DraftMatriculaInput } from "@/components/alumnos/AlumnoFormDialog";
 import { AlumnoQuickActions } from "@/components/alumnos/AlumnoQuickActions";
 import { PersonAvatar } from "@/components/PersonAvatar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -30,10 +53,39 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  AlumnoEstadoToggle,
+  isAlumnoActivo,
+  toggleEstadoAlumno,
+} from "@/components/alumnos/AlumnoEstadoToggle";
 import { calcAgeFromBirth } from "@/lib/alumnosMatriculasUtils";
 import { toast } from "sonner";
 
+type AlumnosSearch = {
+  alumnoId?: string;
+  studentId?: string;
+};
+
 export const Route = createFileRoute("/_authenticated/alumnos")({
+  validateSearch: (search: Record<string, unknown>): AlumnosSearch => {
+    const alumnoId =
+      typeof search.alumnoId === "string" && search.alumnoId
+        ? search.alumnoId
+        : typeof search.studentId === "string" && search.studentId
+          ? search.studentId
+          : undefined;
+    return alumnoId ? { alumnoId } : {};
+  },
   component: AlumnosPage,
 });
 
@@ -69,23 +121,156 @@ function resolveProfesoresList(listData: unknown): ProfesorSelectable[] {
   return [];
 }
 
+const sortLocale = { sensitivity: "base" } as const;
+
+function sortAlumnosByEstado(alumnos: AlumnoTree[]): AlumnoTree[] {
+  return [...alumnos].sort((a, b) => {
+    const aActive = isAlumnoActivo(a.ESTADO_ALUMNO);
+    const bActive = isAlumnoActivo(b.ESTADO_ALUMNO);
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    return (a.NOMBRE_ALUMNO ?? "").localeCompare(b.NOMBRE_ALUMNO ?? "", "es", sortLocale);
+  });
+}
+
+function isCentroFilterChecked(
+  centroId: string,
+  selectedCentros: string[],
+): boolean {
+  if (selectedCentros.length === 0) return true;
+  return selectedCentros.includes(centroId);
+}
+
+function toggleCentroFilterSelection(
+  centroId: string,
+  selectedCentros: string[],
+  allCentroIds: string[],
+): string[] {
+  if (selectedCentros.length === 0) {
+    return allCentroIds.filter((id) => id !== centroId);
+  }
+  if (selectedCentros.includes(centroId)) {
+    const next = selectedCentros.filter((id) => id !== centroId);
+    return next;
+  }
+  const next = [...selectedCentros, centroId];
+  if (next.length >= allCentroIds.length) return [];
+  return next;
+}
+
+function formatCentroFilterLabel(
+  selectedCentros: string[],
+  centros: CentroData[],
+): string {
+  if (selectedCentros.length === 0 || selectedCentros.length >= centros.length) {
+    return "Todos los centros";
+  }
+  if (selectedCentros.length === 1) {
+    return (
+      centros.find((centro) => centro.ID_CENTRO === selectedCentros[0])?.NOMBRE_CENTRO ??
+      "1 centro"
+    );
+  }
+  if (selectedCentros.length === 2) {
+    return selectedCentros
+      .map((id) => centros.find((centro) => centro.ID_CENTRO === id)?.NOMBRE_CENTRO)
+      .filter(Boolean)
+      .join(", ");
+  }
+  return `${selectedCentros.length} centros`;
+}
+
+function CentroMultiFilter({
+  id,
+  centros,
+  selectedCentros,
+  onChange,
+}: {
+  id: string;
+  centros: CentroData[];
+  selectedCentros: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const allCentroIds = useMemo(
+    () => centros.map((centro) => centro.ID_CENTRO),
+    [centros],
+  );
+  const label = formatCentroFilterLabel(selectedCentros, centros);
+  const showAllCentros = selectedCentros.length === 0;
+
+  return (
+    <div className="space-y-1.5 min-w-[200px] sm:max-w-xs">
+      <Label htmlFor={id}>Centro</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            className="h-10 w-full justify-between font-normal"
+          >
+            <span className="truncate">{label}</span>
+            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-2" align="start">
+          <button
+            type="button"
+            className={`flex w-full items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-muted/50 ${showAllCentros ? "bg-muted/20" : ""}`}
+            onClick={() => onChange([])}
+          >
+            <Checkbox checked={showAllCentros} tabIndex={-1} aria-hidden />
+            <span>Todos los centros</span>
+          </button>
+          <div className="my-1 border-t" />
+          <div className="max-h-[240px] overflow-y-auto">
+            {centros.map((centro) => {
+              const checked = isCentroFilterChecked(centro.ID_CENTRO, selectedCentros);
+              return (
+                <label
+                  key={centro.ID_CENTRO}
+                  className={`flex cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm hover:bg-muted/50 ${checked ? "bg-muted/20" : ""}`}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={() =>
+                      onChange(
+                        toggleCentroFilterSelection(
+                          centro.ID_CENTRO,
+                          selectedCentros,
+                          allCentroIds,
+                        ),
+                      )
+                    }
+                  />
+                  <span className="truncate">{centro.NOMBRE_CENTRO}</span>
+                </label>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 function AlumnosPage() {
+  const { alumnoId } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const { rol, centerId } = useActiveTenant();
   const {
     centrosOrdenados,
     showCentroFilter,
-    selectedCenterId,
-    setSelectedCenterId,
-    filterCenterId,
   } = useAdminCentroFilter();
-  const {
-    list,
-    create,
-    update,
-    createHorario,
-    updateHorario,
-    removeHorario,
-  } = useAlumnosTree(filterCenterId);
+  const [selectedCentros, setSelectedCentros] = useState<string[]>([]);
+  const selectedCentrosKey = [...selectedCentros].sort().join(",");
+  const queryFilterCenterId = useMemo(() => {
+    if (!showCentroFilter) return undefined;
+    const ids = selectedCentrosKey ? selectedCentrosKey.split(",") : [];
+    if (ids.length === 1) return ids[0];
+    return null;
+  }, [showCentroFilter, selectedCentrosKey]);
+  const { list, create, update, createMatricula, createHorario, updateHorario, removeHorario } =
+    useAlumnosTree(queryFilterCenterId);
   const profesores = useProfesores();
   const aulas = useAulas();
   const tarifas = useTarifas();
@@ -93,14 +278,29 @@ function AlumnosPage() {
   const gruposHorarios = useGruposHorarios();
 
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"Todos" | "Activo" | "Inactivo">("Todos");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [statusConfirming, setStatusConfirming] = useState<AlumnoTree | null>(null);
 
   const showCentroSelector = shouldShowAlumnoCentroSelector(rol, centrosOrdenados.length);
   const assignedCenterId = centerId ?? null;
-  const defaultCreateCenterId = selectedCenterId ?? centrosOrdenados[0]?.ID_CENTRO ?? null;
+  const defaultCreateCenterId =
+    selectedCentros[0] ?? centrosOrdenados[0]?.ID_CENTRO ?? null;
 
   const alumnos = asArray<AlumnoTree>(list.data);
+
+  const alumnosByCentro = useMemo(() => {
+    if (!showCentroFilter) return alumnos;
+    const ids = selectedCentrosKey ? selectedCentrosKey.split(",") : [];
+    if (ids.length === 0 || ids.length >= centrosOrdenados.length) {
+      return alumnos;
+    }
+    const allowed = new Set(ids);
+    return alumnos.filter(
+      (alumno) => alumno.ID_CENTRO != null && allowed.has(alumno.ID_CENTRO),
+    );
+  }, [alumnos, showCentroFilter, selectedCentrosKey, centrosOrdenados.length]);
 
   const overlayAlumno = useMemo(
     () => alumnos.find((a) => a.ID_ALUMNO === overlay?.id) ?? null,
@@ -116,9 +316,7 @@ function AlumnosPage() {
 
   const lookups = useMemo(
     () => ({
-      profesorById: new Map(
-        profesoresArray.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR]),
-      ),
+      profesorById: new Map(profesoresArray.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR])),
       aulaById: new Map(aulasArray.map((a) => [a.ID_AULA, a.NOMBRE_AULA])),
       tarifaById: new Map(tarifasArray.map((t) => [t.ID_TARIFA, t.SERVICIO])),
       especialidadById: new Map(
@@ -155,21 +353,71 @@ function AlumnosPage() {
   const isPageLoading = list.isLoading || gruposHorarios.list.isLoading;
 
   const filtered = useMemo(() => {
-    const rows = alumnos;
-    if (!query.trim()) return rows;
-    const q = query.toLowerCase();
-    return rows.filter(
-      (a) =>
-        a.NOMBRE_ALUMNO?.toLowerCase().includes(q) ||
-        a.MAIL?.toLowerCase().includes(q) ||
-        a.TLF_COMUNICACION?.toLowerCase().includes(q) ||
-        a.DNI?.toLowerCase().includes(q) ||
-        a.ESTADO_MATRICULA?.toLowerCase().includes(q),
-    );
-  }, [alumnos, query]);
+    let rows = alumnosByCentro;
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      rows = rows.filter(
+        (a) =>
+          a.NOMBRE_ALUMNO?.toLowerCase().includes(q) ||
+          a.MAIL?.toLowerCase().includes(q) ||
+          a.TLF_COMUNICACION?.toLowerCase().includes(q) ||
+          a.DNI?.toLowerCase().includes(q) ||
+          a.ESTADO_MATRICULA?.toLowerCase().includes(q),
+      );
+    }
+    if (statusFilter !== "Todos") {
+      rows = rows.filter((a) =>
+        statusFilter === "Activo"
+          ? isAlumnoActivo(a.ESTADO_ALUMNO)
+          : !isAlumnoActivo(a.ESTADO_ALUMNO),
+      );
+    }
+    return sortAlumnosByEstado(rows);
+  }, [alumnosByCentro, query, statusFilter]);
 
   const horarioSaving =
     createHorario.isPending || updateHorario.isPending || removeHorario.isPending;
+
+  const handleCloseOverlay = useCallback(() => {
+    setOverlay(null);
+    navigate({
+      search: (prev) => ({ ...prev, alumnoId: undefined, studentId: undefined }),
+      replace: true,
+    });
+  }, [navigate]);
+
+  const handleOpenAlumnoOverlay = useCallback(
+    (id: string, mode: "detail" | "edit" = "detail") => {
+      setOverlay({ id, mode });
+      navigate({
+        search: (prev) => ({ ...prev, alumnoId: id, studentId: undefined }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
+  }, []);
+
+  const handleNavigateToEntity = useCallback<OnNavigateToEntity>(
+    (target) => {
+      setOverlay(null);
+      void navigate({
+        to: target.to,
+        search: {
+          ...target.search,
+          alumnoId: undefined,
+          studentId: undefined,
+        },
+      });
+    },
+    [navigate],
+  );
 
   const handlePatchAlumno = async (
     alumnoId: string,
@@ -184,12 +432,24 @@ function AlumnosPage() {
     }
   };
 
-  const handleToggleEstado = async (alumnoId: string, nextEstado: "Activo" | "Inactivo") => {
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirming) return;
+    const alumno = statusConfirming;
+    const isDeactivating = isAlumnoActivo(alumno.ESTADO_ALUMNO);
+    const nextEstado = toggleEstadoAlumno(alumno.ESTADO_ALUMNO);
     try {
-      await update.mutateAsync({ id: alumnoId, patch: { ESTADO_ALUMNO: nextEstado } });
-      toast.success(`Estado actualizado a ${nextEstado}.`);
+      await update.mutateAsync({
+        id: alumno.ID_ALUMNO,
+        patch: { ESTADO_ALUMNO: nextEstado },
+      });
+      toast.success(
+        isDeactivating
+          ? `${alumno.NOMBRE_ALUMNO} dado de baja correctamente.`
+          : `${alumno.NOMBRE_ALUMNO} reactivado.`,
+      );
+      setStatusConfirming(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "No se pudo actualizar el estado.");
+      toast.error(err instanceof Error ? err.message : "Error al cambiar el estado.");
     }
   };
 
@@ -197,8 +457,12 @@ function AlumnosPage() {
     values: AlumnoFormValues,
     mode: "create" | "edit",
     editAlumnoId?: string | null,
+    draft?: { id: string; matriculas: DraftMatriculaInput[] },
   ) => {
-    const payload = formToAlumnoPayload(values);
+    const payload =
+      mode === "create"
+        ? formToAlumnoCreatePayload(values)
+        : formToAlumnoUpdatePayload(values);
     try {
       if (mode === "create") {
         const idCentro = resolveAlumnoCreateCenterId(values, {
@@ -213,10 +477,28 @@ function AlumnosPage() {
           );
           return;
         }
-        const created = await create.mutateAsync({ ...payload, ID_CENTRO: idCentro });
+        const created = await create.mutateAsync({
+          ...payload,
+          ID_CENTRO: idCentro,
+          ...(draft?.id ? { ID_ALUMNO: draft.id } : {}),
+        } as AlumnoCreateInput);
+        if (draft?.matriculas.length) {
+          await Promise.all(
+            draft.matriculas.map((mat) =>
+              createMatricula.mutateAsync({
+                ...mat,
+                ID_ALUMNO: created.ID_ALUMNO,
+                ID_CENTRO: idCentro,
+                ESTADO: "Activo",
+                FECHA_ALTA: new Date().toISOString().slice(0, 10),
+                FECHA_BAJA: null,
+              }),
+            ),
+          );
+        }
         toast.success("Alumno creado");
         setCreating(false);
-        setOverlay({ id: created.ID_ALUMNO, mode: "detail" });
+        handleOpenAlumnoOverlay(created.ID_ALUMNO, "detail");
       } else {
         const alumnoId = editAlumnoId ?? overlay?.id;
         if (!alumnoId) return;
@@ -229,13 +511,11 @@ function AlumnosPage() {
     }
   };
 
-  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
-  const handleEditOverlay = useCallback(() => {
-    setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
-  }, []);
-  const handleCancelEditOverlay = useCallback(() => {
-    setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
-  }, []);
+  useEffect(() => {
+    if (alumnoId) {
+      setOverlay({ id: alumnoId, mode: "detail" });
+    }
+  }, [alumnoId]);
 
   if (!canViewAlumnosModule(rol)) {
     return (
@@ -247,17 +527,19 @@ function AlumnosPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Alumnos</h1>
-          <p className="text-sm text-muted-foreground">
-            {isPageLoading ? "Cargando…" : `${filtered.length} en total · ordenados alfabéticamente`}
-          </p>
-        </div>
-        <Button onClick={() => setCreating(true)} disabled={isPageLoading}>
-          <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
-        </Button>
-      </div>
+      <PageHeader
+        title="Alumnos"
+        description={
+          isPageLoading
+            ? "Cargando…"
+            : `${filtered.length} en total · activos primero, luego alfabético`
+        }
+        actions={
+          <Button onClick={() => setCreating(true)} disabled={isPageLoading}>
+            <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
+          </Button>
+        }
+      />
 
       <Card className="p-4">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -271,13 +553,31 @@ function AlumnosPage() {
             />
           </div>
           {showCentroFilter && (
-            <CentroTableFilter
+            <CentroMultiFilter
               id="alumnos-centro-filter"
               centros={centrosOrdenados}
-              value={selectedCenterId}
-              onChange={setSelectedCenterId}
+              selectedCentros={selectedCentros}
+              onChange={setSelectedCentros}
             />
           )}
+          <div className="space-y-2">
+            <Label htmlFor="alumnos-estado-filter" className="sr-only">
+              Estado
+            </Label>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) => setStatusFilter(value as "Todos" | "Activo" | "Inactivo")}
+            >
+              <SelectTrigger id="alumnos-estado-filter" className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Todos">Todos</SelectItem>
+                <SelectItem value="Activo">Activos</SelectItem>
+                <SelectItem value="Inactivo">Inactivos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {list.isError && (
@@ -288,8 +588,7 @@ function AlumnosPage() {
 
         {gruposHorarios.list.isError && (
           <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-            Error al cargar horarios de grupo:{" "}
-            {(gruposHorarios.list.error as Error)?.message}
+            Error al cargar horarios de grupo: {(gruposHorarios.list.error as Error)?.message}
           </div>
         )}
 
@@ -310,6 +609,7 @@ function AlumnosPage() {
                 <TableHead className="font-semibold">Total Mensual</TableHead>
                 <TableHead className="text-right font-semibold">Acciones</TableHead>
                 <TableHead className="text-right font-semibold">Estado</TableHead>
+                <TableHead className="w-[50px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -331,8 +631,17 @@ function AlumnosPage() {
                 filtered.map((a) => (
                   <TableRow
                     key={a.ID_ALUMNO}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Ver detalle de ${a.NOMBRE_ALUMNO}`}
                     className="cursor-pointer transition-colors hover:bg-muted/50"
-                    onClick={() => setOverlay({ id: a.ID_ALUMNO, mode: "detail" })}
+                    onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "detail")}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleOpenAlumnoOverlay(a.ID_ALUMNO, "detail");
+                      }
+                    }}
                   >
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -347,21 +656,35 @@ function AlumnosPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {formatAge(a.NACIMIENTO)}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {a.DNI ?? "—"}
-                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{a.DNI ?? "—"}</TableCell>
                     <TableCell className="font-medium tabular-nums">
                       {formatCurrency(a.TOTAL_MENSUAL)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <AlumnoQuickActions alumno={a} />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <AlumnoEstadoToggle
                         alumno={a}
                         disabled={update.isPending}
-                        onToggle={(next) => void handleToggleEstado(a.ID_ALUMNO, next)}
+                        onClick={() => setStatusConfirming(a)}
                       />
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "edit")}
+                          >
+                            Editar
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))
@@ -402,11 +725,14 @@ function AlumnosPage() {
           await removeHorario.mutateAsync(id);
           toast.success("Horario eliminado");
         }}
+        onNavigateToEntity={handleNavigateToEntity}
       />
 
-      <AlumnoFormDialog
-        open={creating}
-        onClose={() => setCreating(false)}
+      {creating ? (
+        <AlumnoFormDialog
+          key="create"
+          open
+          onClose={() => setCreating(false)}
         title="Nuevo alumno"
         submitLabel="Crear"
         submitting={create.isPending}
@@ -419,7 +745,7 @@ function AlumnosPage() {
         showCentroSelector={showCentroSelector}
         assignedCenterId={assignedCenterId}
         defaultCreateCenterId={defaultCreateCenterId}
-        onSubmit={(values) => handleAlumnoSubmit(values, "create")}
+        onSubmit={(values, draft) => handleAlumnoSubmit(values, "create", undefined, draft)}
         onCreateHorario={async (input) => {
           await createHorario.mutateAsync(input);
         }}
@@ -432,7 +758,44 @@ function AlumnosPage() {
           toast.success("Horario eliminado");
         }}
       />
+      ) : null}
 
+      <AlertDialog open={!!statusConfirming} onOpenChange={(o) => !o && setStatusConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {statusConfirming && isAlumnoActivo(statusConfirming.ESTADO_ALUMNO)
+                ? "Dar de baja al alumno"
+                : "Reactivar alumno"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {statusConfirming && isAlumnoActivo(statusConfirming.ESTADO_ALUMNO) ? (
+                <>
+                  ¿Seguro que quieres dar de baja a <b>{statusConfirming.NOMBRE_ALUMNO}</b>? El
+                  alumno pasará a estado inactivo.
+                </>
+              ) : (
+                <>
+                  ¿Estás seguro de que quieres reactivar a <b>{statusConfirming?.NOMBRE_ALUMNO}</b>?
+                  El alumno volverá a estar activo.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={update.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmStatusChange();
+              }}
+              disabled={update.isPending}
+            >
+              {update.isPending ? "Guardando..." : "Confirmar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

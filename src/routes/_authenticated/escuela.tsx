@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { Fragment, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import {
+  ArrowLeft,
   Building2,
   ChevronDown,
   MapPin,
+  MoreVertical,
   Pencil,
   Plus,
   Search,
@@ -13,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   useCentros,
+  getActiveCursoEscolar,
   type CentroCreateInput,
   type CentroData,
   type CursoEscolarCreateInput,
@@ -35,6 +39,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Table,
   TableBody,
@@ -43,6 +48,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +70,9 @@ import {
   verifyCursoDeleteOtp,
 } from "@/services/cursoDeleteVerification";
 import { toast } from "sonner";
+import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
 
 export const Route = createFileRoute("/_authenticated/escuela")({
   component: EscuelaPage,
@@ -95,24 +109,218 @@ function sortCursosEscolares(cursos: CursoEscolarData[]): CursoEscolarData[] {
   });
 }
 
-type CursoFormTarget =
-  | { mode: "create" }
-  | { mode: "edit"; cursoId: string };
+type CursoFormTarget = { mode: "create" } | { mode: "edit"; cursoId: string };
 
-function estadoBadgeClass(estado: string | null | undefined): string {
+function estadoBadgeStatus(estado: string | null | undefined): StatusBadgeVariant {
   const normalized = estado?.trim().toLowerCase();
-  if (normalized === "activo") {
-    return "bg-emerald-100 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-200";
-  }
-  return "bg-slate-100 text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200";
+  return normalized === "activo" ? "success" : "neutral";
 }
 
-const TABLE_COLS = 4;
+const TABLE_COLS = 5;
+
+function centroToFormInput(centro: CentroData): CentroCreateInput {
+  return {
+    NOMBRE_CENTRO: centro.NOMBRE_CENTRO ?? "",
+    DIRECCION: centro.DIRECCION ?? "",
+    TELEFONO_CENTRO: centro.TELEFONO_CENTRO,
+    EMAIL_CENTRO: centro.EMAIL_CENTRO,
+  };
+}
+
+function CentroDetailOverlay({
+  open,
+  mode,
+  centro,
+  canEdit,
+  submitting,
+  onClose,
+  onEdit,
+  onCancelEdit,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "detail" | "edit";
+  centro: CentroData | null;
+  canEdit: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmit: (values: CentroCreateInput) => Promise<void>;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === "edit") onCancelEdit();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, mode, onClose, onCancelEdit]);
+
+  if (!open) return null;
+
+  if (!centro) {
+    return createPortal(
+      <>
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/10"
+          aria-label="Cerrar"
+          onClick={onClose}
+        />
+        <div
+          className={cn(
+            ALUMNO_OVERLAY_PANEL_CLASS,
+            "max-w-xl flex items-center justify-center p-6",
+          )}
+        >
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </>,
+      document.body,
+    );
+  }
+
+  const cursos = sortCursosEscolares(centro.CURSO_ESCOLAR ?? []);
+  const cursoActivo = getActiveCursoEscolar(cursos);
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-40 bg-black/10"
+        aria-label="Cerrar detalle del centro"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="centro-overlay-title"
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-xl p-6")}
+      >
+        {mode === "edit" ? (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 shrink-0"
+                  onClick={onCancelEdit}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver
+                </Button>
+                <h2 id="centro-overlay-title" className="truncate text-xl font-semibold">
+                  Editar sede
+                </h2>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar"
+                onClick={onClose}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </header>
+            <CentroFormDialog
+              open
+              embedded
+              isEdit
+              initial={centro}
+              submitting={submitting}
+              onClose={onCancelEdit}
+              onSubmit={onSubmit}
+            />
+            <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={onCancelEdit}>
+                Cancelar
+              </Button>
+              <Button type="submit" form="centro-form" disabled={submitting}>
+                {submitting ? "Guardando..." : "Guardar cambios"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 id="centro-overlay-title" className="truncate text-xl font-semibold">
+                  Vista detalle
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {canEdit && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    onClick={onEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Cerrar"
+                  onClick={onClose}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </header>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              <div className="col-span-2">
+                <dt className="text-muted-foreground">Nombre</dt>
+                <dd className="font-semibold">{centro.NOMBRE_CENTRO}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-muted-foreground">Dirección</dt>
+                <dd>{centro.DIRECCION || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Teléfono</dt>
+                <dd>{centro.TELEFONO_CENTRO || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Email</dt>
+                <dd>{centro.EMAIL_CENTRO || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Curso activo</dt>
+                <dd>{cursoActivo?.NOMBRE_CURSO ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Cursos registrados</dt>
+                <dd>{cursos.length}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+const OTP_LENGTH = 6;
 
 const CURSO_ESCOLAR_GRID =
   "grid grid-cols-[minmax(0,2fr)_minmax(0,0.85fr)_minmax(0,1fr)_minmax(0,1fr)_4.75rem] items-center gap-x-3";
-
-const OTP_LENGTH = 6;
 
 function parseIsoDate(value: string): Date | undefined {
   if (!value) return undefined;
@@ -142,10 +350,7 @@ function FestivosPicker({
   maxDate?: string;
 }) {
   const selected = useMemo(
-    () =>
-      value
-        .map((d) => parseIsoDate(d))
-        .filter((d): d is Date => d !== undefined),
+    () => value.map((d) => parseIsoDate(d)).filter((d): d is Date => d !== undefined),
     [value],
   );
 
@@ -261,9 +466,7 @@ function CursoEscolarForm({
       return {
         ...prev,
         [field]: value,
-        FESTIVOS: prev.FESTIVOS.filter(
-          (f) => (!inicio || f >= inicio) && (!fin || f <= fin),
-        ),
+        FESTIVOS: prev.FESTIVOS.filter((f) => (!inicio || f >= inicio) && (!fin || f <= fin)),
       };
     });
   };
@@ -401,8 +604,7 @@ function CursoDeleteOtpModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const otpValid =
-    verificationOtp.length === OTP_LENGTH && /^\d{6}$/.test(verificationOtp);
+  const otpValid = verificationOtp.length === OTP_LENGTH && /^\d{6}$/.test(verificationOtp);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -429,9 +631,7 @@ function CursoDeleteOtpModal({
             value={verificationOtp}
             className="text-center text-lg tracking-[0.35em] tabular-nums"
             required
-            onChange={(e) =>
-              onOtpChange(e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH))
-            }
+            onChange={(e) => onOtpChange(e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH))}
           />
         </div>
 
@@ -490,9 +690,9 @@ function CursoEscolarHistoryTable({
         >
           <span className="truncate font-medium">{curso.NOMBRE_CURSO}</span>
           <span>
-            <Badge variant="secondary" className={estadoBadgeClass(curso.ESTADO)}>
+            <StatusBadge status={estadoBadgeStatus(curso.ESTADO)}>
               {curso.ESTADO?.trim() || "—"}
-            </Badge>
+            </StatusBadge>
           </span>
           <span className="tabular-nums text-muted-foreground">
             {formatDisplayDate(curso.FECHA_INICIO)}
@@ -562,7 +762,6 @@ function EmpresaDatosDialog({
       form.TLF_REAL.trim().length > 0 &&
       form.URL_WEB.trim().length > 0 &&
       form.EMAIL_CLIENTE.trim().length > 0 &&
-      form.APP_LOGO.trim().length > 0 &&
       form.CIF.trim().length > 0 &&
       form.DIRECCION.trim().length > 0,
     [form],
@@ -648,29 +847,10 @@ function EmpresaDatosDialog({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="APP_LOGO">Logo (URL) *</Label>
-              <Input
-                id="APP_LOGO"
-                name="APP_LOGO"
-                type="url"
-                value={form.APP_LOGO}
-                onChange={setField("APP_LOGO")}
-                placeholder="https://"
-                required
-              />
-            </div>
-
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="CIF">CIF *</Label>
-                <Input
-                  id="CIF"
-                  name="CIF"
-                  value={form.CIF}
-                  onChange={setField("CIF")}
-                  required
-                />
+                <Input id="CIF" name="CIF" value={form.CIF} onChange={setField("CIF")} required />
               </div>
               <div className="space-y-2 sm:col-span-1">
                 <Label htmlFor="DIRECCION">Dirección *</Label>
@@ -756,9 +936,7 @@ function CentroExpandedDetail({
       toast.success("Código de verificación enviado a tu correo corporativo.");
     } catch (err) {
       const message =
-        err instanceof Error
-          ? err.message
-          : "No se pudo generar el código de verificación.";
+        err instanceof Error ? err.message : "No se pudo generar el código de verificación.";
       toast.error(message);
     } finally {
       setSendingOtp(false);
@@ -889,13 +1067,19 @@ function CentroExpandedDetail({
   );
 }
 
-function CreateCentroDialog({
+function CentroFormDialog({
   open,
+  embedded,
+  isEdit,
+  initial,
   submitting,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  embedded?: boolean;
+  isEdit?: boolean;
+  initial?: CentroData;
   submitting: boolean;
   onClose: () => void;
   onSubmit: (values: CentroCreateInput) => Promise<void>;
@@ -903,91 +1087,107 @@ function CreateCentroDialog({
   const [form, setForm] = useState<CentroCreateInput>(EMPTY_FORM);
 
   useEffect(() => {
-    if (open) setForm(EMPTY_FORM);
-  }, [open]);
+    if (!open) return;
+    if (isEdit && initial) {
+      setForm(centroToFormInput(initial));
+    } else {
+      setForm(EMPTY_FORM);
+    }
+  }, [open, isEdit, initial]);
+
+  const formBody = (
+    <form
+      id={embedded ? "centro-form" : undefined}
+      className="space-y-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!form.NOMBRE_CENTRO.trim() || !form.DIRECCION.trim()) return;
+        await onSubmit({
+          NOMBRE_CENTRO: form.NOMBRE_CENTRO.trim(),
+          DIRECCION: form.DIRECCION.trim(),
+          TELEFONO_CENTRO: form.TELEFONO_CENTRO?.trim() || null,
+          EMAIL_CENTRO: form.EMAIL_CENTRO?.trim() || null,
+        });
+      }}
+    >
+      <div className="space-y-2">
+        <Label htmlFor={embedded ? "nombre-centro-embedded" : "nombre-centro"}>
+          Nombre de la sede *
+        </Label>
+        <Input
+          id={embedded ? "nombre-centro-embedded" : "nombre-centro"}
+          value={form.NOMBRE_CENTRO}
+          onChange={(e) => setForm((prev) => ({ ...prev, NOMBRE_CENTRO: e.target.value }))}
+          placeholder="Ej. Sede Centro"
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={embedded ? "direccion-centro-embedded" : "direccion-centro"}>
+          Dirección *
+        </Label>
+        <Input
+          id={embedded ? "direccion-centro-embedded" : "direccion-centro"}
+          value={form.DIRECCION}
+          onChange={(e) => setForm((prev) => ({ ...prev, DIRECCION: e.target.value }))}
+          placeholder="Calle, número, ciudad"
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={embedded ? "telefono-centro-embedded" : "telefono-centro"}>Teléfono</Label>
+        <Input
+          id={embedded ? "telefono-centro-embedded" : "telefono-centro"}
+          type="tel"
+          value={form.TELEFONO_CENTRO ?? ""}
+          onChange={(e) => setForm((prev) => ({ ...prev, TELEFONO_CENTRO: e.target.value }))}
+          placeholder="+34 600 000 000"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={embedded ? "email-centro-embedded" : "email-centro"}>Email</Label>
+        <Input
+          id={embedded ? "email-centro-embedded" : "email-centro"}
+          type="email"
+          value={form.EMAIL_CENTRO ?? ""}
+          onChange={(e) => setForm((prev) => ({ ...prev, EMAIL_CENTRO: e.target.value }))}
+          placeholder="sede@escuela.com"
+        />
+      </div>
+
+      {!embedded && (
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={submitting || !form.NOMBRE_CENTRO.trim() || !form.DIRECCION.trim()}
+          >
+            {submitting ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear sede"}
+          </Button>
+        </DialogFooter>
+      )}
+    </form>
+  );
+
+  if (embedded) return formBody;
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Añadir nueva sede</DialogTitle>
+          <DialogTitle>{isEdit ? "Editar sede" : "Añadir nueva sede"}</DialogTitle>
           <DialogDescription>
-            Crea una nueva sucursal para la escuela activa. El identificador de sede se genera
-            automáticamente en el servidor.
+            {isEdit
+              ? "Actualiza los datos de contacto y ubicación de la sede."
+              : "Crea una nueva sucursal para la escuela activa. El identificador de sede se genera automáticamente en el servidor."}
           </DialogDescription>
         </DialogHeader>
-
-        <form
-          className="space-y-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (!form.NOMBRE_CENTRO.trim() || !form.DIRECCION.trim()) return;
-            await onSubmit({
-              NOMBRE_CENTRO: form.NOMBRE_CENTRO.trim(),
-              DIRECCION: form.DIRECCION.trim(),
-              TELEFONO_CENTRO: form.TELEFONO_CENTRO?.trim() || null,
-              EMAIL_CENTRO: form.EMAIL_CENTRO?.trim() || null,
-            });
-          }}
-        >
-          <div className="space-y-2">
-            <Label htmlFor="nombre-centro">Nombre de la sede *</Label>
-            <Input
-              id="nombre-centro"
-              value={form.NOMBRE_CENTRO}
-              onChange={(e) => setForm((prev) => ({ ...prev, NOMBRE_CENTRO: e.target.value }))}
-              placeholder="Ej. Sede Centro"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="direccion-centro">Dirección *</Label>
-            <Input
-              id="direccion-centro"
-              value={form.DIRECCION}
-              onChange={(e) => setForm((prev) => ({ ...prev, DIRECCION: e.target.value }))}
-              placeholder="Calle, número, ciudad"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="telefono-centro">Teléfono</Label>
-            <Input
-              id="telefono-centro"
-              type="tel"
-              value={form.TELEFONO_CENTRO ?? ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, TELEFONO_CENTRO: e.target.value }))}
-              placeholder="+34 600 000 000"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="email-centro">Email</Label>
-            <Input
-              id="email-centro"
-              type="email"
-              value={form.EMAIL_CENTRO ?? ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, EMAIL_CENTRO: e.target.value }))}
-              placeholder="sede@escuela.com"
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                submitting || !form.NOMBRE_CENTRO.trim() || !form.DIRECCION.trim()
-              }
-            >
-              {submitting ? "Guardando..." : "Crear sede"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {formBody}
       </DialogContent>
     </Dialog>
   );
@@ -1017,8 +1217,19 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
   const [creating, setCreating] = useState(false);
   const [empresaOpen, setEmpresaOpen] = useState(false);
   const [expandedCentroId, setExpandedCentroId] = useState<string | null>(null);
+  const [centroOverlay, setCentroOverlay] = useState<{
+    id: string;
+    mode: "detail" | "edit";
+  } | null>(null);
+  const [updatingCentro, setUpdatingCentro] = useState(false);
 
   const canCreateCentro = canManageUsuarios(rol);
+
+  const overlayCentro = useMemo(
+    () =>
+      centroOverlay ? (list.data?.find((c) => c.ID_CENTRO === centroOverlay.id) ?? null) : null,
+    [centroOverlay, list.data],
+  );
 
   const empresaFormInitial = useMemo(
     () => (empresa.data ? empresaToFormInput(empresa.data) : EMPTY_EMPRESA_FORM),
@@ -1026,9 +1237,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
   );
 
   const escuelaNombre =
-    empresa.data?.NOMBRE_ESCUELA?.trim() ||
-    cliente?.NOMBRE_ESCUELA?.trim() ||
-    "tu escuela";
+    empresa.data?.NOMBRE_ESCUELA?.trim() || cliente?.NOMBRE_ESCUELA?.trim() || "tu escuela";
 
   const filtered = useMemo(() => {
     const rows = list.data ?? [];
@@ -1048,8 +1257,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
       await createCurso.mutateAsync(values);
       toast.success("Curso escolar creado correctamente.");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "No se pudo crear el curso escolar.";
+      const message = err instanceof Error ? err.message : "No se pudo crear el curso escolar.";
       toast.error(
         message.includes("[ERROR_MULTITENANT]")
           ? "No se pudo identificar la escuela activa. Cambia de workspace e inténtalo de nuevo."
@@ -1111,25 +1319,58 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
     }
   };
 
+  const handleUpdateCentro = useCallback(
+    async (values: CentroCreateInput) => {
+      if (!centroOverlay?.id || !canCreateCentro) return;
+      setUpdatingCentro(true);
+      try {
+        const { error } = await supabase
+          .from("CENTROS")
+          .update({
+            NOMBRE_CENTRO: values.NOMBRE_CENTRO.trim(),
+            DIRECCION: values.DIRECCION.trim(),
+            TELEFONO_CENTRO: values.TELEFONO_CENTRO?.trim() || null,
+            EMAIL_CENTRO: values.EMAIL_CENTRO?.trim() || null,
+          })
+          .eq("ID_CENTRO", centroOverlay.id);
+        if (error) throw error;
+        await list.refetch();
+        toast.success("Sede actualizada correctamente.");
+        setCentroOverlay((prev) => (prev ? { ...prev, mode: "detail" } : null));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "No se pudo actualizar la sede.";
+        toast.error(
+          message.includes("[ERROR_MULTITENANT]")
+            ? "No se pudo identificar la escuela activa. Cambia de workspace e inténtalo de nuevo."
+            : message,
+        );
+        throw err;
+      } finally {
+        setUpdatingCentro(false);
+      }
+    },
+    [centroOverlay?.id, canCreateCentro, list],
+  );
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Escuela</h1>
-          <p className="text-sm text-muted-foreground">Configuración de {escuelaNombre}</p>
-        </div>
-        {canAccess && (
-          <Button
-            type="button"
-            variant="outline"
-            className="shrink-0 gap-2 shadow-sm"
-            onClick={() => setEmpresaOpen(true)}
-          >
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-            Modificar/Ver datos empresa
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Escuela"
+        description={`Configuración de ${escuelaNombre}`}
+        actions={
+          canAccess && (
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 gap-2 shadow-sm"
+              onClick={() => setEmpresaOpen(true)}
+            >
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              Modificar/Ver datos empresa
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1175,6 +1416,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
                 <TableHead className="h-9 text-xs font-semibold">Dirección</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Teléfono</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Email</TableHead>
+                <TableHead className="h-9 w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1234,6 +1476,42 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
                         <TableCell className="py-2.5 text-sm">
                           {centro.EMAIL_CENTRO || "—"}
                         </TableCell>
+                        <TableCell
+                          className="py-2.5 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                aria-label="Acciones de la sede"
+                              >
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  setCentroOverlay({ id: centro.ID_CENTRO, mode: "detail" })
+                                }
+                              >
+                                Ver detalle
+                              </DropdownMenuItem>
+                              {canCreateCentro && (
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setCentroOverlay({ id: centro.ID_CENTRO, mode: "edit" })
+                                  }
+                                >
+                                  Editar
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
                       </TableRow>
 
                       {isExpanded && (
@@ -1260,11 +1538,23 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
         </div>
       </Card>
 
-      <CreateCentroDialog
+      <CentroFormDialog
         open={creating}
         submitting={create.isPending}
         onClose={() => setCreating(false)}
         onSubmit={handleCreate}
+      />
+
+      <CentroDetailOverlay
+        open={centroOverlay != null}
+        mode={centroOverlay?.mode ?? "detail"}
+        centro={overlayCentro}
+        canEdit={canCreateCentro}
+        submitting={updatingCentro}
+        onClose={() => setCentroOverlay(null)}
+        onEdit={() => setCentroOverlay((prev) => (prev ? { ...prev, mode: "edit" } : null))}
+        onCancelEdit={() => setCentroOverlay((prev) => (prev ? { ...prev, mode: "detail" } : null))}
+        onSubmit={handleUpdateCentro}
       />
 
       {canAccess && (

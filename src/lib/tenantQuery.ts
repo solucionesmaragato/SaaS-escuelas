@@ -1,4 +1,6 @@
-type TenantScopedQuery<Q> = Q & { eq: (column: string, value: string) => Q };
+interface TenantScopedQuery<Q> {
+  eq: (column: string, value: string) => Q;
+}
 
 /** Case-insensitive MASTER check; treats undefined/null as non-master. */
 export function isMasterRole(rol: string | null | undefined): boolean {

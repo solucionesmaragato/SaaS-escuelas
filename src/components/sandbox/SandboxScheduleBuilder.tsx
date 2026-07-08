@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin, { Draggable } from "@fullcalendar/interaction";
-import type { EventDropArg, EventReceiveArg, EventResizeDoneArg } from "@fullcalendar/interaction";
-import type { EventInput } from "@fullcalendar/core";
+import type { EventReceiveArg, EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { EventDropArg, EventInput } from "@fullcalendar/core";
 import { GripVertical, Loader2, Plus } from "lucide-react";
 import { useSandboxCalendario } from "@/hooks/useSandboxCalendario";
 import {

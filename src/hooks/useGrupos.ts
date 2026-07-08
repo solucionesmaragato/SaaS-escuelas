@@ -504,18 +504,34 @@ export function canViewGruposNav(
   return false;
 }
 
-export function useGrupos(filterCenterId?: string | null) {
+export function useGrupos(
+  filterCenterId?: string | null,
+  alumnoId?: string | null,
+  profesorId?: string | null,
+) {
   const { tenantId, centerId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const resolvedCenterId =
     filterCenterId !== undefined ? filterCenterId : centerId;
   const centerKey = resolvedCenterId ?? "all";
+  // A specific profesorId targets a single professor's full academic picture
+  // (e.g. the Profesores detail overlay), which must span every center they
+  // teach at — not just whichever center happens to be active in the
+  // dashboard's global filter. Scoping by resolvedCenterId here was silently
+  // hiding groups/alumnos outside the active center, producing empty tabs.
+  const effectiveCenterId = profesorId ? null : resolvedCenterId;
   const queryKey = isProfesorRole(rol)
     ? ([
         ...workspaceListKey("grupos", tenantId, centerKey),
         perfil.ID_PROFESOR ?? "none",
+        alumnoId ?? "all",
+        profesorId ?? "all",
       ] as const)
-    : workspaceListKey("grupos", tenantId, centerKey);
+    : ([
+        ...workspaceListKey("grupos", tenantId, centerKey),
+        alumnoId ?? "all",
+        profesorId ?? "all",
+      ] as const);
 
   const list = useQuery({
     queryKey,
@@ -530,6 +546,7 @@ export function useGrupos(filterCenterId?: string | null) {
           .eq("GRUPOS_HORARIOS.ID_PROFESOR", profesorId)
           .order("NOMBRE_GRUPO", { ascending: true });
         gruposQuery = scopeGruposListQuery(gruposQuery, rol, tenantId, resolvedCenterId);
+        if (alumnoId) gruposQuery = gruposQuery.contains("ID_ALUMNOS", [alumnoId]);
 
         let aluQuery = supabase
           .from("ALUMNOS")
@@ -589,8 +606,14 @@ export function useGrupos(filterCenterId?: string | null) {
         };
       }
 
-      let gruposQuery = supabase.from("GRUPOS").select(GRUPO_SELECT_COLUMNS);
-      gruposQuery = scopeGruposListQuery(gruposQuery, rol, tenantId, resolvedCenterId);
+      // Switching to the `!inner` embed is required so PostgREST allows
+      // filtering parent GRUPOS rows by the embedded GRUPOS_HORARIOS.ID_PROFESOR column.
+      let gruposQuery = supabase
+        .from("GRUPOS")
+        .select(profesorId ? GRUPO_SELECT_COLUMNS_PROFESOR : GRUPO_SELECT_COLUMNS);
+      gruposQuery = scopeGruposListQuery(gruposQuery, rol, tenantId, effectiveCenterId);
+      if (alumnoId) gruposQuery = gruposQuery.contains("ID_ALUMNOS", [alumnoId]);
+      if (profesorId) gruposQuery = gruposQuery.eq("GRUPOS_HORARIOS.ID_PROFESOR", profesorId);
 
       let profQuery = supabase
         .from("PROFESOR")
@@ -605,7 +628,7 @@ export function useGrupos(filterCenterId?: string | null) {
         .from("ALUMNOS")
         .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ID_TARIFA)");
       aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
-      aluQuery = appendCenterFilter(aluQuery, resolvedCenterId);
+      aluQuery = appendCenterFilter(aluQuery, effectiveCenterId);
 
       let espQuery = supabase.from("ESPECIALIDADES").select("ID_ESPECIALIDAD, ESPECIALIDAD");
       espQuery = scopeTenantQuery(espQuery, rol, tenantId);

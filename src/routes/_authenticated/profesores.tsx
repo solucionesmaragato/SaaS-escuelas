@@ -1,11 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Pencil, UserCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { MoreVertical, Plus, Search, UserCircle } from "lucide-react";
 import {
   findProfesorByPerfilId,
   ProfesorPerfilAssignError,
   ProfesorPerfilRolUpdateError,
-  useProfesorRol,
   useProfesores,
   type ProfesorData,
   type ProfesorCreateInput,
@@ -13,7 +12,6 @@ import {
   type AulaLookup,
   type EspecialidadLookup,
 } from "@/hooks/useProfesores";
-import type { Rol } from "@/types/database";
 import { useActiveTenant } from "@/context/AppContext";
 import {
   isAdminRole,
@@ -22,147 +20,77 @@ import {
   isProfesorRole,
   isSecretariaRole,
 } from "@/lib/tenantQuery";
+import { PageHeader } from "@/components/layout/PageHeader";
+import {
+  ContactCompactCell,
+  EmailQuickAction,
+  PhoneQuickActions,
+} from "@/components/ui/ContactQuickActions";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-
-const PROFESOR_ROL_OPTIONS: { value: Rol; label: string }[] = [
-  { value: "PROFESOR", label: "Profesor" },
-  { value: "ADMIN", label: "Administrador" },
-  { value: "SECRETARIA", label: "Secretaría" },
-  { value: "DIRECCION", label: "Dirección" },
-];
+import { ProfesorDetailOverlay } from "@/components/profesores/ProfesorDetailOverlay";
+import { ProfesorForm } from "@/components/profesores/ProfesorForm";
+import {
+  EstadoProfesorBadge,
+  EstadoProfesorToggle,
+  TagBadges,
+  formatFechaDisplay,
+  formatSaldoDisplay,
+  sortProfesoresByEstado,
+} from "@/components/profesores/profesoresShared";
 
 type ProfesoresSearch = {
   tab?: "personal" | "profesores";
+  profesorId?: string;
 };
 
 export const Route = createFileRoute("/_authenticated/profesores")({
   validateSearch: (search: Record<string, unknown>): ProfesoresSearch => {
     const tab = search.tab;
-    if (tab === "personal" || tab === "profesores") return { tab };
-    return {};
+    const profesorId = search.profesorId;
+    return {
+      ...(tab === "personal" || tab === "profesores" ? { tab } : {}),
+      ...(typeof profesorId === "string" && profesorId ? { profesorId } : {}),
+    };
   },
   component: ProfesoresPage,
 });
-
-const sortLocale = { sensitivity: "base" } as const;
-
-function formatFechaDisplay(value: string | null | undefined): string {
-  if (!value) return "—";
-  return value.slice(0, 10);
-}
-
-function formatSaldoDisplay(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return String(value);
-}
-
-function sortProfesoresByEstado(profesores: ProfesorData[]): ProfesorData[] {
-  return [...profesores].sort((a, b) => {
-    const aActive = !a.FECHA_BAJA;
-    const bActive = !b.FECHA_BAJA;
-    if (aActive !== bActive) return aActive ? -1 : 1;
-    return (a.NOMBRE_PROFESOR ?? "").localeCompare(b.NOMBRE_PROFESOR ?? "", "es", sortLocale);
-  });
-}
-
-function toDateInputValue(value: string | null | undefined): string {
-  if (!value) return "";
-  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
-  return "";
-}
-
-function TagBadges({ text }: { text: string }) {
-  if (!text || text === "—") {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  const items = text.split(", ").filter(Boolean);
-  if (items.length === 0) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1 max-w-[220px]">
-      {items.map((item) => (
-        <Badge
-          key={item}
-          variant="secondary"
-          className="text-xs font-normal px-1.5 py-0"
-        >
-          {item}
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-function EstadoProfesorBadge({ fechaBaja }: { fechaBaja: string | null }) {
-  const isActive = !fechaBaja;
-  return (
-    <Badge
-      variant="outline"
-      className={
-        isActive
-          ? "text-xs font-normal border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-          : "text-xs font-normal border-destructive/30 bg-destructive/10 text-destructive"
-      }
-    >
-      {isActive ? "Activo" : `Inactivo${fechaBaja ? ` · ${fechaBaja.slice(0, 10)}` : ""}`}
-    </Badge>
-  );
-}
-
-function EstadoProfesorToggle({
-  fechaBaja,
-  onClick,
-  disabled,
-}: {
-  fechaBaja: string | null;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  const isActive = !fechaBaja;
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      disabled={disabled}
-      className={
-        isActive
-          ? "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-normal transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-          : "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-normal transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 border-destructive/30 bg-destructive/10 text-destructive"
-      }
-    >
-      {isActive ? "Activo" : `Inactivo${fechaBaja ? ` · ${fechaBaja.slice(0, 10)}` : ""}`}
-    </button>
-  );
-}
 
 function ProfesorPersonalDataView({
   list,
@@ -179,7 +107,7 @@ function ProfesorPersonalDataView({
   especialidades: EspecialidadLookup[];
   embedded?: boolean;
 }) {
-  const profesores = list.data?.profesores ?? [];
+  const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
   const miProfesor = useMemo(
     () => findProfesorByPerfilId(profesores, perfilProfesorId),
     [profesores, perfilProfesorId],
@@ -202,15 +130,15 @@ function ProfesorPersonalDataView({
   return (
     <div className={embedded ? "space-y-4" : "mx-auto max-w-2xl space-y-4"}>
       {!embedded && (
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <UserCircle className="h-6 w-6 text-muted-foreground" />
-            Mis datos personales
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Actualiza tu información de contacto. Los datos de contrato y saldos son de solo lectura.
-          </p>
-        </div>
+        <PageHeader
+          title={
+            <span className="flex items-center gap-2">
+              <UserCircle className="h-6 w-6 text-muted-foreground" />
+              Mis datos personales
+            </span>
+          }
+          description="Actualiza tu información de contacto. Los datos de contrato y saldos son de solo lectura."
+        />
       )}
 
       <Card className="p-4 sm:p-6">
@@ -228,7 +156,8 @@ function ProfesorPersonalDataView({
           <div className="space-y-6">
             {embedded && (
               <p className="text-sm text-muted-foreground">
-                Actualiza tu información de contacto. Los datos de contrato y saldos son de solo lectura.
+                Actualiza tu información de contacto. Los datos de contrato y saldos son de solo
+                lectura.
               </p>
             )}
             <div>
@@ -328,10 +257,7 @@ function DireccionProfesoresTable({
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   {query ? "Sin resultados." : "Aún no hay profesores."}
                 </TableCell>
               </TableRow>
@@ -341,11 +267,25 @@ function DireccionProfesoresTable({
                   <TableCell className="py-2 font-medium text-sm truncate">
                     {p.NOMBRE_PROFESOR}
                   </TableCell>
-                  <TableCell className="py-2 text-sm truncate">
-                    {p.EMAIL_PROFESORES ?? "—"}
+                  <TableCell className="py-2 text-sm">
+                    {p.EMAIL_PROFESORES ? (
+                      <span className="flex items-center gap-1">
+                        <span className="truncate">{p.EMAIL_PROFESORES}</span>
+                        <EmailQuickAction email={p.EMAIL_PROFESORES} variant="compact" />
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell className="py-2 text-sm whitespace-nowrap">
-                    {p.TELEFONO ?? "—"}
+                    {p.TELEFONO ? (
+                      <span className="flex items-center gap-1">
+                        <span>{p.TELEFONO}</span>
+                        <PhoneQuickActions phone={p.TELEFONO} variant="compact" />
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell className="py-2 text-sm tabular-nums whitespace-nowrap">
                     {formatSaldoDisplay(p.SALDO_AP)}
@@ -397,12 +337,10 @@ function DireccionProfesoresPage({
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Profesores</h1>
-        <p className="text-sm text-muted-foreground">
-          {profesores.length} en total · consulta el equipo o actualiza tus datos personales
-        </p>
-      </div>
+      <PageHeader
+        title="Profesores"
+        description={`${profesores.length} en total · consulta el equipo o actualiza tus datos personales`}
+      />
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "personal" | "profesores")}>
         <TabsList className="mb-4 grid w-full max-w-md grid-cols-2">
@@ -430,23 +368,26 @@ function DireccionProfesoresPage({
 }
 
 function ProfesoresPage() {
-  const { tab: searchTab } = Route.useSearch();
+  const { tab: searchTab, profesorId } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const { rol, perfil } = useActiveTenant();
   const { list, create, update } = useProfesores();
 
-  const profesores = list.data?.profesores ?? [];
-  const aulas = list.data?.aulas ?? [];
-  const especialidades = list.data?.especialidades ?? [];
+  const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
+  const aulas = useMemo(() => list.data?.aulas ?? [], [list.data?.aulas]);
+  const especialidades = useMemo(
+    () => list.data?.especialidades ?? [],
+    [list.data?.especialidades],
+  );
 
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<ProfesorData | null>(null);
+  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [statusConfirming, setStatusConfirming] = useState<ProfesorData | null>(null);
 
   const isPersonalDataView = isProfesorRole(rol);
   const isDireccionView = isDireccionRole(rol);
-  const isTableView =
-    isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+  const isTableView = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
   const canManage = isMasterRole(rol) || isAdminRole(rol);
 
   const filtered = useMemo(() => {
@@ -464,10 +405,32 @@ function ProfesoresPage() {
     return sortProfesoresByEstado(base);
   }, [profesores, query]);
 
+  const overlayProfesor = useMemo(
+    () => profesores.find((p) => p.ID_PROFESOR === overlay?.id) ?? null,
+    [profesores, overlay?.id],
+  );
+
+  const handleCloseOverlay = useCallback(() => {
+    setOverlay(null);
+    navigate({ search: (prev) => ({ ...prev, profesorId: undefined }), replace: true });
+  }, [navigate]);
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
+  }, []);
+
+  useEffect(() => {
+    if (profesorId) {
+      setOverlay({ id: profesorId, mode: "detail" });
+    }
+  }, [profesorId]);
+
   const handleUpdate = async (id: string, values: ProfesorUpdateInput) => {
     await update.mutateAsync({ id, patch: values });
     toast.success("Profesor actualizado.");
-    setEditing(null);
+    setOverlay({ id, mode: "detail" });
   };
 
   const handleConfirmStatusChange = async () => {
@@ -533,20 +496,18 @@ function ProfesoresPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Profesores</h1>
-              <p className="text-sm text-muted-foreground">
-                {profesores.length} en total · activos primero, luego alfabético
-              </p>
-            </div>
-            {canManage && (
-              <Button onClick={() => setCreating(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Nuevo profesor
-              </Button>
-            )}
-      </div>
+      <PageHeader
+        title="Profesores"
+        description={`${profesores.length} en total · activos primero, luego alfabético`}
+        actions={
+          canManage && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Nuevo profesor
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="relative mb-4 max-w-md">
@@ -559,116 +520,109 @@ function ProfesoresPage() {
           />
         </div>
 
-            {list.isError && (
-              <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-4">
-                Error al cargar profesores: {(list.error as Error)?.message}
-              </div>
-            )}
+        {list.isError && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-4">
+            Error al cargar profesores: {(list.error as Error)?.message}
+          </div>
+        )}
 
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="h-9 text-xs font-semibold">Nombre</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Contacto</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Estado</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Vacaciones</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Asuntos Propios</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Especialidades</TableHead>
-                    <TableHead className="h-9 text-xs font-semibold">Aulas</TableHead>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-9 text-xs font-semibold">Nombre</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Contacto</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Vacaciones</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Asuntos Propios</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Especialidades</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Aulas</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Estado</TableHead>
+                {canManage && <TableHead className="w-[50px]"></TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell colSpan={tableColCount} className="py-2">
+                      <Skeleton className="h-7 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={tableColCount}
+                    className="py-10 text-center text-sm text-muted-foreground"
+                  >
+                    {query ? "Sin resultados." : "Aún no hay profesores."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((p) => (
+                  <TableRow
+                    key={p.ID_PROFESOR}
+                    className={
+                      canManage ? "cursor-pointer hover:bg-muted/50 transition-colors" : undefined
+                    }
+                    onClick={
+                      canManage
+                        ? () => setOverlay({ id: p.ID_PROFESOR, mode: "detail" })
+                        : undefined
+                    }
+                  >
+                    <TableCell className="py-2 font-medium text-sm">{p.NOMBRE_PROFESOR}</TableCell>
+                    <TableCell className="py-2 text-sm">
+                      <ContactCompactCell phone={p.TELEFONO} email={p.EMAIL_PROFESORES} />
+                    </TableCell>
+                    <TableCell className="py-2 text-sm tabular-nums">
+                      {formatSaldoDisplay(p.SALDO_VACACIONES)}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm tabular-nums">
+                      {formatSaldoDisplay(p.SALDO_AP)}
+                    </TableCell>
+                    <TableCell className="py-2 align-top">
+                      <TagBadges text={p.TEXTO_ESPECIALIDADES} />
+                    </TableCell>
+                    <TableCell className="py-2 align-top">
+                      <TagBadges text={p.TEXTO_AULAS} />
+                    </TableCell>
+                    <TableCell className="py-2">
+                      {canManage ? (
+                        <EstadoProfesorToggle
+                          fechaBaja={p.FECHA_BAJA}
+                          onClick={() => setStatusConfirming(p)}
+                          disabled={update.isPending}
+                        />
+                      ) : (
+                        <EstadoProfesorBadge fechaBaja={p.FECHA_BAJA} />
+                      )}
+                    </TableCell>
                     {canManage && (
-                      <TableHead className="h-9 text-xs font-semibold text-right">Acciones</TableHead>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => setOverlay({ id: p.ID_PROFESOR, mode: "edit" })}
+                            >
+                              Editar
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
                     )}
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.isLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={tableColCount} className="py-2">
-                          <Skeleton className="h-7 w-full" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : filtered.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={tableColCount}
-                        className="py-10 text-center text-sm text-muted-foreground"
-                      >
-                        {query ? "Sin resultados." : "Aún no hay profesores."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filtered.map((p) => (
-                      <TableRow
-                        key={p.ID_PROFESOR}
-                        className={
-                          canManage
-                            ? "cursor-pointer hover:bg-muted/50 transition-colors"
-                            : undefined
-                        }
-                        onClick={canManage ? () => setEditing(p) : undefined}
-                      >
-                        <TableCell className="py-2 font-medium text-sm">
-                          {p.NOMBRE_PROFESOR}
-                        </TableCell>
-                        <TableCell className="py-2 text-sm">
-                          <div className="leading-tight">{p.EMAIL_PROFESORES ?? "—"}</div>
-                          {p.TELEFONO && (
-                            <div className="text-xs text-muted-foreground mt-0.5">{p.TELEFONO}</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          {canManage ? (
-                            <EstadoProfesorToggle
-                              fechaBaja={p.FECHA_BAJA}
-                              onClick={() => setStatusConfirming(p)}
-                              disabled={update.isPending}
-                            />
-                          ) : (
-                            <EstadoProfesorBadge fechaBaja={p.FECHA_BAJA} />
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2 text-sm tabular-nums">
-                          {formatSaldoDisplay(p.SALDO_VACACIONES)}
-                        </TableCell>
-                        <TableCell className="py-2 text-sm tabular-nums">
-                          {formatSaldoDisplay(p.SALDO_AP)}
-                        </TableCell>
-                        <TableCell className="py-2 align-top">
-                          <TagBadges text={p.TEXTO_ESPECIALIDADES} />
-                        </TableCell>
-                        <TableCell className="py-2 align-top">
-                          <TagBadges text={p.TEXTO_AULAS} />
-                        </TableCell>
-                        {canManage && (
-                          <TableCell
-                            className="py-2 text-right"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditing(p);
-                              }}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              <span className="sr-only">Editar</span>
-                            </Button>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
 
       <ProfesorFormDialog
         open={creating}
@@ -695,23 +649,24 @@ function ProfesoresPage() {
         }}
       />
 
-      <ProfesorFormDialog
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        title="Editar profesor"
-        submitLabel="Guardar"
-        initial={editing}
-        submitting={update.isPending}
+      <ProfesorDetailOverlay
+        open={!!overlay}
+        mode={overlay?.mode ?? "detail"}
+        profesor={overlayProfesor}
         aulas={aulas}
         especialidades={especialidades}
+        submitting={update.isPending}
+        onClose={handleCloseOverlay}
+        onEdit={handleEditOverlay}
+        onCancelEdit={handleCancelEditOverlay}
         onSubmit={async (values: ProfesorCreateInput | ProfesorUpdateInput) => {
-          if (!editing) return;
+          if (!overlay?.id) return;
           try {
-            await handleUpdate(editing.ID_PROFESOR, values);
+            await handleUpdate(overlay.id, values as ProfesorUpdateInput);
           } catch (err) {
             if (err instanceof ProfesorPerfilRolUpdateError) {
               toast.error(err.message);
-              setEditing(null);
+              setOverlay({ id: overlay.id, mode: "detail" });
               return;
             }
             toast.error(err instanceof Error ? err.message : "Error al actualizar.");
@@ -734,8 +689,8 @@ function ProfesoresPage() {
               <AlertDialogDescription>
                 {statusConfirming && !statusConfirming.FECHA_BAJA ? (
                   <>
-                    ¿Seguro que quieres dar de baja a <b>{statusConfirming.NOMBRE_PROFESOR}</b>?
-                    Se liberarán sus horarios futuros y se revocará su acceso.
+                    ¿Seguro que quieres dar de baja a <b>{statusConfirming.NOMBRE_PROFESOR}</b>? Se
+                    liberarán sus horarios futuros y se revocará su acceso.
                   </>
                 ) : (
                   <>
@@ -761,348 +716,6 @@ function ProfesoresPage() {
         </AlertDialog>
       )}
     </div>
-  );
-}
-
-function MultiSelectCheckboxes({
-  label,
-  options,
-  selected,
-  onToggle,
-  disabled,
-}: {
-  label: string;
-  options: { id: string; name: string }[];
-  selected: string[];
-  onToggle: (id: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="border rounded-md max-h-[160px] overflow-y-auto divide-y">
-        {options.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">No hay opciones disponibles.</p>
-        ) : (
-          options.map((opt) => {
-            const checked = selected.includes(opt.id);
-            return (
-              <label
-                key={opt.id}
-                className={`flex items-center gap-2 px-3 py-2 ${disabled ? "cursor-default opacity-60" : "cursor-pointer hover:bg-muted/50"} ${checked ? "bg-muted/20" : ""}`}
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={() => onToggle(opt.id)}
-                  disabled={disabled}
-                />
-                <span className="text-sm truncate">{opt.name}</span>
-              </label>
-            );
-          })
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground">{selected.length} seleccionados</p>
-    </div>
-  );
-}
-
-export function ProfesorForm({
-  initial,
-  isCreate,
-  selfProfile,
-  aulas,
-  especialidades,
-  submitting,
-  onSubmit,
-}: {
-  initial?: ProfesorData | null;
-  isCreate?: boolean;
-  selfProfile?: boolean;
-  aulas: AulaLookup[];
-  especialidades: EspecialidadLookup[];
-  submitting: boolean;
-  onSubmit: (values: ProfesorCreateInput | ProfesorUpdateInput) => void;
-}) {
-  const [nombre, setNombre] = useState("");
-  const [email, setEmail] = useState("");
-  const [tlf, setTlf] = useState("");
-  const [dni, setDni] = useState("");
-  const [nSegSocial, setNSegSocial] = useState("");
-  const [domicilio, setDomicilio] = useState("");
-  const [nacimiento, setNacimiento] = useState("");
-  const [fechaAlta, setFechaAlta] = useState("");
-  const [fechaBaja, setFechaBaja] = useState("");
-  const [saldoVacaciones, setSaldoVacaciones] = useState("");
-  const [saldoAp, setSaldoAp] = useState("");
-  const [especialidadIds, setEspecialidadIds] = useState<string[]>([]);
-  const [aulaIds, setAulaIds] = useState<string[]>([]);
-  const [rol, setRol] = useState<Rol>("PROFESOR");
-  const showRolField = isCreate || (!selfProfile && !!initial);
-  const rolQuery = useProfesorRol(
-    showRolField && !isCreate ? initial?.ID_PROFESOR : null,
-  );
-  const rolLoading = showRolField && !isCreate && rolQuery.isLoading;
-
-  const especialidadesOrdenadas = useMemo(
-    () =>
-      [...especialidades].sort((a, b) =>
-        a.ESPECIALIDAD.localeCompare(b.ESPECIALIDAD, "es", sortLocale),
-      ),
-    [especialidades],
-  );
-
-  const aulasOrdenadas = useMemo(
-    () =>
-      [...aulas].sort((a, b) =>
-        a.NOMBRE_AULA.localeCompare(b.NOMBRE_AULA, "es", sortLocale),
-      ),
-    [aulas],
-  );
-
-  useEffect(() => {
-    setNombre(initial?.NOMBRE_PROFESOR ?? "");
-    setEmail(initial?.EMAIL_PROFESORES ?? "");
-    setTlf(initial?.TELEFONO ?? "");
-    setDni(initial?.DNI ?? "");
-    setNSegSocial(initial?.N_SEG_SOCIAL ?? "");
-    setDomicilio(initial?.DOMICILIO ?? "");
-    setNacimiento(toDateInputValue(initial?.NACIMIENTO));
-    setFechaAlta(toDateInputValue(initial?.FECHA_ALTA));
-    setFechaBaja(toDateInputValue(initial?.FECHA_BAJA));
-    setSaldoVacaciones(
-      initial?.SALDO_VACACIONES != null ? String(initial.SALDO_VACACIONES) : "",
-    );
-    setSaldoAp(initial?.SALDO_AP != null ? String(initial.SALDO_AP) : "");
-    setEspecialidadIds(
-      Array.isArray(initial?.ESPECIALIDAD) ? initial.ESPECIALIDAD : [],
-    );
-    setAulaIds(Array.isArray(initial?.AULA) ? initial.AULA : []);
-    if (isCreate) {
-      setRol("PROFESOR");
-    }
-  }, [initial, isCreate]);
-
-  useEffect(() => {
-    if (!showRolField || isCreate) return;
-    if (rolQuery.data) {
-      setRol(rolQuery.data);
-    } else if (!rolQuery.isLoading) {
-      setRol("PROFESOR");
-    }
-  }, [showRolField, isCreate, rolQuery.data, rolQuery.isLoading]);
-
-  const toggleEspecialidad = (id: string) => {
-    setEspecialidadIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const toggleAula = (id: string) => {
-    setAulaIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const parseOptionalNumber = (value: string): number | null => {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const n = parseFloat(trimmed);
-    return Number.isNaN(n) ? null : n;
-  };
-
-  const readOnly = selfProfile;
-
-  return (
-    <form
-      id="profesor-form"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!selfProfile && !nombre.trim()) return;
-
-        if (selfProfile) {
-          onSubmit({
-            EMAIL_PROFESORES: email.trim() || null,
-            TELEFONO: tlf.trim() || null,
-            DOMICILIO: domicilio.trim() || null,
-            NACIMIENTO: nacimiento || null,
-          });
-          return;
-        }
-
-        const values: ProfesorCreateInput & { FECHA_ALTA?: string | null } = {
-          NOMBRE_PROFESOR: nombre.trim(),
-          EMAIL_PROFESORES: email.trim() || null,
-          TELEFONO: tlf.trim() || null,
-          DNI: dni.trim() || null,
-          N_SEG_SOCIAL: nSegSocial.trim() || null,
-          DOMICILIO: domicilio.trim() || null,
-          NACIMIENTO: nacimiento || null,
-          FECHA_BAJA: fechaBaja || null,
-          SALDO_VACACIONES: parseOptionalNumber(saldoVacaciones),
-          SALDO_AP: parseOptionalNumber(saldoAp),
-          ESPECIALIDAD: Array.isArray(especialidadIds) ? especialidadIds : [],
-          AULA: Array.isArray(aulaIds) ? aulaIds : [],
-        };
-        if (isCreate) {
-          values.ROL = rol;
-          onSubmit(values);
-          return;
-        }
-        values.FECHA_ALTA = fechaAlta || null;
-        if (showRolField) {
-          values.ROL = rol;
-        }
-        onSubmit(values);
-      }}
-      className="space-y-4"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="prof-nombre">Nombre completo *</Label>
-        <Input
-          id="prof-nombre"
-          value={nombre}
-          onChange={(e) => setNombre(e.target.value)}
-          required={!selfProfile}
-          disabled={readOnly}
-        />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {showRolField && (
-          <div className="space-y-2">
-            <Label htmlFor="prof-rol">Rol</Label>
-            <Select
-              value={rol}
-              onValueChange={(v) => setRol(v as Rol)}
-              disabled={rolLoading || submitting}
-            >
-              <SelectTrigger id="prof-rol">
-                <SelectValue placeholder={rolLoading ? "Cargando rol..." : undefined} />
-              </SelectTrigger>
-              <SelectContent>
-                {PROFESOR_ROL_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor="prof-email">Email</Label>
-          <Input
-            id="prof-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-tlf">Teléfono</Label>
-          <Input id="prof-tlf" value={tlf} onChange={(e) => setTlf(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-dni">DNI</Label>
-          <Input
-            id="prof-dni"
-            value={dni}
-            onChange={(e) => setDni(e.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-nss">Nº Seg. Social</Label>
-          <Input
-            id="prof-nss"
-            value={nSegSocial}
-            onChange={(e) => setNSegSocial(e.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-nacimiento">Fecha de nacimiento</Label>
-          <Input
-            id="prof-nacimiento"
-            type="date"
-            value={nacimiento}
-            onChange={(e) => setNacimiento(e.target.value)}
-          />
-        </div>
-        {!isCreate && (
-          <div className="space-y-2">
-            <Label htmlFor="prof-alta">Fecha de alta</Label>
-            <Input
-              id="prof-alta"
-              type="date"
-              value={fechaAlta}
-              onChange={(e) => setFechaAlta(e.target.value)}
-              disabled={readOnly}
-            />
-          </div>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor="prof-baja">Fecha de baja</Label>
-          <Input
-            id="prof-baja"
-            type="date"
-            value={fechaBaja}
-            onChange={(e) => setFechaBaja(e.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="prof-domicilio">Domicilio</Label>
-          <Input id="prof-domicilio" value={domicilio} onChange={(e) => setDomicilio(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-saldo-vac">Saldo vacaciones</Label>
-          <Input
-            id="prof-saldo-vac"
-            type="number"
-            step="any"
-            value={saldoVacaciones}
-            onChange={(e) => setSaldoVacaciones(e.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="prof-saldo-ap">Saldo AP</Label>
-          <Input
-            id="prof-saldo-ap"
-            type="number"
-            step="any"
-            value={saldoAp}
-            onChange={(e) => setSaldoAp(e.target.value)}
-            disabled={readOnly}
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <MultiSelectCheckboxes
-          label="Especialidades"
-          options={especialidadesOrdenadas.map((e) => ({
-            id: e.ID_ESPECIALIDAD,
-            name: e.ESPECIALIDAD,
-          }))}
-          selected={especialidadIds}
-          onToggle={toggleEspecialidad}
-          disabled={readOnly}
-        />
-        <MultiSelectCheckboxes
-          label="Aulas"
-          options={aulasOrdenadas.map((a) => ({
-            id: a.ID_AULA,
-            name: a.NOMBRE_AULA,
-          }))}
-          selected={aulaIds}
-          onToggle={toggleAula}
-          disabled={readOnly}
-        />
-      </div>
-    </form>
   );
 }
 
@@ -1139,7 +752,7 @@ function ProfesorFormDialog({
         {open && (
           <div className="flex-1 overflow-y-auto py-2">
             <ProfesorForm
-              key={isCreate ? "create" : initial?.ID_PROFESOR ?? "edit"}
+              key={isCreate ? "create" : (initial?.ID_PROFESOR ?? "edit")}
               initial={initial}
               isCreate={isCreate}
               aulas={aulas}

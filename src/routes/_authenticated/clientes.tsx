@@ -5,6 +5,7 @@ import { useClientes, type ClienteData } from "@/hooks/useClientes";
 import { useActiveTenant } from "@/context/AppContext";
 import { isMasterRole } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,17 +114,15 @@ function ClientesPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Clientes</h1>
-          <p className="text-sm text-muted-foreground">
-            {list.data?.length ?? 0} registrados en el sistema
-          </p>
-        </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Nuevo cliente
-        </Button>
-      </div>
+      <PageHeader
+        title="Clientes"
+        description={`${list.data?.length ?? 0} registrados en el sistema`}
+        actions={
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Nuevo cliente
+          </Button>
+        }
+      />
 
       <Card className="p-4">
         <div className="relative mb-4 max-w-md">
@@ -251,13 +250,14 @@ function ClientesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Eliminar cliente</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará el cliente <b>{deleting?.NOMBRE_ESCUELA}</b> (
-              {deleting?.ID_CLIENTE}). Esta acción no se puede deshacer.
+              Se eliminará el cliente <b>{deleting?.NOMBRE_ESCUELA}</b> ({deleting?.ID_CLIENTE}).
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={remove.isPending}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              disabled={remove.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
                 if (!deleting) return;
@@ -279,13 +279,7 @@ function ClientesPage() {
   );
 }
 
-function FormField({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
@@ -320,25 +314,21 @@ function ClienteFormDialog({
     }
   }, [open, initial]);
 
-  const setNum =
-    (key: "TARIFA" | "DESCUENTO") =>
-    (value: string) => {
-      setForm((prev) => ({
-        ...prev,
-        [key]: value === "" ? null : Number(value),
-      }));
-    };
+  const setNum = (key: "TARIFA" | "DESCUENTO") => (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: value === "" ? null : Number(value),
+    }));
+  };
 
-  const setStr =
-    (key: keyof ClienteData) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const raw = e.target.value;
-      if (key === "ID_CLIENTE" || key === "NOMBRE_ESCUELA") {
-        setForm((prev) => ({ ...prev, [key]: raw }));
-      } else {
-        setForm((prev) => ({ ...prev, [key]: raw || null }));
-      }
-    };
+  const setStr = (key: keyof ClienteData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    if (key === "ID_CLIENTE" || key === "NOMBRE_ESCUELA") {
+      setForm((prev) => ({ ...prev, [key]: raw }));
+    } else {
+      setForm((prev) => ({ ...prev, [key]: raw || null }));
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -375,11 +365,7 @@ function ClienteFormDialog({
                 />
               </FormField>
               <FormField label="NOMBRE_ESCUELA *">
-                <Input
-                  value={form.NOMBRE_ESCUELA}
-                  onChange={setStr("NOMBRE_ESCUELA")}
-                  required
-                />
+                <Input value={form.NOMBRE_ESCUELA} onChange={setStr("NOMBRE_ESCUELA")} required />
               </FormField>
               <FormField label="CIF">
                 <Input value={form.CIF ?? ""} onChange={setStr("CIF")} />

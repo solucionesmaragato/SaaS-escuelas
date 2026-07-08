@@ -27,7 +27,7 @@ export type FichajeData = {
   USER_AGENT: string | null;
   LATITUD_LONGITUD: string | null;
   UBICACION: string | null;
-  METODO: string | null;
+  METODO?: string | null;
   NOTAS: string | null;
   TOTAL_HORAS_INTERVALO: number | null;
   TOTAL_HORAS_ACUMULADAS_DIA: number | null;
@@ -36,12 +36,14 @@ export type FichajeData = {
   FECHA_HORA_MODIFICACION: string | null;
   MOTIVO_MODIFICACION: string | null;
   FECHA_HORA_MANUAL: string | null;
+  HASH_INMUTABILIDAD?: string | null;
   PROFESOR: { NOMBRE_PROFESOR: string } | null;
 };
 
 export type FichajeConciliacionAdminRow = {
   ID_FICHAJE: string;
   ID_PROFESOR: string;
+  ID_CENTRO: string | null;
   NOMBRE_PROFESOR: string | null;
   TIPO_MOVIMIENTO: string;
   FECHA_HORA_REAL: string;
@@ -50,6 +52,9 @@ export type FichajeConciliacionAdminRow = {
   DIFERENCIA_MINUTOS: number;
   ESTADO_TOLERANCIA: string;
   ESTADO_LEGAL: string;
+  ID_FICHAJE_CORREGIDO: string | null;
+  METODO?: string | null;
+  TOTAL_HORAS_INTERVALO?: string | number | null;
 };
 
 export type FichajesQueryData = {
@@ -141,29 +146,54 @@ type FichajeLegalViewRow = Omit<FichajeRow, "FECHA_HORA" | "ESTADO_LEGAL"> & {
   NOMBRE_PROFESOR: string | null;
 };
 
-export function useFichajesConciliacionAdmin(fecha: string) {
+/** Shared RPC call so ad-hoc consumers (e.g. audit export) stay in sync with the hook. */
+export async function fetchConciliacionAdminRange(
+  tenantId: string,
+  fechaDesde: string,
+  fechaHasta: string,
+): Promise<FichajeConciliacionAdminRow[]> {
+  const { data, error } = await supabase.rpc("obtener_conciliacion_admin", {
+    p_id_cliente: tenantId,
+    p_fecha_desde: fechaDesde,
+    p_fecha_hasta: fechaHasta,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as FichajeConciliacionAdminRow[];
+  // `.rpc()` returns whatever JSON the backend function emits — there is no
+  // client-side `.select()` to strip columns. Still, normalize defensively so
+  // a backend response missing these keys never surfaces as `undefined`
+  // (which would silently break `===` identity checks downstream) instead of
+  // the explicit `null` the frontend types expect.
+  return rows.map((row) => ({
+    ...row,
+    ID_CENTRO: row.ID_CENTRO ?? null,
+    ID_FICHAJE_CORREGIDO: row.ID_FICHAJE_CORREGIDO ?? null,
+    METODO: row.METODO ?? null,
+    TOTAL_HORAS_INTERVALO: row.TOTAL_HORAS_INTERVALO ?? null,
+  }));
+}
+
+export function useFichajesConciliacionAdmin(fromDate: string, toDate: string) {
   const { tenantId, rol } = useActiveTenant();
 
   return useQuery({
-    queryKey: [...tenantListKey("fichajes-conciliacion-admin", rol, tenantId), fecha] as const,
-    enabled: Boolean(tenantId && fecha),
-    queryFn: async (): Promise<FichajeConciliacionAdminRow[]> => {
-      const { data, error } = await supabase.rpc("obtener_conciliacion_admin", {
-        p_id_cliente: tenantId,
-        p_fecha: fecha,
-      });
-      if (error) throw error;
-      return (data ?? []) as FichajeConciliacionAdminRow[];
-    },
+    queryKey: [
+      ...tenantListKey("fichajes-conciliacion-admin", rol, tenantId),
+      fromDate,
+      toDate,
+    ] as const,
+    enabled: Boolean(tenantId && fromDate && toDate && fromDate <= toDate),
+    queryFn: () => fetchConciliacionAdminRange(tenantId, fromDate, toDate),
   });
 }
 
-export function useFichajes(filterCenterId?: string | null) {
+export function useFichajes(filterCenterId?: string | null, profesorId?: string | null) {
   const { tenantId, rol } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("fichajes", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    profesorId ?? "all",
   ] as const;
 
   const list = useQuery({
@@ -172,6 +202,7 @@ export function useFichajes(filterCenterId?: string | null) {
       let query = supabase.from("V_HISTORIAL_FICHAJES_LEGAL").select("*");
       query = scopeTenantQuery(query, rol, tenantId);
       query = appendCenterFilter(query, filterCenterId);
+      if (profesorId) query = query.eq("ID_PROFESOR", profesorId);
 
       const { data: fichajes, error } = await query.order("FECHA_HORA_REAL", {
         ascending: false,

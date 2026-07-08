@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SelectTenantRouteImport } from './routes/select-tenant'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminSandboxCalendarRouteImport } from './routes/admin/sandbox-calendar'
@@ -18,8 +19,8 @@ import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedTurnosRouteImport } from './routes/_authenticated/turnos'
 import { Route as AuthenticatedTarifasRouteImport } from './routes/_authenticated/tarifas'
 import { Route as AuthenticatedSesionesRouteImport } from './routes/_authenticated/sesiones'
+import { Route as AuthenticatedRubricasRouteImport } from './routes/_authenticated/rubricas'
 import { Route as AuthenticatedRemesasRouteImport } from './routes/_authenticated/remesas'
-import { Route as AuthenticatedRecibosRouteImport } from './routes/_authenticated/recibos'
 import { Route as AuthenticatedProfesoresRouteImport } from './routes/_authenticated/profesores'
 import { Route as AuthenticatedPrestamosMaterialRouteImport } from './routes/_authenticated/prestamosMaterial'
 import { Route as AuthenticatedMensajesAutomaticosRouteImport } from './routes/_authenticated/mensajesAutomaticos'
@@ -28,6 +29,7 @@ import { Route as AuthenticatedLeadsRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedIncidenciasRouteImport } from './routes/_authenticated/incidencias'
 import { Route as AuthenticatedGruposRouteImport } from './routes/_authenticated/grupos'
 import { Route as AuthenticatedFichajesRouteImport } from './routes/_authenticated/fichajes'
+import { Route as AuthenticatedFacturasRouteImport } from './routes/_authenticated/facturas'
 import { Route as AuthenticatedEvaluacionesRouteImport } from './routes/_authenticated/evaluaciones'
 import { Route as AuthenticatedEspecialidadesRouteImport } from './routes/_authenticated/especialidades'
 import { Route as AuthenticatedEscuelaRouteImport } from './routes/_authenticated/escuela'
@@ -48,6 +50,11 @@ const SelectTenantRoute = SelectTenantRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FirmarSepaRoute = FirmarSepaRouteImport.update({
+  id: '/firmar-sepa',
+  path: '/firmar-sepa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -84,14 +91,14 @@ const AuthenticatedSesionesRoute = AuthenticatedSesionesRouteImport.update({
   path: '/sesiones',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedRubricasRoute = AuthenticatedRubricasRouteImport.update({
+  id: '/rubricas',
+  path: '/rubricas',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedRemesasRoute = AuthenticatedRemesasRouteImport.update({
   id: '/remesas',
   path: '/remesas',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedRecibosRoute = AuthenticatedRecibosRouteImport.update({
-  id: '/recibos',
-  path: '/recibos',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedProfesoresRoute = AuthenticatedProfesoresRouteImport.update({
@@ -135,6 +142,11 @@ const AuthenticatedGruposRoute = AuthenticatedGruposRouteImport.update({
 const AuthenticatedFichajesRoute = AuthenticatedFichajesRouteImport.update({
   id: '/fichajes',
   path: '/fichajes',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedFacturasRoute = AuthenticatedFacturasRouteImport.update({
+  id: '/facturas',
+  path: '/facturas',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedEvaluacionesRoute =
@@ -199,6 +211,7 @@ const AuthenticatedProfesoresMiPerfilRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
@@ -211,6 +224,7 @@ export interface FileRoutesByFullPath {
   '/escuela': typeof AuthenticatedEscuelaRoute
   '/especialidades': typeof AuthenticatedEspecialidadesRoute
   '/evaluaciones': typeof AuthenticatedEvaluacionesRoute
+  '/facturas': typeof AuthenticatedFacturasRoute
   '/fichajes': typeof AuthenticatedFichajesRoute
   '/grupos': typeof AuthenticatedGruposRoute
   '/incidencias': typeof AuthenticatedIncidenciasRoute
@@ -219,8 +233,8 @@ export interface FileRoutesByFullPath {
   '/mensajesAutomaticos': typeof AuthenticatedMensajesAutomaticosRoute
   '/prestamosMaterial': typeof AuthenticatedPrestamosMaterialRoute
   '/profesores': typeof AuthenticatedProfesoresRouteWithChildren
-  '/recibos': typeof AuthenticatedRecibosRoute
   '/remesas': typeof AuthenticatedRemesasRoute
+  '/rubricas': typeof AuthenticatedRubricasRoute
   '/sesiones': typeof AuthenticatedSesionesRoute
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
@@ -230,6 +244,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
@@ -242,6 +257,7 @@ export interface FileRoutesByTo {
   '/escuela': typeof AuthenticatedEscuelaRoute
   '/especialidades': typeof AuthenticatedEspecialidadesRoute
   '/evaluaciones': typeof AuthenticatedEvaluacionesRoute
+  '/facturas': typeof AuthenticatedFacturasRoute
   '/fichajes': typeof AuthenticatedFichajesRoute
   '/grupos': typeof AuthenticatedGruposRoute
   '/incidencias': typeof AuthenticatedIncidenciasRoute
@@ -250,8 +266,8 @@ export interface FileRoutesByTo {
   '/mensajesAutomaticos': typeof AuthenticatedMensajesAutomaticosRoute
   '/prestamosMaterial': typeof AuthenticatedPrestamosMaterialRoute
   '/profesores': typeof AuthenticatedProfesoresRouteWithChildren
-  '/recibos': typeof AuthenticatedRecibosRoute
   '/remesas': typeof AuthenticatedRemesasRoute
+  '/rubricas': typeof AuthenticatedRubricasRoute
   '/sesiones': typeof AuthenticatedSesionesRoute
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
@@ -263,6 +279,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
   '/select-tenant': typeof SelectTenantRoute
   '/_authenticated/alumnos': typeof AuthenticatedAlumnosRoute
@@ -275,6 +292,7 @@ export interface FileRoutesById {
   '/_authenticated/escuela': typeof AuthenticatedEscuelaRoute
   '/_authenticated/especialidades': typeof AuthenticatedEspecialidadesRoute
   '/_authenticated/evaluaciones': typeof AuthenticatedEvaluacionesRoute
+  '/_authenticated/facturas': typeof AuthenticatedFacturasRoute
   '/_authenticated/fichajes': typeof AuthenticatedFichajesRoute
   '/_authenticated/grupos': typeof AuthenticatedGruposRoute
   '/_authenticated/incidencias': typeof AuthenticatedIncidenciasRoute
@@ -283,8 +301,8 @@ export interface FileRoutesById {
   '/_authenticated/mensajesAutomaticos': typeof AuthenticatedMensajesAutomaticosRoute
   '/_authenticated/prestamosMaterial': typeof AuthenticatedPrestamosMaterialRoute
   '/_authenticated/profesores': typeof AuthenticatedProfesoresRouteWithChildren
-  '/_authenticated/recibos': typeof AuthenticatedRecibosRoute
   '/_authenticated/remesas': typeof AuthenticatedRemesasRoute
+  '/_authenticated/rubricas': typeof AuthenticatedRubricasRoute
   '/_authenticated/sesiones': typeof AuthenticatedSesionesRoute
   '/_authenticated/tarifas': typeof AuthenticatedTarifasRoute
   '/_authenticated/turnos': typeof AuthenticatedTurnosRoute
@@ -296,6 +314,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/firmar-sepa'
     | '/login'
     | '/select-tenant'
     | '/alumnos'
@@ -308,6 +327,7 @@ export interface FileRouteTypes {
     | '/escuela'
     | '/especialidades'
     | '/evaluaciones'
+    | '/facturas'
     | '/fichajes'
     | '/grupos'
     | '/incidencias'
@@ -316,8 +336,8 @@ export interface FileRouteTypes {
     | '/mensajesAutomaticos'
     | '/prestamosMaterial'
     | '/profesores'
-    | '/recibos'
     | '/remesas'
+    | '/rubricas'
     | '/sesiones'
     | '/tarifas'
     | '/turnos'
@@ -327,6 +347,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/firmar-sepa'
     | '/login'
     | '/select-tenant'
     | '/alumnos'
@@ -339,6 +360,7 @@ export interface FileRouteTypes {
     | '/escuela'
     | '/especialidades'
     | '/evaluaciones'
+    | '/facturas'
     | '/fichajes'
     | '/grupos'
     | '/incidencias'
@@ -347,8 +369,8 @@ export interface FileRouteTypes {
     | '/mensajesAutomaticos'
     | '/prestamosMaterial'
     | '/profesores'
-    | '/recibos'
     | '/remesas'
+    | '/rubricas'
     | '/sesiones'
     | '/tarifas'
     | '/turnos'
@@ -359,6 +381,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authenticated'
+    | '/firmar-sepa'
     | '/login'
     | '/select-tenant'
     | '/_authenticated/alumnos'
@@ -371,6 +394,7 @@ export interface FileRouteTypes {
     | '/_authenticated/escuela'
     | '/_authenticated/especialidades'
     | '/_authenticated/evaluaciones'
+    | '/_authenticated/facturas'
     | '/_authenticated/fichajes'
     | '/_authenticated/grupos'
     | '/_authenticated/incidencias'
@@ -379,8 +403,8 @@ export interface FileRouteTypes {
     | '/_authenticated/mensajesAutomaticos'
     | '/_authenticated/prestamosMaterial'
     | '/_authenticated/profesores'
-    | '/_authenticated/recibos'
     | '/_authenticated/remesas'
+    | '/_authenticated/rubricas'
     | '/_authenticated/sesiones'
     | '/_authenticated/tarifas'
     | '/_authenticated/turnos'
@@ -392,6 +416,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  FirmarSepaRoute: typeof FirmarSepaRoute
   LoginRoute: typeof LoginRoute
   SelectTenantRoute: typeof SelectTenantRoute
   AdminSandboxCalendarRoute: typeof AdminSandboxCalendarRoute
@@ -411,6 +436,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/firmar-sepa': {
+      id: '/firmar-sepa'
+      path: '/firmar-sepa'
+      fullPath: '/firmar-sepa'
+      preLoaderRoute: typeof FirmarSepaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -462,18 +494,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSesionesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/rubricas': {
+      id: '/_authenticated/rubricas'
+      path: '/rubricas'
+      fullPath: '/rubricas'
+      preLoaderRoute: typeof AuthenticatedRubricasRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/remesas': {
       id: '/_authenticated/remesas'
       path: '/remesas'
       fullPath: '/remesas'
       preLoaderRoute: typeof AuthenticatedRemesasRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/recibos': {
-      id: '/_authenticated/recibos'
-      path: '/recibos'
-      fullPath: '/recibos'
-      preLoaderRoute: typeof AuthenticatedRecibosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/profesores': {
@@ -530,6 +562,13 @@ declare module '@tanstack/react-router' {
       path: '/fichajes'
       fullPath: '/fichajes'
       preLoaderRoute: typeof AuthenticatedFichajesRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/facturas': {
+      id: '/_authenticated/facturas'
+      path: '/facturas'
+      fullPath: '/facturas'
+      preLoaderRoute: typeof AuthenticatedFacturasRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/evaluaciones': {
@@ -637,6 +676,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEscuelaRoute: typeof AuthenticatedEscuelaRoute
   AuthenticatedEspecialidadesRoute: typeof AuthenticatedEspecialidadesRoute
   AuthenticatedEvaluacionesRoute: typeof AuthenticatedEvaluacionesRoute
+  AuthenticatedFacturasRoute: typeof AuthenticatedFacturasRoute
   AuthenticatedFichajesRoute: typeof AuthenticatedFichajesRoute
   AuthenticatedGruposRoute: typeof AuthenticatedGruposRoute
   AuthenticatedIncidenciasRoute: typeof AuthenticatedIncidenciasRoute
@@ -645,8 +685,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedMensajesAutomaticosRoute: typeof AuthenticatedMensajesAutomaticosRoute
   AuthenticatedPrestamosMaterialRoute: typeof AuthenticatedPrestamosMaterialRoute
   AuthenticatedProfesoresRoute: typeof AuthenticatedProfesoresRouteWithChildren
-  AuthenticatedRecibosRoute: typeof AuthenticatedRecibosRoute
   AuthenticatedRemesasRoute: typeof AuthenticatedRemesasRoute
+  AuthenticatedRubricasRoute: typeof AuthenticatedRubricasRoute
   AuthenticatedSesionesRoute: typeof AuthenticatedSesionesRoute
   AuthenticatedTarifasRoute: typeof AuthenticatedTarifasRoute
   AuthenticatedTurnosRoute: typeof AuthenticatedTurnosRoute
@@ -664,6 +704,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEscuelaRoute: AuthenticatedEscuelaRoute,
   AuthenticatedEspecialidadesRoute: AuthenticatedEspecialidadesRoute,
   AuthenticatedEvaluacionesRoute: AuthenticatedEvaluacionesRoute,
+  AuthenticatedFacturasRoute: AuthenticatedFacturasRoute,
   AuthenticatedFichajesRoute: AuthenticatedFichajesRoute,
   AuthenticatedGruposRoute: AuthenticatedGruposRoute,
   AuthenticatedIncidenciasRoute: AuthenticatedIncidenciasRoute,
@@ -672,8 +713,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedMensajesAutomaticosRoute: AuthenticatedMensajesAutomaticosRoute,
   AuthenticatedPrestamosMaterialRoute: AuthenticatedPrestamosMaterialRoute,
   AuthenticatedProfesoresRoute: AuthenticatedProfesoresRouteWithChildren,
-  AuthenticatedRecibosRoute: AuthenticatedRecibosRoute,
   AuthenticatedRemesasRoute: AuthenticatedRemesasRoute,
+  AuthenticatedRubricasRoute: AuthenticatedRubricasRoute,
   AuthenticatedSesionesRoute: AuthenticatedSesionesRoute,
   AuthenticatedTarifasRoute: AuthenticatedTarifasRoute,
   AuthenticatedTurnosRoute: AuthenticatedTurnosRoute,
@@ -687,6 +728,7 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
+  FirmarSepaRoute: FirmarSepaRoute,
   LoginRoute: LoginRoute,
   SelectTenantRoute: SelectTenantRoute,
   AdminSandboxCalendarRoute: AdminSandboxCalendarRoute,

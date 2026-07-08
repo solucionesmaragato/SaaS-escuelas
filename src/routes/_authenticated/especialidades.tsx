@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Plus, Search, Trash2, Pencil } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
   useEspecialidades,
   type EspecialidadCreateInput,
@@ -53,11 +54,201 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/especialidades")({
   component: EspecialidadesPage,
 });
+
+type PendingSave =
+  | { kind: "create"; values: EspecialidadCreateInput }
+  | { kind: "update"; id: string; values: EspecialidadUpdateInput };
+
+function EspecialidadDetailOverlay({
+  open,
+  mode,
+  especialidad,
+  canMutate,
+  isMaster,
+  submitting,
+  onClose,
+  onEdit,
+  onCancelEdit,
+  onRequestSave,
+}: {
+  open: boolean;
+  mode: "detail" | "edit";
+  especialidad: EspecialidadData | null;
+  canMutate: boolean;
+  isMaster: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onRequestSave: (values: EspecialidadUpdateInput) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === "edit") onCancelEdit();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, mode, onClose, onCancelEdit]);
+
+  if (!open) return null;
+
+  if (!especialidad) {
+    return createPortal(
+      <>
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/10"
+          aria-label="Cerrar"
+          onClick={onClose}
+        />
+        <div
+          className={cn(
+            ALUMNO_OVERLAY_PANEL_CLASS,
+            "max-w-md flex items-center justify-center p-6",
+          )}
+        >
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-40 bg-black/10"
+        aria-label="Cerrar detalle de la especialidad"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="especialidad-overlay-title"
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-md p-6")}
+      >
+        {mode === "edit" ? (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 shrink-0"
+                  onClick={onCancelEdit}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver
+                </Button>
+                <h2 id="especialidad-overlay-title" className="truncate text-xl font-semibold">
+                  Editar especialidad
+                </h2>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar"
+                onClick={onClose}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </header>
+            <EspecialidadFormDialog
+              open
+              embedded
+              title="Editar especialidad"
+              submitLabel="Guardar"
+              isMaster={isMaster}
+              initial={especialidad}
+              submitting={submitting}
+              onClose={onCancelEdit}
+              onSubmit={onRequestSave}
+            />
+            <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={onCancelEdit}>
+                Cancelar
+              </Button>
+              <Button type="submit" form="especialidad-form" disabled={submitting}>
+                {submitting ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 id="especialidad-overlay-title" className="truncate text-xl font-semibold">
+                  Vista detalle
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {canMutate && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    onClick={onEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Cerrar"
+                  onClick={onClose}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </header>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              {isMaster && (
+                <>
+                  <div>
+                    <dt className="text-muted-foreground">ID_ESPECIALIDAD</dt>
+                    <dd className="font-mono text-xs">{especialidad.ID_ESPECIALIDAD}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">ID_CLIENTE</dt>
+                    <dd className="font-mono text-xs">{especialidad.ID_CLIENTE}</dd>
+                  </div>
+                </>
+              )}
+              <div className={isMaster ? "" : "col-span-2"}>
+                <dt className="text-muted-foreground">Especialidad</dt>
+                <dd className="font-semibold">{especialidad.ESPECIALIDAD}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
 
 function EspecialidadesPage() {
   const { rol } = useActiveTenant();
@@ -66,12 +257,51 @@ function EspecialidadesPage() {
   const { list, create, update, remove } = useEspecialidades();
 
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<EspecialidadData | null>(null);
+  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<EspecialidadData | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+
+  const especialidades = useMemo(() => list.data ?? [], [list.data]);
+
+  const overlayEspecialidad = useMemo(
+    () => especialidades.find((e) => e.ID_ESPECIALIDAD === overlay?.id) ?? null,
+    [especialidades, overlay?.id],
+  );
+
+  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((prev) => (prev ? { ...prev, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((prev) => (prev ? { ...prev, mode: "detail" } : null));
+  }, []);
+
+  const executePendingSave = async () => {
+    if (!pendingSave) return;
+    try {
+      if (pendingSave.kind === "create") {
+        await create.mutateAsync(pendingSave.values);
+        toast.success("Especialidad creada");
+        setCreating(false);
+      } else {
+        await update.mutateAsync({
+          id: pendingSave.id,
+          patch: pendingSave.values,
+        });
+        toast.success("Especialidad actualizada");
+        setOverlay((prev) =>
+          prev?.id === pendingSave.id ? { id: pendingSave.id, mode: "detail" } : prev,
+        );
+      }
+      setPendingSave(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al guardar");
+    }
+  };
 
   const filtered = useMemo(() => {
-    const rows = list.data ?? [];
+    const rows = especialidades;
     if (!query.trim()) return rows;
     const q = query.toLowerCase();
     return rows.filter(
@@ -80,25 +310,23 @@ function EspecialidadesPage() {
         (isMaster && e.ID_CLIENTE?.toLowerCase().includes(q)) ||
         (isMaster && e.ID_ESPECIALIDAD?.toLowerCase().includes(q)),
     );
-  }, [list.data, query, isMaster]);
+  }, [especialidades, query, isMaster]);
 
   const colSpan = isMaster ? 4 : canMutate ? 2 : 1;
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Especialidades</h1>
-          <p className="text-sm text-muted-foreground">
-            {list.data?.length ?? 0} registradas en el sistema
-          </p>
-        </div>
-        {canMutate && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nueva especialidad
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Especialidades"
+        description={`${especialidades.length} registradas en el sistema`}
+        actions={
+          canMutate && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nueva especialidad
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="relative mb-4 max-w-md">
@@ -146,12 +374,8 @@ function EspecialidadesPage() {
                 filtered.map((e) => (
                   <TableRow
                     key={e.ID_ESPECIALIDAD}
-                    className={
-                      canMutate
-                        ? "cursor-pointer hover:bg-muted/50 transition-colors"
-                        : undefined
-                    }
-                    onClick={canMutate ? () => setEditing(e) : undefined}
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
+                    onClick={() => setOverlay({ id: e.ID_ESPECIALIDAD, mode: "detail" })}
                   >
                     {isMaster && (
                       <TableCell className="font-mono text-xs">{e.ID_ESPECIALIDAD}</TableCell>
@@ -165,21 +389,15 @@ function EspecialidadesPage() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
+                              <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditing(e)}>
+                            <DropdownMenuItem
+                              onClick={() => setOverlay({ id: e.ID_ESPECIALIDAD, mode: "edit" })}
+                            >
                               <Pencil className="mr-2 h-4 w-4" /> Editar
                             </DropdownMenuItem>
-                            {isMaster && (
-                              <DropdownMenuItem
-                                onClick={() => setDeleting(e)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                              </DropdownMenuItem>
-                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -200,38 +418,54 @@ function EspecialidadesPage() {
           submitLabel="Crear"
           isMaster={isMaster}
           submitting={create.isPending}
-          onSubmit={async (values) => {
-            try {
-              await create.mutateAsync(values);
-              toast.success("Especialidad creada");
-              setCreating(false);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Error al crear");
-            }
+          onSubmit={(values) => {
+            setPendingSave({ kind: "create", values });
           }}
         />
       )}
 
-      {editing && canMutate && (
-        <EspecialidadFormDialog
-          open
-          onClose={() => setEditing(null)}
-          title="Editar especialidad"
-          submitLabel="Guardar"
-          isMaster={isMaster}
-          initial={editing}
-          submitting={update.isPending}
-          onSubmit={async (values) => {
-            try {
-              await update.mutateAsync({ id: editing.ID_ESPECIALIDAD, patch: values });
-              toast.success("Especialidad actualizada");
-              setEditing(null);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Error al actualizar");
-            }
-          }}
-        />
-      )}
+      <EspecialidadDetailOverlay
+        open={!!overlay}
+        mode={overlay?.mode ?? "detail"}
+        especialidad={overlayEspecialidad}
+        canMutate={canMutate}
+        isMaster={isMaster}
+        submitting={update.isPending}
+        onClose={handleCloseOverlay}
+        onEdit={handleEditOverlay}
+        onCancelEdit={handleCancelEditOverlay}
+        onRequestSave={(values) => {
+          if (!overlay?.id) return;
+          setPendingSave({ kind: "update", id: overlay.id, values });
+        }}
+      />
+
+      <AlertDialog open={!!pendingSave} onOpenChange={(o) => !o && setPendingSave(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Confirmar guardado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingSave?.kind === "create"
+                ? "Se creará una nueva especialidad en el sistema. ¿Deseas continuar?"
+                : "Se actualizarán los datos de esta especialidad. ¿Deseas continuar?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={create.isPending || update.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={create.isPending || update.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void executePendingSave();
+              }}
+            >
+              {create.isPending || update.isPending ? "Guardando..." : "Confirmar y guardar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {isMaster && (
         <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
@@ -276,6 +510,7 @@ type EspecialidadFormDialogCreateProps = {
   isMaster: boolean;
   initial?: undefined;
   submitting: boolean;
+  embedded?: boolean;
   onSubmit: (values: EspecialidadCreateInput) => void;
 };
 
@@ -287,6 +522,7 @@ type EspecialidadFormDialogEditProps = {
   isMaster: boolean;
   initial: EspecialidadData;
   submitting: boolean;
+  embedded?: boolean;
   onSubmit: (values: EspecialidadUpdateInput) => void;
 };
 
@@ -295,12 +531,12 @@ type EspecialidadFormDialogProps =
   | EspecialidadFormDialogEditProps;
 
 function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
-  const { open, onClose, title, submitLabel, isMaster, submitting } = props;
+  const { open, onClose, title, submitLabel, isMaster, submitting, embedded } = props;
   const initial = "initial" in props ? props.initial : undefined;
   const isEdit = initial != null;
 
   const { list: clientesList } = useClientes();
-  const clientes = clientesList.data ?? [];
+  const clientes = useMemo(() => clientesList.data ?? [], [clientesList.data]);
 
   const [nombre, setNombre] = useState("");
   const [idCliente, setIdCliente] = useState("");
@@ -312,84 +548,93 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
     }
   }, [open, initial]);
 
+  const formBody = (
+    <form
+      id={embedded ? "especialidad-form" : undefined}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!nombre.trim()) return;
+
+        if (isEdit && initial) {
+          const patch: EspecialidadUpdateInput = { ESPECIALIDAD: nombre.trim() };
+          (props as EspecialidadFormDialogEditProps).onSubmit(patch);
+          return;
+        }
+
+        const payload: EspecialidadCreateInput = {
+          ESPECIALIDAD: nombre.trim(),
+          ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
+        };
+        (props as EspecialidadFormDialogCreateProps).onSubmit(payload);
+      }}
+      className="space-y-4"
+    >
+      {isMaster && isEdit && initial && (
+        <div className="space-y-2">
+          <Label>ID_ESPECIALIDAD</Label>
+          <Input value={initial.ID_ESPECIALIDAD} disabled readOnly className="font-mono text-sm" />
+        </div>
+      )}
+
+      {isMaster && (
+        <div className="space-y-2">
+          <Label>ID_CLIENTE{!isEdit ? " *" : ""}</Label>
+          {isEdit ? (
+            <Input value={idCliente} disabled readOnly className="font-mono text-sm" />
+          ) : clientes.length > 0 ? (
+            <Select value={idCliente} onValueChange={setIdCliente}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {clientes.map((c) => (
+                  <SelectItem key={c.ID_CLIENTE} value={c.ID_CLIENTE}>
+                    {c.NOMBRE_ESCUELA} ({c.ID_CLIENTE})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input value={idCliente} onChange={(e) => setIdCliente(e.target.value)} />
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label>Especialidad *</Label>
+        <Input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej. Guitarra, Piano, Lenguaje Musical..."
+          required
+        />
+      </div>
+
+      {!embedded ? (
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={submitting || (isMaster && !isEdit && !idCliente)}>
+            {submitting ? "Guardando..." : submitLabel}
+          </Button>
+        </DialogFooter>
+      ) : null}
+    </form>
+  );
+
+  if (embedded) {
+    if (!open) return null;
+    return formBody;
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!nombre.trim()) return;
-
-            if (isEdit && initial) {
-              const patch: EspecialidadUpdateInput = { ESPECIALIDAD: nombre.trim() };
-              (props as EspecialidadFormDialogEditProps).onSubmit(patch);
-              return;
-            }
-
-            const payload: EspecialidadCreateInput = {
-              ESPECIALIDAD: nombre.trim(),
-              ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
-            };
-            (props as EspecialidadFormDialogCreateProps).onSubmit(payload);
-          }}
-          className="space-y-4"
-        >
-          {isMaster && isEdit && initial && (
-            <div className="space-y-2">
-              <Label>ID_ESPECIALIDAD</Label>
-              <Input value={initial.ID_ESPECIALIDAD} disabled readOnly className="font-mono text-sm" />
-            </div>
-          )}
-
-          {isMaster && (
-            <div className="space-y-2">
-              <Label>ID_CLIENTE{!isEdit ? " *" : ""}</Label>
-              {isEdit ? (
-                <Input value={idCliente} disabled readOnly className="font-mono text-sm" />
-              ) : clientes.length > 0 ? (
-                <Select value={idCliente} onValueChange={setIdCliente}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clientes.map((c) => (
-                      <SelectItem key={c.ID_CLIENTE} value={c.ID_CLIENTE}>
-                        {c.NOMBRE_ESCUELA} ({c.ID_CLIENTE})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input value={idCliente} onChange={(e) => setIdCliente(e.target.value)} />
-              )}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Especialidad *</Label>
-            <Input
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Ej. Guitarra, Piano, Lenguaje Musical..."
-              required
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={submitting || (isMaster && !isEdit && !idCliente)}
-            >
-              {submitting ? "Guardando..." : submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
+        {formBody}
       </DialogContent>
     </Dialog>
   );

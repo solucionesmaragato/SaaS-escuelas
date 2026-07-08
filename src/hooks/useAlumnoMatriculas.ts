@@ -3,11 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import type { Matricula } from "@/types/database";
 import {
+  isAdminRole,
+  isSecretariaRole,
   scopeWorkspaceQuery,
   tenantListKey,
   workspaceListKey,
   workspaceScopeFields,
 } from "@/lib/tenantQuery";
+
+function assertCanMutateAlumnos(rol: string | null | undefined) {
+  if (isAdminRole(rol) || isSecretariaRole(rol)) return;
+  throw new Error("No tienes permiso para modificar alumnos.");
+}
 
 export type MatriculaCreateInput = {
   ESPECIALIDAD: string | null;
@@ -73,6 +80,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
 
   const create = useMutation({
     mutationFn: async (input: MatriculaCreateInput) => {
+      assertCanMutateAlumnos(rol);
       if (!alumnoId) throw new Error("Alumno no definido");
       const payload = {
         ID_ALUMNO: alumnoId,
@@ -96,6 +104,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
 
   const update = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: MatriculaUpdateInput }) => {
+      assertCanMutateAlumnos(rol);
       let query = supabase
         .from("MATRICULAS")
         .update(patch)
@@ -111,6 +120,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      assertCanMutateAlumnos(rol);
       let query = supabase
         .from("MATRICULAS")
         .delete()

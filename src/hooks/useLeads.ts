@@ -37,6 +37,7 @@ export type LeadData = {
   NOMBRE: string;
   NOMBRE_CONTACTO: string | null;
   TELEFONO: string | null;
+  EMAIL_LEAD: string | null;
   ID_PROFESOR: string | null;
   ESPECIALIDAD: string | null;
   DIA: string | null;
@@ -62,6 +63,7 @@ export type LeadCreateInput = {
   NOMBRE: string;
   NOMBRE_CONTACTO?: string | null;
   TELEFONO?: string | null;
+  EMAIL_LEAD?: string | null;
   ESTADO?: string | null;
   ESPECIALIDAD?: string | null;
   ID_PROFESOR?: string | null;
@@ -84,6 +86,7 @@ type LeadRow = {
   NOMBRE: string;
   NOMBRE_CONTACTO: string | null;
   TELEFONO: string | null;
+  EMAIL_LEAD: string | null;
   ID_PROFESOR: string | null;
   ESPECIALIDAD: string | null;
   DIA: string | null;
@@ -115,6 +118,9 @@ function sanitizeNullableLeadFields<
   }
   if ("TELEFONO" in input) {
     sanitized.TELEFONO = nullIfEmpty(input.TELEFONO);
+  }
+  if ("EMAIL_LEAD" in input) {
+    sanitized.EMAIL_LEAD = nullIfEmpty(input.EMAIL_LEAD);
   }
   if ("ESTADO" in input) {
     sanitized.ESTADO = nullIfEmpty(input.ESTADO);
@@ -271,6 +277,7 @@ export function useLeads(filterCenterId?: string | null) {
         NOMBRE: input.NOMBRE.trim(),
         NOMBRE_CONTACTO: nullIfEmpty(input.NOMBRE_CONTACTO),
         TELEFONO: nullIfEmpty(input.TELEFONO),
+        EMAIL_LEAD: nullIfEmpty(input.EMAIL_LEAD),
         ESTADO: nullIfEmpty(input.ESTADO),
         RESUMEN: nullIfEmpty(input.RESUMEN),
         DIA: nullIfEmpty(input.DIA),

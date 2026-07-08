@@ -1,11 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  appendIdInFilter,
-  centerFilterQueryKey,
-  fetchAlumnoIdsForCenter,
-} from "@/lib/centroFilter";
 import { scopeTenantQuery, tenantListKey, isProfesorRole } from "@/lib/tenantQuery";
 
 export type ColorIncidencia = "rojo" | "verde" | null;
@@ -40,10 +35,14 @@ export interface AlumnoGrupo {
   ESTADO: string | null;
   TITULO_CALENDARIO: string | null;
   COLOR_INCIDENCIA: ColorIncidencia;
+  ID_HORARIO: string | null;
+  ID_GRUPO: string | null;
+  ID_CENTRO: string | null;
 }
 
 export interface GroupedSession {
   GROUP_KEY: string;
+  ID_SESIONES: string[];
   FECHA_EXACTA: string;
   HORA_INICIO: string | null;
   HORA_FIN: string | null;
@@ -180,7 +179,11 @@ function buildTituloBloque(alumnos: AlumnoGrupo[], textoEspecialidad: string): s
   return `${textoEspecialidad} (${alumnos.length} alumnos)`;
 }
 
-function groupSesiones(mapped: SesionData[]): GroupedSession[] {
+function groupSesiones(
+  mapped: SesionData[],
+  horarioGrupoById: Map<string, string>,
+  alumnoCentroById: Map<string, string | null>,
+): GroupedSession[] {
   const groups = new Map<string, SesionData[]>();
 
   for (const s of mapped) {
@@ -201,10 +204,14 @@ function groupSesiones(mapped: SesionData[]): GroupedSession[] {
       ESTADO: s.ESTADO,
       TITULO_CALENDARIO: s.TITULO_CALENDARIO,
       COLOR_INCIDENCIA: s.COLOR_INCIDENCIA,
+      ID_HORARIO: s.ID_HORARIO,
+      ID_GRUPO: s.ID_HORARIO ? (horarioGrupoById.get(s.ID_HORARIO) ?? null) : null,
+      ID_CENTRO: s.ID_ALUMNO ? (alumnoCentroById.get(s.ID_ALUMNO) ?? null) : null,
     }));
 
     return {
       GROUP_KEY: groupKey,
+      ID_SESIONES: rows.map((s) => s.ID_SESION),
       FECHA_EXACTA: first.FECHA_EXACTA,
       HORA_INICIO: first.HORA_INICIO,
       HORA_FIN: first.HORA_FIN,
@@ -277,23 +284,18 @@ const EMPTY_SESIONES_QUERY: SesionesQueryData = {
   },
 };
 
-export function useSesiones(
-  dateRange: SesionesDateRange,
-  filterCenterId?: string | null,
-) {
+export function useSesiones(dateRange: SesionesDateRange) {
   const { tenantId, rol, perfil } = useActiveTenant();
   const queryKey = [
     ...tenantListKey("sesiones", rol, tenantId),
     dateRange.startDate,
     dateRange.endDate,
-    centerFilterQueryKey(filterCenterId),
   ] as const;
 
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<SesionesQueryData> => {
       let sesiones: SesionRow[];
-      let alumnoIds: string[] | null = null;
 
       if (isProfesorRole(rol)) {
         if (!perfil?.ID_PROFESOR) return EMPTY_SESIONES_QUERY;
@@ -309,45 +311,44 @@ export function useSesiones(
         if (error) throw error;
         sesiones = (data ?? []) as SesionRow[];
       } else {
-        // ADMIN, SECRETARIA, DIRECCION — scope by ALUMNOS.ID_CENTRO via ID_ALUMNO.
-        alumnoIds = await fetchAlumnoIdsForCenter(tenantId, rol, filterCenterId);
-        if (alumnoIds && alumnoIds.length === 0) return EMPTY_SESIONES_QUERY;
-
         let query = supabase.from("SESIONES").select("*");
         query = scopeTenantQuery(query, rol, tenantId);
         query = query
           .gte("FECHA_EXACTA", dateRange.startDate)
           .lte("FECHA_EXACTA", dateRange.endDate);
-        const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
-        if (scoped === "empty") return EMPTY_SESIONES_QUERY;
 
-        const { data, error } = await scoped.order("FECHA_EXACTA", { ascending: true });
+        const { data, error } = await query.order("FECHA_EXACTA", { ascending: true });
         if (error) throw error;
         sesiones = (data ?? []) as SesionRow[];
       }
 
-      let targetIds: string[] | null = alumnoIds;
-      if (targetIds == null) {
-        const uniqueSessionAlumnoIds = Array.from(
-          new Set(sesiones.map((s) => s.ID_ALUMNO).filter(Boolean)),
-        ) as string[];
-        targetIds = uniqueSessionAlumnoIds;
-      }
+      const uniqueSessionAlumnoIds = Array.from(
+        new Set(sesiones.map((s) => s.ID_ALUMNO).filter(Boolean)),
+      ) as string[];
+      const targetIds = uniqueSessionAlumnoIds;
 
-      let alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string }[];
+      let alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string; ID_CENTRO: string | null }[];
       if (targetIds.length > 0) {
-        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
+        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO");
         alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
         alumnosQuery = alumnosQuery.in("ID_ALUMNO", targetIds);
         const { data } = await alumnosQuery;
-        alumnos = data ?? [];
+        alumnos = (data ?? []).map((row) => ({
+          ID_ALUMNO: row.ID_ALUMNO,
+          NOMBRE_ALUMNO: row.NOMBRE_ALUMNO,
+          ID_CENTRO: row.ID_CENTRO ?? null,
+        }));
       } else if (isProfesorRole(rol)) {
         alumnos = [];
       } else {
-        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
+        let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO");
         alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
         const { data } = await alumnosQuery;
-        alumnos = data ?? [];
+        alumnos = (data ?? []).map((row) => ({
+          ID_ALUMNO: row.ID_ALUMNO,
+          NOMBRE_ALUMNO: row.NOMBRE_ALUMNO,
+          ID_CENTRO: row.ID_CENTRO ?? null,
+        }));
       }
 
       let profesoresQuery = supabase.from("PROFESOR").select("ID_PROFESOR, NOMBRE_PROFESOR");
@@ -370,7 +371,32 @@ export function useSesiones(
         esp ?? [],
       );
 
-      const grouped = groupSesiones(mapped);
+      const horarioIds = Array.from(
+        new Set(mapped.map((s) => s.ID_HORARIO).filter((id): id is string => Boolean(id))),
+      );
+      const horarioGrupoById = new Map<string, string>();
+      if (horarioIds.length > 0) {
+        let horariosQuery = supabase
+          .from("HORARIOS_MATRICULAS")
+          .select("ID_HORARIO, ID_GRUPO");
+        horariosQuery = scopeTenantQuery(horariosQuery, rol, tenantId);
+        horariosQuery = horariosQuery.in("ID_HORARIO", horarioIds);
+        const { data: horariosRows, error: horariosError } = await horariosQuery;
+        if (horariosError) throw horariosError;
+        for (const row of horariosRows ?? []) {
+          const horarioId = row.ID_HORARIO as string | null;
+          const grupoId = row.ID_GRUPO as string | null;
+          if (horarioId && grupoId) {
+            horarioGrupoById.set(horarioId, grupoId);
+          }
+        }
+      }
+
+      const alumnoCentroById = new Map(
+        alumnos.map((alumno) => [alumno.ID_ALUMNO, alumno.ID_CENTRO ?? null]),
+      );
+
+      const grouped = groupSesiones(mapped, horarioGrupoById, alumnoCentroById);
 
       return {
         sesiones: grouped,

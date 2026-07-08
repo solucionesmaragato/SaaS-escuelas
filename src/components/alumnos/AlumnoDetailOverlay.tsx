@@ -7,7 +7,10 @@ import type {
   HorarioCreateInput,
   HorarioUpdateInput,
 } from "@/hooks/useAlumnosTree";
-import { useAlumnoMatriculasIncidencias } from "@/hooks/useAlumnoMatriculasIncidencias";
+import { AlumnoFacturasTable } from "@/components/alumnos/AlumnoFacturasTable";
+import { AlumnoAcademicoTab } from "@/components/alumnos/AlumnoAcademicoTab";
+import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
+import { ContactEmailRich, ContactPhoneRich } from "@/components/ui/ContactQuickActions";
 import type { GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { AlumnoFormDialog } from "@/components/alumnos/AlumnoFormDialog";
 import { calcEdad, type AlumnoFormValues } from "@/lib/alumnoSchema";
@@ -16,39 +19,19 @@ import {
   isBizumPaymentMethod,
   normalizeMetodoPago,
 } from "@/lib/alumnoPaymentUtils";
-import { MESES_ANIO } from "@/lib/alumnosMatriculasUtils";
+import { formatCurrency } from "@/lib/format";
+import type { OnNavigateToEntity } from "@/lib/entityNavigation";
 import { PersonAvatar } from "@/components/PersonAvatar";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const ALUMNO_OVERLAY_PANEL_CLASS =
-  "fixed top-[20vh] left-1/2 -translate-x-1/2 w-full max-w-6xl max-h-[65vh] overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-lg z-50";
-
-const ESTADO_OPCIONES = ["Cobrar", "Pagado", "Devolver"] as const;
-const MATRICULA_ESTADOS = ["Activo", "Inactivo"] as const;
-
-function normalizeMatriculaEstado(estado: string | null | undefined): (typeof MATRICULA_ESTADOS)[number] {
-  return estado?.trim().toLowerCase() === "inactivo" ? "Inactivo" : "Activo";
-}
+  "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl max-h-[85vh] overflow-y-auto bg-card text-card-foreground border border-border shadow-xl rounded-lg z-50";
 
 type LookupMaps = {
   profesorById: Map<string, string>;
@@ -77,45 +60,10 @@ function ReadOnlyField({
 function AuthBadge({ label, granted }: { label: string; granted: boolean | null | undefined }) {
   const ok = granted === true;
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium",
-        ok ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800",
-      )}
-    >
+    <StatusBadge status={ok ? "success" : "destructive"} className="rounded-md px-2.5 py-1">
       {label}: {ok ? "Sí" : "No"}
-    </span>
+    </StatusBadge>
   );
-}
-
-function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(value);
-}
-
-function formatMatriculaTarifa(
-  mat: {
-    ID_TARIFA?: string | null;
-    TARIFAS?: { SERVICIO?: string | null } | null;
-  },
-  tarifaById: Map<string, string>,
-): string {
-  if (mat.TARIFAS?.SERVICIO?.trim()) return mat.TARIFAS.SERVICIO.trim();
-  if (!mat.ID_TARIFA) return "Sin tarifa";
-  return tarifaById.get(mat.ID_TARIFA) ?? "Sin tarifa";
-}
-
-function formatHorarioSchedule(
-  dia: string | null | undefined,
-  horaInicio: string | null | undefined,
-  horaFin: string | null | undefined,
-): string {
-  const day = dia?.trim() || "—";
-  const start = horaInicio?.slice(0, 5) ?? "";
-  const end = horaFin?.slice(0, 5) ?? "";
-  if (start && end) return `${day}, ${start}–${end}`;
-  if (start) return `${day}, ${start}`;
-  return day;
 }
 
 function buildTutorRows(alumno: AlumnoTree) {
@@ -137,247 +85,45 @@ function buildTutorRows(alumno: AlumnoTree) {
   return rows;
 }
 
-function EstadoField({
+function estadoResumenBadgeStatus(
+  value: string | null | undefined,
+): "success" | "warning" | "destructive" | "neutral" {
+  const current = value?.trim() ?? "";
+  if (!current) return "neutral";
+  if (current === "Pagado") return "success";
+  if (current === "Cobrar") return "warning";
+  if (current === "Devolver") return "destructive";
+  return "neutral";
+}
+
+function EstadoReadOnly({
   label,
   value,
-  showMes,
   mesValue,
-  disabled,
-  onEstadoChange,
-  onMesChange,
 }: {
   label: string;
   value: string | null | undefined;
-  showMes: boolean;
-  mesValue: string | null | undefined;
-  disabled?: boolean;
-  onEstadoChange: (value: string) => void;
-  onMesChange: (value: string) => void;
+  mesValue?: string | null | undefined;
 }) {
-  const current = value?.trim() ?? "";
-  const estadoSelectValue = ESTADO_OPCIONES.includes(current as (typeof ESTADO_OPCIONES)[number])
-    ? current
-    : "__unset__";
+  const display = value?.trim() ?? "";
 
   return (
     <div className="space-y-2">
       <Label className="text-muted-foreground">{label}</Label>
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={estadoSelectValue}
-          disabled={disabled}
-          onValueChange={(v) => onEstadoChange(v === "__unset__" ? "" : v)}
-        >
-          <SelectTrigger className="h-9 w-[160px]">
-            <SelectValue placeholder="Seleccionar" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__unset__">—</SelectItem>
-            {ESTADO_OPCIONES.map((opt) => (
-              <SelectItem key={opt} value={opt}>
-                {opt}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {showMes && (
-          <Select
-            value={mesValue?.trim() || "__unset__"}
-            disabled={disabled}
-            onValueChange={(v) => onMesChange(v === "__unset__" ? "" : v)}
-          >
-            <SelectTrigger className="h-9 w-[160px]">
-              <SelectValue placeholder="Mes devolución" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__unset__">Mes devolución</SelectItem>
-              {MESES_ANIO.map((mes) => (
-                <SelectItem key={mes} value={mes}>
-                  {mes}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MatriculasIncidenciasPanel({
-  alumnoId,
-  lookups,
-}: {
-  alumnoId: string;
-  lookups: LookupMaps;
-}) {
-  const { data, isLoading, isError, error } = useAlumnoMatriculasIncidencias(alumnoId);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <p className="py-6 text-center text-sm text-destructive">
-        {error instanceof Error ? error.message : "Error al cargar matrículas e incidencias."}
-      </p>
-    );
-  }
-
-  const matriculas = data?.matriculas ?? [];
-  const incidencias = data?.incidencias ?? [];
-
-  return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold tracking-tight">Matrículas actuales</h3>
-        {matriculas.length === 0 ? (
-          <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-            Este alumno no tiene matrículas registradas.
-          </p>
+        {!display ? (
+          <p className="text-sm font-medium">—</p>
         ) : (
-          <div className="space-y-4">
-            {matriculas.map((mat) => {
-              const horarios = mat.HORARIOS_MATRICULAS ?? [];
-              return (
-                <div
-                  key={mat.ID_MATRICULA}
-                  className="overflow-hidden rounded-md border bg-muted/20 p-4"
-                >
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Tarifa</p>
-                      <p className="text-sm font-medium">
-                        {formatMatriculaTarifa(mat, lookups.tarifaById)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Especialidad</p>
-                      <p className="text-sm font-medium">
-                        {mat.ESPECIALIDAD
-                          ? lookups.especialidadById.get(mat.ESPECIALIDAD) ?? mat.ESPECIALIDAD
-                          : "—"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Estado</p>
-                      <Badge variant="secondary" className="mt-0.5">
-                        {normalizeMatriculaEstado(mat.ESTADO)}
-                      </Badge>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Fecha alta</p>
-                      <p className="text-sm font-medium">{mat.FECHA_ALTA ?? "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Profesor</p>
-                      <p className="text-sm font-medium">
-                        {mat.ID_PROFESOR
-                          ? lookups.profesorById.get(mat.ID_PROFESOR) ?? mat.ID_PROFESOR
-                          : "—"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 border-t pt-4">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Horarios</p>
-                    {horarios.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        Sin horarios registrados para esta matrícula.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto rounded-md border bg-background">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Especialidad</TableHead>
-                              <TableHead>Horario</TableHead>
-                              <TableHead>Saldo</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {horarios.map((horario) => {
-                              const especialidadId = horario.ID_ESPECIALIDAD ?? mat.ESPECIALIDAD;
-                              return (
-                                <TableRow key={horario.ID_HORARIO}>
-                                  <TableCell>
-                                    {especialidadId
-                                      ? lookups.especialidadById.get(especialidadId) ?? especialidadId
-                                      : "—"}
-                                  </TableCell>
-                                  <TableCell>
-                                    {formatHorarioSchedule(
-                                      horario.DIA,
-                                      horario.HORA_INICIO,
-                                      horario.HORA_FIN,
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    {horario.SALDO != null ? horario.SALDO : "—"}
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <StatusBadge status={estadoResumenBadgeStatus(value)} className="font-normal">
+            {display}
+          </StatusBadge>
         )}
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold tracking-tight">Historial de incidencias</h3>
-        {incidencias.length === 0 ? (
-          <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-            No hay incidencias registradas para este alumno.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Falta</TableHead>
-                  <TableHead>Profesor</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Notas</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {incidencias.map((inc) => (
-                  <TableRow key={inc.ID_INCIDENCIA}>
-                    <TableCell className="whitespace-nowrap">{inc.FECHA_EXACTA ?? "—"}</TableCell>
-                    <TableCell>{inc.TIPO_INCIDENCIA ?? "—"}</TableCell>
-                    <TableCell>{inc.TIPO_FALTA ?? "—"}</TableCell>
-                    <TableCell>
-                      {inc.ID_PROFESOR
-                        ? lookups.profesorById.get(inc.ID_PROFESOR) ?? inc.ID_PROFESOR
-                        : "—"}
-                    </TableCell>
-                    <TableCell>{inc.ESTADO_CONSULTA ?? "—"}</TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={inc.NOTAS ?? undefined}>
-                      {inc.NOTAS ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </section>
+        {display === "Devolver" && mesValue?.trim() ? (
+          <Badge variant="outline" className="font-normal">
+            Mes devolución: {mesValue}
+          </Badge>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -386,6 +132,28 @@ type SelectOptions = {
   especialidades: Array<{ id: string; label: string }>;
   tarifas: Array<{ id: string; label: string }>;
   profesores: Array<{ id: string; label: string }>;
+};
+
+export type AlumnoDetailOverlayProps = {
+  alumno: AlumnoTree | null;
+  open: boolean;
+  mode?: "detail" | "edit";
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onPatch: (patch: AlumnoUpdateInput) => Promise<void>;
+  patching?: boolean;
+  lookups: LookupMaps;
+  selectOptions: SelectOptions;
+  tarifaSesionesById: Map<string, number | null>;
+  grupoSlots: GrupoHorarioSlot[];
+  editSubmitting: boolean;
+  onEditSubmit: (values: AlumnoFormValues) => void;
+  onCreateHorario: (input: HorarioCreateInput) => Promise<void>;
+  onUpdateHorario: (id: string, patch: HorarioUpdateInput) => Promise<void>;
+  onRemoveHorario: (id: string) => Promise<void>;
+  horarioSaving: boolean;
+  onNavigateToEntity: OnNavigateToEntity;
 };
 
 export function AlumnoDetailOverlay({
@@ -407,26 +175,8 @@ export function AlumnoDetailOverlay({
   onUpdateHorario,
   onRemoveHorario,
   horarioSaving,
-}: {
-  alumno: AlumnoTree | null;
-  open: boolean;
-  mode?: "detail" | "edit";
-  onClose: () => void;
-  onEdit: () => void;
-  onCancelEdit: () => void;
-  onPatch: (patch: AlumnoUpdateInput) => Promise<void>;
-  patching?: boolean;
-  lookups: LookupMaps;
-  selectOptions: SelectOptions;
-  tarifaSesionesById: Map<string, number | null>;
-  grupoSlots: GrupoHorarioSlot[];
-  editSubmitting: boolean;
-  onEditSubmit: (values: AlumnoFormValues) => void;
-  onCreateHorario: (input: HorarioCreateInput) => Promise<void>;
-  onUpdateHorario: (id: string, patch: HorarioUpdateInput) => Promise<void>;
-  onRemoveHorario: (id: string) => Promise<void>;
-  horarioSaving: boolean;
-}) {
+  onNavigateToEntity,
+}: AlumnoDetailOverlayProps) {
   const [activeTab, setActiveTab] = useState("resumen");
   const alumnoId = alumno?.ID_ALUMNO ?? null;
 
@@ -476,8 +226,9 @@ export function AlumnoDetailOverlay({
   const edad = calcEdad(alumno.NACIMIENTO);
   const tutors = buildTutorRows(alumno);
   const metodoPago = normalizeMetodoPago(alumno.METODO_PAGO);
-  const showMesMatricula = alumno.ESTADO_MATRICULA?.trim() === "Devolver";
-  const showMesReserva = alumno.ESTADO_RESERVA?.trim() === "Devolver";
+  const isSepa = isBankRemittancePaymentMethod(metodoPago);
+  const isBizum = isBizumPaymentMethod(metodoPago);
+  const isSimplePayment = !isSepa && !isBizum;
 
   return createPortal(
     <>
@@ -524,6 +275,7 @@ export function AlumnoDetailOverlay({
             </header>
 
             <AlumnoFormDialog
+              key={alumno.ID_ALUMNO}
               open
               variant="embedded"
               title="Editar alumno"
@@ -581,144 +333,175 @@ export function AlumnoDetailOverlay({
             </header>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-4">
-            <TabsTrigger value="resumen">Resumen</TabsTrigger>
-            <TabsTrigger value="personales">Datos personales</TabsTrigger>
-            <TabsTrigger value="pago">Datos de pago</TabsTrigger>
-            <TabsTrigger value="matricula">Matrículas e Incidencias</TabsTrigger>
-          </TabsList>
+              <TabsList className="mb-4 grid w-full grid-cols-4">
+                <TabsTrigger value="resumen">Resumen</TabsTrigger>
+                <TabsTrigger value="personales">Datos personales</TabsTrigger>
+                <TabsTrigger value="pago">Datos de pago</TabsTrigger>
+                <TabsTrigger value="matricula">Académico</TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <ReadOnlyField label="Nombre alumno" value={alumno.NOMBRE_ALUMNO} />
-            <ReadOnlyField label="Tel. comunicación" value={alumno.TLF_COMUNICACION} />
-            <ReadOnlyField label="Email" value={alumno.MAIL} />
+              <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <ReadOnlyField label="Nombre alumno" value={alumno.NOMBRE_ALUMNO} />
+                <ReadOnlyField
+                  label="Tel. comunicación"
+                  value={<ContactPhoneRich phone={alumno.TLF_COMUNICACION} />}
+                />
+                <ReadOnlyField label="Email" value={<ContactEmailRich email={alumno.MAIL} />} />
 
-            <EstadoField
-              label="Estado matrícula"
-              value={alumno.ESTADO_MATRICULA}
-              showMes={showMesMatricula}
-              mesValue={alumno.MES_DEVOLUCION_RESERVA}
-              disabled={patching}
-              onEstadoChange={(v) =>
-                void onPatch({
-                  ESTADO_MATRICULA: v || null,
-                  ...(v !== "Devolver" && alumno.ESTADO_RESERVA?.trim() !== "Devolver"
-                    ? { MES_DEVOLUCION_RESERVA: null }
-                    : {}),
-                })
-              }
-              onMesChange={(v) => void onPatch({ MES_DEVOLUCION_RESERVA: v || null })}
-            />
+                <EstadoReadOnly
+                  label="Estado matrícula"
+                  value={alumno.ESTADO_MATRICULA}
+                  mesValue={alumno.MES_DEVOLUCION_RESERVA}
+                />
 
-            <EstadoField
-              label="Estado reserva"
-              value={alumno.ESTADO_RESERVA}
-              showMes={showMesReserva}
-              mesValue={alumno.MES_DEVOLUCION_RESERVA}
-              disabled={patching}
-              onEstadoChange={(v) =>
-                void onPatch({
-                  ESTADO_RESERVA: v || null,
-                  ...(v !== "Devolver" && alumno.ESTADO_MATRICULA?.trim() !== "Devolver"
-                    ? { MES_DEVOLUCION_RESERVA: null }
-                    : {}),
-                })
-              }
-              onMesChange={(v) => void onPatch({ MES_DEVOLUCION_RESERVA: v || null })}
-            />
+                <EstadoReadOnly
+                  label="Estado reserva"
+                  value={alumno.ESTADO_RESERVA}
+                  mesValue={alumno.MES_DEVOLUCION_RESERVA}
+                />
 
-            <ReadOnlyField label="Total mensual (€)" value={formatCurrency(alumno.TOTAL_MENSUAL)} />
+                <ReadOnlyField
+                  label="Total mensual (€)"
+                  value={formatCurrency(alumno.TOTAL_MENSUAL)}
+                />
 
-            {alumno.NOTAS?.trim() ? (
-              <ReadOnlyField
-                label="Notas"
-                value={alumno.NOTAS}
-                className="sm:col-span-2 lg:col-span-3"
-              />
-            ) : null}
-          </TabsContent>
+                {alumno.NOTAS?.trim() ? (
+                  <ReadOnlyField
+                    label="Notas"
+                    value={alumno.NOTAS}
+                    className="sm:col-span-2 lg:col-span-3"
+                  />
+                ) : null}
+              </TabsContent>
 
-          <TabsContent value="personales" className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <ReadOnlyField label="DNI" value={alumno.DNI} />
-              <ReadOnlyField label="Nacimiento" value={alumno.NACIMIENTO} />
-              <ReadOnlyField label="Edad actual" value={edad || "—"} />
-              {tutors.map((tutor) => (
-                <div key={tutor.label} className="space-y-2 sm:col-span-2 lg:col-span-1">
-                  {tutor.nombre?.trim() ? (
-                    <ReadOnlyField label={`${tutor.label} — Nombre`} value={tutor.nombre} />
-                  ) : null}
-                  {tutor.telefono?.trim() ? (
-                    <ReadOnlyField label={`${tutor.label} — Teléfono`} value={tutor.telefono} />
-                  ) : null}
+              <TabsContent value="personales" className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <ReadOnlyField label="DNI" value={alumno.DNI} />
+                  <ReadOnlyField label="Nacimiento" value={alumno.NACIMIENTO} />
+                  <ReadOnlyField label="Edad actual" value={edad || "—"} />
+                  {tutors.map((tutor) => (
+                    <div key={tutor.label} className="space-y-2 sm:col-span-2 lg:col-span-1">
+                      {tutor.nombre?.trim() ? (
+                        <ReadOnlyField label={`${tutor.label} — Nombre`} value={tutor.nombre} />
+                      ) : null}
+                      {tutor.telefono?.trim() ? (
+                        <ReadOnlyField
+                          label={`${tutor.label} — Teléfono`}
+                          value={<ContactPhoneRich phone={tutor.telefono} />}
+                        />
+                      ) : null}
+                    </div>
+                  ))}
+                  <ReadOnlyField
+                    label="Dirección"
+                    value={alumno.DIRECCION}
+                    className="sm:col-span-2"
+                  />
+                  <ReadOnlyField label="CP" value={alumno.CP} />
                 </div>
-              ))}
-              <ReadOnlyField
-                label="Dirección"
-                value={alumno.DIRECCION}
-                className="sm:col-span-2"
-              />
-              <ReadOnlyField label="CP" value={alumno.CP} />
-            </div>
 
-            <div className="space-y-3 rounded-md border p-4">
-              <p className="text-sm font-medium">Autorizaciones legales</p>
-              <div className="flex flex-wrap gap-2">
-                <AuthBadge label="Medios" granted={alumno.AUT_MEDIOS} />
-                <AuthBadge label="Instalaciones" granted={alumno.AUT_INSTALACIONES} />
-                <AuthBadge label="Web" granted={alumno.AUT_WEB} />
-                <AuthBadge label="RRSS" granted={alumno.AUT_RRSS} />
-                <AuthBadge label="Comunicación total" granted={alumno.AUT_COMUNICACION_TOTAL} />
-              </div>
-            </div>
-          </TabsContent>
+                <div className="space-y-3 rounded-md border p-4">
+                  <p className="text-sm font-medium">Autorizaciones legales</p>
+                  <div className="flex flex-wrap gap-2">
+                    <AuthBadge label="Medios" granted={alumno.AUT_MEDIOS} />
+                    <AuthBadge label="Instalaciones" granted={alumno.AUT_INSTALACIONES} />
+                    <AuthBadge label="Web" granted={alumno.AUT_WEB} />
+                    <AuthBadge label="RRSS" granted={alumno.AUT_RRSS} />
+                    <AuthBadge label="Comunicación total" granted={alumno.AUT_COMUNICACION_TOTAL} />
+                  </div>
+                </div>
+              </TabsContent>
 
-          <TabsContent value="pago" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label className="text-muted-foreground">Método de pago</Label>
-              {metodoPago ? (
-                <Badge variant="secondary" className="text-sm font-medium">
-                  {metodoPago}
-                </Badge>
-              ) : (
-                <p className="text-sm font-medium">—</p>
-              )}
-            </div>
+              <TabsContent value="pago" className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Método de pago</Label>
+                    {metodoPago ? (
+                      <Badge variant="secondary" className="text-sm font-medium">
+                        {metodoPago}
+                      </Badge>
+                    ) : (
+                      <p className="text-sm font-medium">—</p>
+                    )}
+                  </div>
 
-            {isBankRemittancePaymentMethod(metodoPago) && (
-              <>
-                <ReadOnlyField label="IBAN" value={alumno.IBAN} />
-                <ReadOnlyField label="Titular cuenta" value={alumno.TITULAR_CUENTA} />
-                <ReadOnlyField label="Mandato" value={alumno.MANDATO} />
-              </>
-            )}
+                  {isSepa && (
+                    <>
+                      <ReadOnlyField label="IBAN" value={alumno.IBAN} />
+                      <ReadOnlyField label="Titular cuenta" value={alumno.TITULAR_CUENTA} />
+                    </>
+                  )}
 
-            {isBizumPaymentMethod(metodoPago) && (
-              <ReadOnlyField label="Teléfono Bizum" value={alumno.TLF_BIZUM} />
-            )}
+                  {isBizum && (
+                    <ReadOnlyField label="Teléfono Bizum" value={alumno.TLF_BIZUM} />
+                  )}
 
-            <ReadOnlyField label="Motivo ajuste" value={alumno.MOTIVO_AJUSTE} />
-            <ReadOnlyField
-              label="Dto. hermanos (%)"
-              value={
-                alumno.DTO_HERMANOS_PORCENTAJE != null
-                  ? `${alumno.DTO_HERMANOS_PORCENTAJE}%`
-                  : null
-              }
-            />
-            <ReadOnlyField
-              label="Ajuste manual (€)"
-              value={formatCurrency(alumno.AJUSTE_MANUAL_EUR)}
-            />
-          </TabsContent>
+                  {isSimplePayment && (
+                    <>
+                      <ReadOnlyField
+                        label="Dto. hermanos (%)"
+                        value={
+                          alumno.DTO_HERMANOS_PORCENTAJE != null
+                            ? `${alumno.DTO_HERMANOS_PORCENTAJE}%`
+                            : null
+                        }
+                      />
+                      <ReadOnlyField
+                        label="Ajuste manual (€)"
+                        value={formatCurrency(alumno.AJUSTE_MANUAL_EUR)}
+                      />
+                    </>
+                  )}
+                </div>
 
-          <TabsContent value="matricula">
-            <MatriculasIncidenciasPanel
-              alumnoId={alumno.ID_ALUMNO}
-              lookups={lookups}
-            />
-          </TabsContent>
-        </Tabs>
+                {(isSepa || isBizum) && (
+                  <div
+                    className={cn(
+                      "grid gap-4 sm:grid-cols-2",
+                      isSepa ? "lg:grid-cols-3" : "lg:grid-cols-2",
+                    )}
+                  >
+                    {isSepa && (
+                      <SepaMandatoBlock
+                        alumnoId={alumno.ID_ALUMNO}
+                        idCliente={alumno.ID_CLIENTE}
+                        alumnoNombre={alumno.NOMBRE_ALUMNO}
+                      />
+                    )}
+                    <ReadOnlyField
+                      label="Dto. hermanos (%)"
+                      value={
+                        alumno.DTO_HERMANOS_PORCENTAJE != null
+                          ? `${alumno.DTO_HERMANOS_PORCENTAJE}%`
+                          : null
+                      }
+                    />
+                    <ReadOnlyField
+                      label="Ajuste manual (€)"
+                      value={formatCurrency(alumno.AJUSTE_MANUAL_EUR)}
+                    />
+                  </div>
+                )}
+
+                <ReadOnlyField label="Motivo ajuste" value={alumno.MOTIVO_AJUSTE} className="w-full" />
+
+                <div className="space-y-3 border-t pt-4">
+                  <h3 className="text-sm font-semibold tracking-tight">Facturas y recibos</h3>
+                  <AlumnoFacturasTable
+                    alumnoId={alumno.ID_ALUMNO}
+                    onNavigateToEntity={onNavigateToEntity}
+                  />
+                </div>
+              </TabsContent>
+
+              <TabsContent value="matricula">
+                <AlumnoAcademicoTab
+                  alumno={alumno}
+                  lookups={lookups}
+                  onNavigateToEntity={onNavigateToEntity}
+                />
+              </TabsContent>
+            </Tabs>
           </>
         )}
       </div>

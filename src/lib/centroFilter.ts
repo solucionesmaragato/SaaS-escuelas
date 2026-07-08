@@ -28,7 +28,9 @@ export function appendCenterFilter<Q extends { eq: (column: string, value: strin
   return query.eq("ID_CENTRO", centerId);
 }
 
-type InFilterable<Q> = Q & { in: (column: string, values: string[]) => Q };
+interface InFilterable<Q> {
+  in: (column: string, values: string[]) => Q;
+}
 
 export function appendIdInFilter<Q extends InFilterable<Q>>(
   query: Q,

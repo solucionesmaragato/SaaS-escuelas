@@ -57,7 +57,6 @@ function isEmpresaFormComplete(form: EmpresaClienteFormInput): boolean {
     form.TLF_REAL.trim().length > 0 &&
     form.URL_WEB.trim().length > 0 &&
     form.EMAIL_CLIENTE.trim().length > 0 &&
-    form.APP_LOGO.trim().length > 0 &&
     form.CIF.trim().length > 0 &&
     form.DIRECCION.trim().length > 0
   );

@@ -71,7 +71,24 @@
    - src/routes/_authenticated/prestamosMaterial.tsx
    - src/hooks/usePrestamosMaterial.ts
 
-   
+   # 15. Fichajes
+   - src/routes/_authenticated/fichajes.tsx
+   - src/hooks/useFichajes.tsx
+   - src/lib/fichajeCompliance.ts
+   - src/lib/fichajeAudit.ts
+   - src/lib/fichajeEidas.ts
+   - src/lib/profesorSelector.ts
+
+   # 16. Documentos Legales y Almacenamiento
+   - src/routes/_authenticated/documentos.tsx
+   - src/hooks/useDocumentos.ts
+
+   # 17. Incidencias Académicas y Asistencia
+   - src/routes/_authenticated/incidencias.tsx
+   - src/hooks/useIncidencias.ts
+
+
+
 
 
 2. PRIOR AUDIT PROTOCOL (MODIFICATION OF LOCKED FILES):

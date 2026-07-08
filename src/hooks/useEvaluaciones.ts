@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import {
@@ -13,29 +14,27 @@ import {
 } from "@/lib/tenantQuery";
 
 const EVALUACION_SELECT_COLUMNS =
-  "ID_EVALUACION, ID_CLIENTE, ANO, TRIMESTRE, CURSO, ID_ALUMNO, ID_ESPECIALIDAD, ID_PROFESOR, ID_RUBRICA, NOTA_MEDIA, COMENTARIOS, RESULTADOS_RUBRICA, CREADO_POR, MODIFICADO_POR, CREATED_AT, UPDATED_AT" as const;
+  "ID_EVALUACION, ID_CLIENTE, ID_PROFESOR, TRIMESTRE, ID_CURSO, ID_ALUMNO, ID_ESPECIALIDAD, NOTA_MEDIA, COMENTARIOS, ID_RUBRICA, RESULTADOS_RUBRICA, ESTADO" as const;
 
 export interface EvaluacionData {
   ID_EVALUACION: string;
   ID_CLIENTE: string;
-  ANO: string;
+  ID_PROFESOR: string | null;
   TRIMESTRE: string;
-  CURSO: string;
+  ID_CURSO: string | null;
   ID_ALUMNO: string;
   ID_ESPECIALIDAD: string;
-  ID_PROFESOR: string | null;
-  ID_RUBRICA: string | null;
-  NOTA_MEDIA: number | null;
+  NOTA_MEDIA: number | string | null;
   COMENTARIOS: string | null;
+  ID_RUBRICA: string | null;
   RESULTADOS_RUBRICA: Record<string, unknown> | null;
-  CREADO_POR: string | null;
-  MODIFICADO_POR: string | null;
-  CREATED_AT: string | null;
-  UPDATED_AT: string | null;
+  ESTADO: string | null;
 }
 
 export const TRIMESTRE_VALUES = ["1", "2", "3", "FINAL"] as const;
 export type TrimestreValue = (typeof TRIMESTRE_VALUES)[number];
+
+export const EVALUACION_ESTADO_BORRADOR = "Borrador" as const;
 
 export function isTrimestreValue(value: string | null | undefined): value is TrimestreValue {
   return TRIMESTRE_VALUES.includes(value as TrimestreValue);
@@ -61,11 +60,11 @@ export function evaluationLookupKey(
 
 export function buildEvaluationIndex(
   evaluaciones: EvaluacionData[],
-  ano: string,
+  idCurso: string,
 ): Map<string, EvaluacionData> {
   const map = new Map<string, EvaluacionData>();
   for (const ev of evaluaciones) {
-    if (ev.ANO !== ano) continue;
+    if ((ev.ID_CURSO ?? "") !== idCurso) continue;
     map.set(
       evaluationLookupKey(ev.TRIMESTRE, ev.ID_ALUMNO, ev.ID_ESPECIALIDAD),
       ev,
@@ -74,27 +73,42 @@ export function buildEvaluationIndex(
   return map;
 }
 
+export type EvaluacionBatchUpsertInput = {
+  ID_EVALUACION?: string;
+  ID_ALUMNO: string;
+  ID_CURSO: string;
+  TRIMESTRE: string;
+  ID_ESPECIALIDAD: string;
+  ID_PROFESOR: string | null;
+  NOTA_MEDIA: number | string;
+  ID_RUBRICA: string | null;
+  COMENTARIOS: string | null;
+  RESULTADOS_RUBRICA?: Record<string, string | number> | null;
+};
+
+/** @deprecated Use EvaluacionBatchUpsertInput for new flows */
 export type EvaluacionUpsertItem = {
   id?: string;
   input: EvaluacionCreateInput;
 };
 
+/** @deprecated Teacher dashboard legacy shape — prefer EvaluacionBatchUpsertInput */
 export type EvaluacionCreateInput = {
-  ANO: string;
   TRIMESTRE: string;
-  CURSO: string;
   ID_ALUMNO: string;
   ID_ESPECIALIDAD: string;
-  NOTA_MEDIA: number;
+  NOTA_MEDIA: number | string;
   COMENTARIOS?: string | null;
   ID_PROFESOR?: string | null;
   ID_RUBRICA?: string | null;
-  RESULTADOS_RUBRICA?: Record<string, unknown> | null;
+  RESULTADOS_RUBRICA?: Record<string, string | number> | null;
+  ID_CURSO?: string;
+  ESTADO?: string;
 };
 
-type EvaluacionPayloadValue = string | number | null | Record<string, unknown>;
-
 export type EvaluacionUpdateInput = Partial<EvaluacionCreateInput>;
+
+type EvaluacionPayloadValue = string | number | null | Record<string, unknown>;
 
 type SupabaseErrorLike = {
   message?: string;
@@ -102,6 +116,50 @@ type SupabaseErrorLike = {
   hint?: string;
   code?: string;
 };
+
+export const EVALUACION_DUPLICATE_TITLE = "Evaluación Duplicada";
+export const EVALUACION_DUPLICATE_DESCRIPTION =
+  "Ya se ha registrado una evaluación para este alumno en esta asignatura durante este trimestre.";
+
+export class EvaluacionDuplicateError extends Error {
+  readonly title = EVALUACION_DUPLICATE_TITLE;
+  readonly description = EVALUACION_DUPLICATE_DESCRIPTION;
+
+  constructor() {
+    super(EVALUACION_DUPLICATE_DESCRIPTION);
+    this.name = "EvaluacionDuplicateError";
+  }
+}
+
+export function isEvaluacionDuplicateError(error: unknown): boolean {
+  if (error instanceof EvaluacionDuplicateError) return true;
+  return (
+    error != null &&
+    typeof error === "object" &&
+    (error as SupabaseErrorLike).code === "23505"
+  );
+}
+
+export function showEvaluacionSaveError(error: unknown): void {
+  if (isEvaluacionDuplicateError(error)) {
+    toast.error(EVALUACION_DUPLICATE_TITLE, {
+      description: EVALUACION_DUPLICATE_DESCRIPTION,
+    });
+    return;
+  }
+  toast.error(formatSupabaseError(error));
+}
+
+function rethrowEvaluacionSupabaseError(error: unknown): never {
+  if (isEvaluacionDuplicateError(error)) {
+    throw new EvaluacionDuplicateError();
+  }
+  throw error;
+}
+
+function logSupabaseError(context: string, error: unknown) {
+  console.error(`SUPABASE ${context} ERROR:`, error);
+}
 
 export function formatSupabaseError(error: unknown): string {
   if (!error || typeof error !== "object") {
@@ -119,45 +177,93 @@ export function formatSupabaseError(error: unknown): string {
   return parts.length > 0 ? parts.join(" — ") : "Error desconocido";
 }
 
-function logSupabaseError(context: string, error: unknown) {
-  console.error(`SUPABASE ${context} ERROR:`, error);
-}
-
 function normalizeTrimestre(value: string): TrimestreValue {
   const trimmed = value.trim();
   if (isTrimestreValue(trimmed)) return trimmed;
   throw new Error(`TRIMESTRE inválido: "${value}". Solo se permite 1, 2, 3 o FINAL.`);
 }
 
-function normalizeNotaMedia(value: number): number {
-  if (!Number.isFinite(value)) {
-    throw new Error("NOTA_MEDIA debe ser un número válido.");
+function normalizeNotaMedia(value: number | string): number | string {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("NOTA_MEDIA debe ser un número válido.");
+    }
+    if (value < 0 || value > 10) {
+      throw new Error("NOTA_MEDIA debe estar entre 0 y 10.");
+    }
+    return Math.round(value * 100) / 100;
   }
-  if (value < 0 || value > 10) {
-    throw new Error("NOTA_MEDIA debe estar entre 0 y 10.");
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error("NOTA_MEDIA es obligatoria.");
   }
-  return Math.round(value * 100) / 100;
+
+  const num = Number(trimmed);
+  if (Number.isFinite(num)) {
+    if (num < 0 || num > 10) {
+      throw new Error("NOTA_MEDIA debe estar entre 0 y 10.");
+    }
+    return Math.round(num * 100) / 100;
+  }
+
+  return trimmed;
 }
 
-function buildCreatePayload(input: EvaluacionCreateInput): Record<string, EvaluacionPayloadValue> {
+export function buildEvaluacionUpsertPayload(
+  input: EvaluacionBatchUpsertInput,
+  tenantId: string,
+): Record<string, EvaluacionPayloadValue> {
   const idAlumno = input.ID_ALUMNO.trim();
+  const idCurso = input.ID_CURSO.trim();
   const idEspecialidad = input.ID_ESPECIALIDAD.trim();
-  const curso = input.CURSO.trim();
-  const ano = input.ANO.trim();
 
-  if (!ano) throw new Error("ANO es obligatorio.");
-  if (!curso) throw new Error("CURSO es obligatorio.");
   if (!idAlumno) throw new Error("ID_ALUMNO es obligatorio.");
+  if (!idCurso) throw new Error("ID_CURSO es obligatorio.");
   if (!idEspecialidad) throw new Error("ID_ESPECIALIDAD es obligatorio.");
 
   const payload: Record<string, EvaluacionPayloadValue> = {
-    ANO: ano,
-    TRIMESTRE: normalizeTrimestre(input.TRIMESTRE),
-    CURSO: curso,
+    ID_CLIENTE: tenantId,
     ID_ALUMNO: idAlumno,
+    ID_CURSO: idCurso,
+    TRIMESTRE: normalizeTrimestre(input.TRIMESTRE),
+    ID_ESPECIALIDAD: idEspecialidad,
+    ID_PROFESOR: input.ID_PROFESOR?.trim() || null,
+    NOTA_MEDIA: normalizeNotaMedia(input.NOTA_MEDIA),
+    ID_RUBRICA: input.ID_RUBRICA?.trim() || null,
+    COMENTARIOS: input.COMENTARIOS?.trim() || null,
+    ESTADO: EVALUACION_ESTADO_BORRADOR,
+    RESULTADOS_RUBRICA: input.RESULTADOS_RUBRICA ?? null,
+  };
+
+  const idEvaluacion = input.ID_EVALUACION?.trim();
+  if (idEvaluacion) payload.ID_EVALUACION = idEvaluacion;
+
+  return payload;
+}
+
+function buildTeacherCreatePayload(
+  input: EvaluacionCreateInput,
+  tenantId: string,
+): Record<string, EvaluacionPayloadValue> {
+  const idAlumno = input.ID_ALUMNO.trim();
+  const idEspecialidad = input.ID_ESPECIALIDAD.trim();
+  const idCurso = input.ID_CURSO?.trim();
+
+  if (!idAlumno) throw new Error("ID_ALUMNO es obligatorio.");
+  if (!idEspecialidad) throw new Error("ID_ESPECIALIDAD es obligatorio.");
+  if (!idCurso) throw new Error("ID_CURSO es obligatorio.");
+
+  const payload: Record<string, EvaluacionPayloadValue> = {
+    ID_CLIENTE: tenantId,
+    ID_ALUMNO: idAlumno,
+    ID_CURSO: idCurso,
+    TRIMESTRE: normalizeTrimestre(input.TRIMESTRE),
     ID_ESPECIALIDAD: idEspecialidad,
     NOTA_MEDIA: normalizeNotaMedia(input.NOTA_MEDIA),
     COMENTARIOS: input.COMENTARIOS?.trim() || null,
+    ESTADO: input.ESTADO?.trim() || EVALUACION_ESTADO_BORRADOR,
+    RESULTADOS_RUBRICA: input.RESULTADOS_RUBRICA ?? null,
   };
 
   if (input.ID_PROFESOR !== undefined) {
@@ -166,9 +272,6 @@ function buildCreatePayload(input: EvaluacionCreateInput): Record<string, Evalua
   if (input.ID_RUBRICA !== undefined) {
     payload.ID_RUBRICA = input.ID_RUBRICA?.trim() || null;
   }
-  if (input.RESULTADOS_RUBRICA !== undefined) {
-    payload.RESULTADOS_RUBRICA = input.RESULTADOS_RUBRICA;
-  }
 
   return payload;
 }
@@ -176,18 +279,13 @@ function buildCreatePayload(input: EvaluacionCreateInput): Record<string, Evalua
 function buildUpdatePayload(patch: EvaluacionUpdateInput): Record<string, EvaluacionPayloadValue> {
   const result: Record<string, EvaluacionPayloadValue> = {};
 
-  if (patch.ANO !== undefined) {
-    const ano = patch.ANO.trim();
-    if (!ano) throw new Error("ANO es obligatorio.");
-    result.ANO = ano;
+  if (patch.ID_CURSO !== undefined) {
+    const idCurso = patch.ID_CURSO.trim();
+    if (!idCurso) throw new Error("ID_CURSO es obligatorio.");
+    result.ID_CURSO = idCurso;
   }
   if (patch.TRIMESTRE !== undefined) {
     result.TRIMESTRE = normalizeTrimestre(patch.TRIMESTRE);
-  }
-  if (patch.CURSO !== undefined) {
-    const curso = patch.CURSO.trim();
-    if (!curso) throw new Error("CURSO es obligatorio.");
-    result.CURSO = curso;
   }
   if (patch.ID_ALUMNO !== undefined) {
     const idAlumno = patch.ID_ALUMNO.trim();
@@ -214,22 +312,30 @@ function buildUpdatePayload(patch: EvaluacionUpdateInput): Record<string, Evalua
   if (patch.RESULTADOS_RUBRICA !== undefined) {
     result.RESULTADOS_RUBRICA = patch.RESULTADOS_RUBRICA;
   }
+  if (patch.ESTADO !== undefined) {
+    result.ESTADO = patch.ESTADO?.trim() || EVALUACION_ESTADO_BORRADOR;
+  }
 
   return result;
 }
 
-export function useEvaluaciones(filterCenterId?: string | null) {
+export function useEvaluaciones(
+  filterCenterId?: string | null,
+  alumnoId?: string | null,
+  profesorId?: string | null,
+) {
   const { tenantId, rol } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("evaluaciones", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    alumnoId ?? "all",
+    profesorId ?? "all",
   ] as const;
 
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<EvaluacionData[]> => {
-      // EVALUACIONES has no ID_CENTRO — scope by ALUMNOS.ID_CENTRO via ID_ALUMNO.
       const alumnoIds = await fetchAlumnoIdsForCenter(tenantId, rol, filterCenterId);
       if (alumnoIds && alumnoIds.length === 0) return [];
 
@@ -239,11 +345,12 @@ export function useEvaluaciones(filterCenterId?: string | null) {
       query = scopeTenantQuery(query, rol, tenantId);
       const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
       if (scoped === "empty") return [];
+      let finalQuery = alumnoId ? scoped.eq("ID_ALUMNO", alumnoId) : scoped;
+      if (profesorId) finalQuery = finalQuery.eq("ID_PROFESOR", profesorId);
 
-      const { data, error } = await scoped
-        .order("ANO", { ascending: false })
-        .order("TRIMESTRE", { ascending: true })
-        .order("CURSO", { ascending: true });
+      const { data, error } = await finalQuery
+        .order("ID_CURSO", { ascending: false })
+        .order("TRIMESTRE", { ascending: true });
 
       if (error) throw error;
       return (data ?? []) as EvaluacionData[];
@@ -252,7 +359,7 @@ export function useEvaluaciones(filterCenterId?: string | null) {
 
   const create = useMutation({
     mutationFn: async (input: EvaluacionCreateInput) => {
-      const payload = buildCreatePayload(input);
+      const payload = buildTeacherCreatePayload(input, tenantId);
       console.log("PAYLOAD SENT TO SUPABASE (EVALUACION CREATE):", payload);
 
       const { data, error } = await supabase
@@ -263,9 +370,34 @@ export function useEvaluaciones(filterCenterId?: string | null) {
 
       if (error) {
         logSupabaseError("EVALUACION CREATE", error);
-        throw error;
+        rethrowEvaluacionSupabaseError(error);
       }
       return data as EvaluacionData;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+    },
+  });
+
+  const upsertEvaluaciones = useMutation({
+    mutationFn: async (inputs: EvaluacionBatchUpsertInput[]) => {
+      if (inputs.length === 0) {
+        throw new Error("No hay evaluaciones para guardar.");
+      }
+
+      const payloads = inputs.map((input) => buildEvaluacionUpsertPayload(input, tenantId));
+      console.log("PAYLOAD SENT TO SUPABASE (EVALUACIONES UPSERT):", payloads);
+
+      const { data, error } = await supabase
+        .from("EVALUACIONES")
+        .upsert(payloads)
+        .select(EVALUACION_SELECT_COLUMNS);
+
+      if (error) {
+        logSupabaseError("EVALUACIONES UPSERT", error);
+        rethrowEvaluacionSupabaseError(error);
+      }
+      return (data ?? []) as EvaluacionData[];
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
@@ -298,7 +430,7 @@ export function useEvaluaciones(filterCenterId?: string | null) {
 
       if (error) {
         logSupabaseError("EVALUACION UPDATE", error);
-        throw error;
+        rethrowEvaluacionSupabaseError(error);
       }
       if (!data) {
         throw new Error("No se encontró la evaluación o no tienes permiso para modificarla.");
@@ -332,14 +464,14 @@ export function useEvaluaciones(filterCenterId?: string | null) {
 
           if (error) {
             logSupabaseError("EVALUACION BATCH UPDATE", error);
-            throw error;
+            rethrowEvaluacionSupabaseError(error);
           }
           if (!data) {
             throw new Error("No se pudo actualizar una evaluación del lote.");
           }
           results.push(data as EvaluacionData);
         } else {
-          const payload = buildCreatePayload(item.input);
+          const payload = buildTeacherCreatePayload(item.input, tenantId);
           const { data, error } = await supabase
             .from("EVALUACIONES")
             .insert(payload)
@@ -348,7 +480,7 @@ export function useEvaluaciones(filterCenterId?: string | null) {
 
           if (error) {
             logSupabaseError("EVALUACION BATCH CREATE", error);
-            throw error;
+            rethrowEvaluacionSupabaseError(error);
           }
           results.push(data as EvaluacionData);
         }
@@ -361,5 +493,5 @@ export function useEvaluaciones(filterCenterId?: string | null) {
     },
   });
 
-  return { list, create, update, batchUpsert };
+  return { list, create, upsertEvaluaciones, update, batchUpsert };
 }

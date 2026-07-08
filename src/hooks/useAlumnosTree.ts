@@ -29,7 +29,9 @@ export type AlumnoTree = Alumno & {
   MATRICULAS: MatriculaTree[];
 };
 
-export type AlumnoCreateInput = Omit<Alumno, "ID_ALUMNO" | "ID_CLIENTE">;
+export type AlumnoCreateInput = Omit<Alumno, "ID_ALUMNO" | "ID_CLIENTE"> & {
+  ID_ALUMNO?: string;
+};
 export type AlumnoUpdateInput = Partial<AlumnoCreateInput>;
 
 export type MatriculaCreateInput = Omit<Matricula, "ID_MATRICULA" | "ID_CLIENTE">;
@@ -56,13 +58,8 @@ function normalizeAlumnoTreeRows(rows: AlumnoTree[]): AlumnoTree[] {
 export function useAlumnosTree(filterCenterId?: string | null) {
   const { tenantId, centerId, rol } = useActiveTenant();
   const qc = useQueryClient();
-  const resolvedCenterId =
-    filterCenterId !== undefined ? filterCenterId : centerId;
-  const queryKey = workspaceListKey(
-    "alumnosTree",
-    tenantId,
-    resolvedCenterId ?? "all",
-  );
+  const resolvedCenterId = filterCenterId !== undefined ? filterCenterId : centerId;
+  const queryKey = workspaceListKey("alumnosTree", tenantId, resolvedCenterId ?? "all");
 
   const list = useQuery({
     queryKey,
@@ -117,19 +114,22 @@ export function useAlumnosTree(filterCenterId?: string | null) {
   const createMatricula = useMutation({
     mutationFn: async (input: MatriculaCreateInput) => {
       assertCanMutateAlumnos(rol);
-      
+
       // Limpiamos el input por si el formulario envía objetos {id, label} en vez de strings
-      const sanitizedInput = Object.entries(input).reduce((acc, [key, val]) => {
-        if (val && typeof val === "object" && !Array.isArray(val)) {
-          acc[key] = (val as any).id || (val as any).value || null;
-        } else {
-          acc[key] = val;
-        }
-        return acc;
-      }, {} as Record<string, any>);
+      const sanitizedInput = Object.entries(input).reduce(
+        (acc, [key, val]) => {
+          if (val && typeof val === "object" && !Array.isArray(val)) {
+            acc[key] = (val as any).id || (val as any).value || null;
+          } else {
+            acc[key] = val;
+          }
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
 
       const payload = { ...sanitizedInput, ...workspaceScopeFields(tenantId, centerId) };
-      
+
       const { data, error } = await supabase
         .from("MATRICULAS")
         .insert(payload)
@@ -144,16 +144,19 @@ export function useAlumnosTree(filterCenterId?: string | null) {
   const updateMatricula = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: MatriculaUpdateInput }) => {
       assertCanMutateAlumnos(rol);
-      
+
       // Limpiamos el patch de la misma manera
-      const sanitizedPatch = Object.entries(patch).reduce((acc, [key, val]) => {
-        if (val && typeof val === "object" && !Array.isArray(val)) {
-          acc[key] = (val as any).id || (val as any).value || null;
-        } else {
-          acc[key] = val;
-        }
-        return acc;
-      }, {} as Record<string, any>);
+      const sanitizedPatch = Object.entries(patch).reduce(
+        (acc, [key, val]) => {
+          if (val && typeof val === "object" && !Array.isArray(val)) {
+            acc[key] = (val as any).id || (val as any).value || null;
+          } else {
+            acc[key] = val;
+          }
+          return acc;
+        },
+        {} as Record<string, any>,
+      );
 
       const { data, error } = await supabase
         .from("MATRICULAS")

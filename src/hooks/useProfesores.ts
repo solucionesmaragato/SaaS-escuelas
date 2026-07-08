@@ -332,7 +332,7 @@ export function useProfesores() {
       }
 
       const { ROL: selectedRol = "PROFESOR", ...profesorInput } = input;
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...sanitizeProfesorPayload(profesorInput, "create"),
         ID_CLIENTE: tenantId,
       };

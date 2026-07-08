@@ -24,16 +24,14 @@ import { StudentDetailsModal } from "@/components/alumnos-matriculas/StudentDeta
 import { EnrollmentDetailsModal } from "@/components/alumnos-matriculas/EnrollmentDetailsModal";
 import type { Alumno } from "@/types/database";
 import { PersonAvatar } from "@/components/PersonAvatar";
+import { EntityLink } from "@/components/navigation/EntityLink";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -195,10 +193,10 @@ function AlumnosMatriculasPage() {
   return (
     <div className="-m-6 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
       <div className="border-b bg-background px-4 py-3">
-        <h1 className="text-xl font-semibold tracking-tight">Alumnos y matrículas</h1>
-        <p className="text-sm text-muted-foreground">
-          Gestiona alumnos y todas las matrículas del centro
-        </p>
+        <PageHeader
+          title="Alumnos y matrículas"
+          description="Gestiona alumnos y todas las matrículas del centro"
+        />
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -257,10 +255,7 @@ function AlumnosMatriculasPage() {
               value={enrollmentQuery}
               onChange={setEnrollmentQuery}
             />
-            <Label
-              htmlFor="filtro-especialidad-tarifa"
-              className="shrink-0 text-sm font-medium"
-            >
+            <Label htmlFor="filtro-especialidad-tarifa" className="shrink-0 text-sm font-medium">
               Especialidad
             </Label>
             <Select value={filterTarifa} onValueChange={setFilterTarifa}>
@@ -297,10 +292,7 @@ function AlumnosMatriculasPage() {
               </Button>
               <Popover open={filterOpen} onOpenChange={setFilterOpen}>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant={hasActiveEnrollmentFilters ? "default" : "outline"}
-                    size="sm"
-                  >
+                  <Button variant={hasActiveEnrollmentFilters ? "default" : "outline"} size="sm">
                     <SlidersHorizontal className="mr-2 h-4 w-4" />
                     Filtrar
                     {hasActiveEnrollmentFilters && (
@@ -395,7 +387,11 @@ function AlumnosMatriculasPage() {
                           )}
                           onClick={() => openEnrollmentEditor(mat)}
                         >
-                          <TableCell className="font-medium">{mat.TEXTO_ALUMNO}</TableCell>
+                          <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                            <EntityLink type="alumno" id={mat.ID_ALUMNO}>
+                              {mat.TEXTO_ALUMNO}
+                            </EntityLink>
+                          </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-2">
                               <Switch
@@ -411,7 +407,9 @@ function AlumnosMatriculasPage() {
                               <span
                                 className={cn(
                                   "text-xs font-medium",
-                                  active ? "text-green-700" : "text-red-600",
+                                  active
+                                    ? "text-green-700 dark:text-green-400"
+                                    : "text-red-600 dark:text-red-400",
                                 )}
                               >
                                 {active ? "Activo" : "Inactivo"}
@@ -424,9 +422,7 @@ function AlumnosMatriculasPage() {
                               variant={mat.TOTAL_INCIDENCIAS > 0 ? "destructive" : "secondary"}
                               className="gap-1"
                             >
-                              {mat.TOTAL_INCIDENCIAS > 0 && (
-                                <AlertTriangle className="h-3 w-3" />
-                              )}
+                              {mat.TOTAL_INCIDENCIAS > 0 && <AlertTriangle className="h-3 w-3" />}
                               {mat.TOTAL_INCIDENCIAS}
                             </Badge>
                           </TableCell>
@@ -515,14 +511,17 @@ function StudentCard({
         onOpenDetails();
       }}
     >
-      <PersonAvatar
-        name={alumno.NOMBRE_ALUMNO}
-        photoUrl={alumno.FOTO}
-        className="h-12 w-12"
-      />
+      <PersonAvatar name={alumno.NOMBRE_ALUMNO} photoUrl={alumno.FOTO} className="h-12 w-12" />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-lg font-semibold leading-tight">{alumno.NOMBRE_ALUMNO}</p>
+        <p
+          className="truncate text-lg font-semibold leading-tight"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
+            {alumno.NOMBRE_ALUMNO}
+          </EntityLink>
+        </p>
         <p className="truncate text-sm text-muted-foreground">
           Tutor legal A: {alumno.NOMBRE_MADRE ?? "—"}
         </p>

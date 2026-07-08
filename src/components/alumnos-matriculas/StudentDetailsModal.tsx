@@ -29,6 +29,7 @@ import {
   isEstadoActivo,
   estadoFromToggle,
 } from "@/lib/alumnosMatriculasUtils";
+import { formatCurrency } from "@/lib/format";
 import { toast } from "sonner";
 
 type AlumnoRow = Alumno & { TOTAL_INCIDENCIAS?: number };
@@ -41,13 +42,7 @@ type Props = {
   onPatch: (patch: Partial<Alumno>) => Promise<void>;
 };
 
-function DetailField({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function DetailField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs text-muted-foreground">{label}</Label>
@@ -56,13 +51,7 @@ function DetailField({
   );
 }
 
-export function StudentDetailsModal({
-  alumno,
-  open,
-  onClose,
-  canWrite,
-  onPatch,
-}: Props) {
+export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }: Props) {
   const [draft, setDraft] = useState<AlumnoRow | null>(null);
 
   useEffect(() => {
@@ -136,9 +125,7 @@ export function StudentDetailsModal({
                 <Input
                   value={draft.TLF_COMUNICACION ?? ""}
                   disabled={!canWrite}
-                  onChange={(e) =>
-                    setDraft({ ...draft, TLF_COMUNICACION: e.target.value || null })
-                  }
+                  onChange={(e) => setDraft({ ...draft, TLF_COMUNICACION: e.target.value || null })}
                   onBlur={() => canWrite && save({ TLF_COMUNICACION: draft.TLF_COMUNICACION })}
                 />
               </DetailField>
@@ -208,9 +195,7 @@ export function StudentDetailsModal({
                 />
               </DetailField>
               <DetailField label="Fecha de nacimiento y edad">
-                <p className="text-sm font-medium">
-                  {formatNacimientoConEdad(draft.NACIMIENTO)}
-                </p>
+                <p className="text-sm font-medium">{formatNacimientoConEdad(draft.NACIMIENTO)}</p>
               </DetailField>
               <DetailField label="Dto. Hermanos %">
                 <Input
@@ -220,9 +205,7 @@ export function StudentDetailsModal({
                   onChange={(e) =>
                     setDraft({
                       ...draft,
-                      DTO_HERMANOS_PORCENTAJE: e.target.value
-                        ? Number(e.target.value)
-                        : null,
+                      DTO_HERMANOS_PORCENTAJE: e.target.value ? Number(e.target.value) : null,
                     })
                   }
                   onBlur={() =>
@@ -316,9 +299,7 @@ export function StudentDetailsModal({
               </DetailField>
               <DetailField label="Total mensual">
                 <p className="text-sm font-medium tabular-nums">
-                  {draft.TOTAL_MENSUAL != null
-                    ? `${Number(draft.TOTAL_MENSUAL).toFixed(2)} €`
-                    : "—"}
+                  {formatCurrency(draft.TOTAL_MENSUAL)}
                 </p>
               </DetailField>
             </div>
@@ -371,9 +352,7 @@ export function StudentDetailsModal({
                   <Input
                     value={draft.TITULAR_CUENTA ?? ""}
                     disabled={!canWrite}
-                    onChange={(e) =>
-                      setDraft({ ...draft, TITULAR_CUENTA: e.target.value || null })
-                    }
+                    onChange={(e) => setDraft({ ...draft, TITULAR_CUENTA: e.target.value || null })}
                     onBlur={() => canWrite && save({ TITULAR_CUENTA: draft.TITULAR_CUENTA })}
                   />
                 </DetailField>

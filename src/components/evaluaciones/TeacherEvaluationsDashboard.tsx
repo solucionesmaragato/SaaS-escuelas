@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  CheckCircle2,
-  ClipboardCheck,
-  Clock,
-  Users,
-  User,
-} from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Clock, Users, User } from "lucide-react";
 import {
   useEvaluaciones,
-  formatSupabaseError,
+  showEvaluacionSaveError,
   isTrimestreValue,
   TRIMESTRE_VALUES,
   currentAcademicYear,
@@ -28,6 +22,8 @@ import { useRubricas, filterActiveRubricas, type RubricaData } from "@/hooks/use
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useGrupos } from "@/hooks/useGrupos";
+import { useCentros, getActiveCursoEscolar } from "@/hooks/useCentros";
+import { EntityLink } from "@/components/navigation/EntityLink";
 import {
   buildResultadosRubrica,
   computeNotaMediaFromCriteria,
@@ -40,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -92,17 +89,17 @@ const inlineInputClass =
 function EvaluationStatusBadge({ evaluated }: { evaluated: boolean }) {
   if (evaluated) {
     return (
-      <Badge className="gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200">
+      <StatusBadge status="success" className="gap-1">
         <CheckCircle2 className="h-3 w-3" />
         Evaluado
-      </Badge>
+      </StatusBadge>
     );
   }
   return (
-    <Badge variant="secondary" className="gap-1 text-amber-800 bg-amber-50 border-amber-200">
+    <StatusBadge status="pending" className="gap-1">
       <Clock className="h-3 w-3" />
       Pendiente
-    </Badge>
+    </StatusBadge>
   );
 }
 
@@ -168,7 +165,7 @@ function resolveInitialRubricaId(
 function TeacherIndividualEvalDialog({
   student,
   trimestre,
-  ano,
+  idCurso,
   evaluationIndex,
   activeRubricas,
   open,
@@ -178,7 +175,7 @@ function TeacherIndividualEvalDialog({
 }: {
   student: TeacherHorarioStudent;
   trimestre: string;
-  ano: string;
+  idCurso: string;
   evaluationIndex: Map<string, EvaluacionData>;
   activeRubricas: RubricaData[];
   open: boolean;
@@ -259,7 +256,11 @@ function TeacherIndividualEvalDialog({
           <div className="rounded-md border bg-muted/30 p-3 space-y-2">
             <div>
               <p className="text-xs text-muted-foreground">Alumno</p>
-              <p className="font-medium">{student.nombreAlumno}</p>
+              <p className="font-medium">
+                <EntityLink type="alumno" id={student.idAlumno}>
+                  {student.nombreAlumno}
+                </EntityLink>
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Especialidad</p>
@@ -269,11 +270,7 @@ function TeacherIndividualEvalDialog({
 
           <div className="space-y-2">
             <Label>Trimestre *</Label>
-            <Select
-              value={localTrimestre}
-              onValueChange={setLocalTrimestre}
-              disabled={submitting}
-            >
+            <Select value={localTrimestre} onValueChange={setLocalTrimestre} disabled={submitting}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -354,18 +351,13 @@ function TeacherIndividualEvalDialog({
                 return;
               }
 
-              let resultadosRubrica: Record<string, number> | null = null;
-              try {
-                if (usesRubric) {
-                  resultadosRubrica = buildResultadosRubrica(criteria, criterioValues);
-                  if (!resultadosRubrica) {
-                    toast.error("Introduce al menos una puntuación de criterio");
-                    return;
-                  }
+              let resultadosRubrica: Record<string, string | number> | null = null;
+              if (usesRubric) {
+                resultadosRubrica = buildResultadosRubrica(criteria, criterioValues);
+                if (!resultadosRubrica) {
+                  toast.error("Introduce al menos una puntuación de criterio");
+                  return;
                 }
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Error en la rúbrica");
-                return;
               }
 
               const nota = parseFloat(notaMedia);
@@ -376,9 +368,8 @@ function TeacherIndividualEvalDialog({
 
               onSubmit(
                 {
-                  ANO: ano,
                   TRIMESTRE: localTrimestre,
-                  CURSO: "Individual",
+                  ID_CURSO: idCurso,
                   ID_ALUMNO: student.idAlumno,
                   ID_ESPECIALIDAD: student.idEspecialidad,
                   NOTA_MEDIA: nota,
@@ -421,7 +412,7 @@ function buildGroupRowDraft(
 function GroupBulkEvaluationPanel({
   group,
   trimestre,
-  ano,
+  idCurso,
   evaluationIndex,
   activeRubricas,
   submitting,
@@ -429,7 +420,7 @@ function GroupBulkEvaluationPanel({
 }: {
   group: TeacherHorarioGroup;
   trimestre: string;
-  ano: string;
+  idCurso: string;
   evaluationIndex: Map<string, EvaluacionData>;
   activeRubricas: RubricaData[];
   submitting: boolean;
@@ -499,7 +490,6 @@ function GroupBulkEvaluationPanel({
     }
 
     const items: EvaluacionUpsertItem[] = [];
-    const curso = group.nombreGrupo || "Grupo";
 
     for (const row of rows) {
       const notaRaw = row.notaMedia.trim();
@@ -510,21 +500,12 @@ function GroupBulkEvaluationPanel({
       if (!hasNota && !row.existingId && !hasCriterios) continue;
       if (!hasNota && row.existingId && !hasComentarios && !hasCriterios) continue;
 
-      let resultadosRubrica: Record<string, number> | null = null;
+      let resultadosRubrica: Record<string, string | number> | null = null;
       if (usesRubric && hasCriterios) {
-        try {
-          resultadosRubrica = buildResultadosRubrica(criteria, row.criterios);
-        } catch (err) {
-          toast.error(
-            err instanceof Error
-              ? `${row.nombreAlumno}: ${err.message}`
-              : `Error en rúbrica de ${row.nombreAlumno}`,
-          );
-          return;
-        }
+        resultadosRubrica = buildResultadosRubrica(criteria, row.criterios);
       }
 
-      let nota = 0;
+      let nota: number | string = 0;
       if (hasNota) {
         nota = parseFloat(notaRaw);
         if (!Number.isFinite(nota) || nota < 0 || nota > 10) {
@@ -540,15 +521,22 @@ function GroupBulkEvaluationPanel({
         const existing = evaluationIndex.get(
           evaluationLookupKey(trimestre, row.idAlumno, row.idEspecialidad),
         );
-        nota = existing?.NOTA_MEDIA ?? 0;
+        const existingNota = existing?.NOTA_MEDIA;
+        nota =
+          typeof existingNota === "number"
+            ? existingNota
+            : typeof existingNota === "string" && Number.isFinite(Number(existingNota))
+              ? Number(existingNota)
+              : typeof existingNota === "string"
+                ? existingNota
+                : 0;
       }
 
       items.push({
         id: row.existingId,
         input: {
-          ANO: ano,
           TRIMESTRE: trimestre,
-          CURSO: curso,
+          ID_CURSO: idCurso,
           ID_ALUMNO: row.idAlumno,
           ID_ESPECIALIDAD: row.idEspecialidad,
           NOTA_MEDIA: nota,
@@ -611,7 +599,11 @@ function GroupBulkEvaluationPanel({
 
               return (
                 <TableRow key={`${row.idAlumno}-${row.idEspecialidad}`}>
-                  <TableCell className="font-medium">{row.nombreAlumno}</TableCell>
+                  <TableCell className="font-medium">
+                    <EntityLink type="alumno" id={row.idAlumno}>
+                      {row.nombreAlumno}
+                    </EntityLink>
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {row.nombreEspecialidad}
                   </TableCell>
@@ -623,9 +615,7 @@ function GroupBulkEvaluationPanel({
                     criteria.map((criterion, criterionIndex) => {
                       const cellIndex = criterionIndex;
                       const nextCell =
-                        criterionIndex < criteria.length - 1
-                          ? cellIndex + 1
-                          : notaCol;
+                        criterionIndex < criteria.length - 1 ? cellIndex + 1 : notaCol;
                       return (
                         <TableCell key={criterion.key}>
                           <input
@@ -666,9 +656,7 @@ function GroupBulkEvaluationPanel({
                       step={0.01}
                       tabIndex={baseIndex + notaCol + 1}
                       value={row.notaMedia}
-                      onChange={(e) =>
-                        updateRow(rowIndex, { notaMedia: e.target.value })
-                      }
+                      onChange={(e) => updateRow(rowIndex, { notaMedia: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === "Tab" && !e.shiftKey) {
                           e.preventDefault();
@@ -688,9 +676,7 @@ function GroupBulkEvaluationPanel({
                       type="text"
                       tabIndex={baseIndex + comentariosCol + 1}
                       value={row.comentarios}
-                      onChange={(e) =>
-                        updateRow(rowIndex, { comentarios: e.target.value })
-                      }
+                      onChange={(e) => updateRow(rowIndex, { comentarios: e.target.value })}
                       onKeyDown={(e) => {
                         if (e.key === "Tab" && !e.shiftKey && rowIndex < rows.length - 1) {
                           e.preventDefault();
@@ -723,7 +709,15 @@ export function TeacherEvaluationsDashboard({
 }: {
   profesorId: string | null | undefined;
 }) {
-  const ano = currentAcademicYear();
+  const { list: centrosList } = useCentros();
+
+  const activeCurso = useMemo(() => {
+    const cursos = (centrosList.data ?? []).flatMap((c) => c.CURSO_ESCOLAR ?? []);
+    return getActiveCursoEscolar(cursos);
+  }, [centrosList.data]);
+
+  const idCurso = activeCurso?.ID_CURSO ?? "";
+  const nombreCurso = activeCurso?.NOMBRE_CURSO ?? currentAcademicYear();
   const [trimestre, setTrimestre] = useState<string>("1");
   const [selectedStudent, setSelectedStudent] = useState<TeacherHorarioStudent | null>(null);
 
@@ -734,10 +728,10 @@ export function TeacherEvaluationsDashboard({
   const { list: especialidadesList } = useEspecialidades();
   const { list: gruposList } = useGrupos();
 
-  const alumnos = alumnosList.data ?? [];
-  const especialidades = especialidadesList.data ?? [];
-  const grupos = gruposList.data?.grupos ?? [];
-  const evaluaciones = evaluacionesList.data ?? [];
+  const alumnos = useMemo(() => alumnosList.data ?? [], [alumnosList.data]);
+  const especialidades = useMemo(() => especialidadesList.data ?? [], [especialidadesList.data]);
+  const grupos = useMemo(() => gruposList.data?.grupos ?? [], [gruposList.data?.grupos]);
+  const evaluaciones = useMemo(() => evaluacionesList.data ?? [], [evaluacionesList.data]);
   const activeRubricas = useMemo(
     () => filterActiveRubricas(rubricasList.data ?? []),
     [rubricasList.data],
@@ -771,8 +765,8 @@ export function TeacherEvaluationsDashboard({
   }, [horariosList.data, alumnoById, especialidadById, grupoById]);
 
   const evaluationIndex = useMemo(
-    () => buildEvaluationIndex(evaluaciones, ano),
-    [evaluaciones, ano],
+    () => buildEvaluationIndex(evaluaciones, idCurso),
+    [evaluaciones, idCurso],
   );
 
   const isLoading =
@@ -782,13 +776,9 @@ export function TeacherEvaluationsDashboard({
     alumnosList.isLoading ||
     especialidadesList.isLoading;
 
-  const submitting =
-    create.isPending || update.isPending || batchUpsert.isPending;
+  const submitting = create.isPending || update.isPending || batchUpsert.isPending;
 
-  const handleIndividualSave = async (
-    payload: EvaluacionCreateInput,
-    existingId?: string,
-  ) => {
+  const handleIndividualSave = async (payload: EvaluacionCreateInput, existingId?: string) => {
     try {
       if (existingId) {
         await update.mutateAsync({ id: existingId, patch: payload });
@@ -800,7 +790,7 @@ export function TeacherEvaluationsDashboard({
       setSelectedStudent(null);
     } catch (err) {
       console.error("TEACHER INDIVIDUAL EVAL ERROR:", err);
-      toast.error(formatSupabaseError(err));
+      showEvaluacionSaveError(err);
     }
   };
 
@@ -810,7 +800,7 @@ export function TeacherEvaluationsDashboard({
       toast.success(`${items.length} evaluación(es) guardada(s)`);
     } catch (err) {
       console.error("TEACHER GROUP BATCH ERROR:", err);
-      toast.error(formatSupabaseError(err));
+      showEvaluacionSaveError(err);
     }
   };
 
@@ -828,7 +818,7 @@ export function TeacherEvaluationsDashboard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-medium">Año académico</p>
-            <p className="text-lg font-semibold">{ano}</p>
+            <p className="text-lg font-semibold">{nombreCurso}</p>
           </div>
           <div className="space-y-2 sm:w-[200px]">
             <Label>Trimestre</Label>
@@ -899,7 +889,11 @@ export function TeacherEvaluationsDashboard({
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-medium truncate">{student.nombreAlumno}</p>
+                        <p className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
+                          <EntityLink type="alumno" id={student.idAlumno}>
+                            {student.nombreAlumno}
+                          </EntityLink>
+                        </p>
                         <p className="text-sm text-muted-foreground truncate">
                           {student.nombreEspecialidad}
                         </p>
@@ -928,9 +922,7 @@ export function TeacherEvaluationsDashboard({
             <Accordion type="single" collapsible className="rounded-md border px-4">
               {roster.grupos.map((group) => {
                 const evaluatedCount = group.students.filter((s) =>
-                  evaluationIndex.has(
-                    evaluationLookupKey(trimestre, s.idAlumno, s.idEspecialidad),
-                  ),
+                  evaluationIndex.has(evaluationLookupKey(trimestre, s.idAlumno, s.idEspecialidad)),
                 ).length;
 
                 return (
@@ -952,7 +944,7 @@ export function TeacherEvaluationsDashboard({
                       <GroupBulkEvaluationPanel
                         group={group}
                         trimestre={trimestre}
-                        ano={ano}
+                        idCurso={idCurso}
                         evaluationIndex={evaluationIndex}
                         activeRubricas={activeRubricas}
                         submitting={submitting}
@@ -971,7 +963,7 @@ export function TeacherEvaluationsDashboard({
         <TeacherIndividualEvalDialog
           student={selectedStudent}
           trimestre={trimestre}
-          ano={ano}
+          idCurso={idCurso}
           evaluationIndex={evaluationIndex}
           activeRubricas={activeRubricas}
           open

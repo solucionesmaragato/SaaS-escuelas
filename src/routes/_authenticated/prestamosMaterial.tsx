@@ -1,16 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   Check,
   ChevronsUpDown,
   Clock,
-  MoreHorizontal,
+  MoreVertical,
   Package,
   Pencil,
   Plus,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   usePrestamosMaterial,
@@ -31,13 +34,17 @@ import { toProfesorEntityOptions } from "@/lib/profesorSelector";
 import { useActiveTenant } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
+import { EntityLink } from "@/components/navigation/EntityLink";
 import { canWriteUi, hasAnyPermission } from "@/lib/rbac";
+import type { Rol } from "@/types/database";
 import { isAdminRole, isMasterRole } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -52,14 +59,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,6 +104,20 @@ function categoriaLabel(value: string | null | undefined): string {
 }
 
 type EntityOption = { id: string; label: string };
+
+function ensureSelectedEntityOption(
+  options: EntityOption[],
+  selectedId: string,
+  resolveLabel: (id: string) => string | undefined,
+): EntityOption[] {
+  const id = selectedId.trim();
+  if (!id || options.some((option) => option.id === id)) return options;
+  const label = resolveLabel(id);
+  if (!label) return options;
+  return [...options, { id, label }].sort((a, b) =>
+    a.label.localeCompare(b.label, "es", { sensitivity: "base" }),
+  );
+}
 
 type ActorLookups = {
   byEmail: Map<string, string>;
@@ -256,10 +269,7 @@ function resolveReceptorNombre(
   return "";
 }
 
-function resolveFechaDevolucionOnReturn(
-  estadoDevolucion: string,
-  fechaDevolucion: string,
-): string {
+function resolveFechaDevolucionOnReturn(estadoDevolucion: string, fechaDevolucion: string): string {
   if (estadoKey(estadoDevolucion) !== "devuelto") {
     return fechaDevolucion.trim();
   }
@@ -279,7 +289,16 @@ function ReceptorCell({
   if (!id) return <span className="text-muted-foreground">—</span>;
 
   const nombre = resolveReceptorNombre(row, alumnoById, profesorById);
-  return <span className="font-medium text-sm">{nombre || "—"}</span>;
+  if (!nombre) return <span className="font-medium text-sm">—</span>;
+
+  const entityType = row.CATEGORIA === "PROFESOR" ? "profesor" : "alumno";
+  return (
+    <span className="font-medium text-sm" onClick={(e) => e.stopPropagation()}>
+      <EntityLink type={entityType} id={id}>
+        {nombre}
+      </EntityLink>
+    </span>
+  );
 }
 
 function SearchableEntitySelect({
@@ -290,6 +309,7 @@ function SearchableEntitySelect({
   onChange,
   disabled,
   loading,
+  selectedLabel,
 }: {
   label: string;
   placeholder: string;
@@ -298,9 +318,11 @@ function SearchableEntitySelect({
   onChange: (id: string) => void;
   disabled?: boolean;
   loading?: boolean;
+  selectedLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((opt) => opt.id === value);
+  const displayLabel = selected?.label ?? selectedLabel?.trim() ?? "";
 
   return (
     <div className="space-y-2">
@@ -315,11 +337,7 @@ function SearchableEntitySelect({
             className="w-full justify-between font-normal"
             disabled={disabled || loading}
           >
-            {loading
-              ? "Cargando..."
-              : selected
-                ? selected.label
-                : placeholder}
+            {loading ? "Cargando..." : displayLabel || placeholder}
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
@@ -343,10 +361,7 @@ function SearchableEntitySelect({
                     }}
                   >
                     <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === opt.id ? "opacity-100" : "opacity-0",
-                      )}
+                      className={cn("mr-2 h-4 w-4", value === opt.id ? "opacity-100" : "opacity-0")}
                     />
                     {opt.label}
                   </CommandItem>
@@ -360,7 +375,7 @@ function SearchableEntitySelect({
   );
 }
 
-function canAccessPrestamosPage(rol: string | null | undefined): boolean {
+function canAccessPrestamosPage(rol: Rol | null | undefined): boolean {
   return hasAnyPermission(rol, ["prestamos:read", "prestamos:write"]);
 }
 
@@ -401,6 +416,83 @@ function todayDateKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function toDateInputValue(value: string | null | undefined): string {
+  const raw = value?.trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function normalizePrestamoCategoria(value: string | null | undefined): PrestamoCategoria | "" {
+  const normalized = value?.trim().toUpperCase() ?? "";
+  return isPrestamoCategoria(normalized) ? normalized : "";
+}
+
+type PrestamoFormFields = {
+  categoria: PrestamoCategoria | "";
+  idReceptor: string;
+  elemento: string;
+  estadoMaterial: string;
+  numSerie: string;
+  fechaPrestamo: string;
+  fechaFinPrestamo: string;
+  fechaDevolucion: string;
+  estadoDevolucion: string;
+  notas: string;
+  creadoPorId: string;
+  recogidoPorId: string;
+  idCentro: string;
+};
+
+function buildPrestamoFormFields(
+  initial: PrestamoMaterialData | undefined,
+  perfiles: PerfilData[],
+  profesorById: Map<string, string>,
+  options: {
+    showCentroSelector: boolean;
+    assignedCenterId: string | null;
+    centros: Array<{ ID_CENTRO: string }>;
+  },
+): PrestamoFormFields {
+  if (!initial) {
+    return {
+      categoria: "",
+      idReceptor: "",
+      elemento: "",
+      estadoMaterial: "",
+      numSerie: "",
+      fechaPrestamo: todayDateKey(),
+      fechaFinPrestamo: "",
+      fechaDevolucion: "",
+      estadoDevolucion: "Prestado",
+      notas: "",
+      creadoPorId: "",
+      recogidoPorId: "",
+      idCentro: options.showCentroSelector
+        ? (options.centros[0]?.ID_CENTRO ?? "")
+        : (options.assignedCenterId?.trim() ?? ""),
+    };
+  }
+
+  return {
+    categoria: normalizePrestamoCategoria(initial.CATEGORIA),
+    idReceptor: initial.ID_RECEPTOR?.trim() ?? "",
+    elemento: initial.ELEMENTO?.trim() ?? "",
+    estadoMaterial: initial.ESTADO_MATERIAL?.trim() ?? "",
+    numSerie: initial.NUM_SERIE?.trim() ?? "",
+    fechaPrestamo: toDateInputValue(initial.FECHA_PRESTAMO) || todayDateKey(),
+    fechaFinPrestamo: toDateInputValue(initial.FECHA_FIN_PRESTAMO),
+    fechaDevolucion: toDateInputValue(initial.FECHA_DEVOLUCION),
+    estadoDevolucion: normalizeEstado(initial.ESTADO_DEVOLUCION),
+    notas: initial.NOTAS?.trim() ?? "",
+    creadoPorId: resolveStoredActorToProfesorId(initial.CREADO_POR, perfiles, profesorById),
+    recogidoPorId: resolveStoredActorToProfesorId(initial.RECOGIDO_POR, perfiles, profesorById),
+    idCentro: initial.ID_CENTRO?.trim() ?? "",
+  };
+}
+
 function normalizeRpcAlumnoIds(data: unknown): string[] {
   if (!Array.isArray(data)) return [];
   return data
@@ -420,12 +512,19 @@ function estadoDevolucionSelectTriggerClass(estado: string | null | undefined): 
   const key = estadoKey(estado);
   const base = "h-8 w-[130px] text-xs border";
   if (key === "devuelto") {
-    return `${base} bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100`;
+    return `${base} bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-900/50 dark:hover:bg-emerald-900/40`;
   }
   if (key === "pendiente") {
-    return `${base} bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100`;
+    return `${base} bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-900/50 dark:hover:bg-amber-900/40`;
   }
-  return `${base} bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-100`;
+  return `${base} bg-sky-100 text-sky-800 border-sky-200 hover:bg-sky-100 dark:bg-sky-900/30 dark:text-sky-400 dark:border-sky-900/50 dark:hover:bg-sky-900/40`;
+}
+
+function estadoDevolucionStatus(estado: string | null | undefined): StatusBadgeVariant {
+  const key = estadoKey(estado);
+  if (key === "devuelto") return "success";
+  if (key === "pendiente") return "warning";
+  return "info";
 }
 
 function EstadoDevolucionInlineSelect({
@@ -467,28 +566,416 @@ function EstadoDevolucionInlineSelect({
 function EstadoDevolucionBadge({ estado }: { estado: string | null | undefined }) {
   const label = normalizeEstado(estado);
   const key = estadoKey(estado);
+  const Icon = key === "devuelto" ? Check : key === "pendiente" ? Clock : Package;
 
-  if (key === "devuelto") {
-    return (
-      <Badge className="gap-1 bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200">
-        <Check className="h-3 w-3" />
-        {label}
-      </Badge>
-    );
-  }
-  if (key === "pendiente") {
-    return (
-      <Badge className="gap-1 bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-200">
-        <Clock className="h-3 w-3" />
-        {label}
-      </Badge>
-    );
-  }
   return (
-    <Badge className="gap-1 bg-sky-100 text-sky-800 hover:bg-sky-100 border-sky-200">
-      <Package className="h-3 w-3" />
+    <StatusBadge status={estadoDevolucionStatus(estado)} className="gap-1">
+      <Icon className="h-3 w-3" />
       {label}
-    </Badge>
+    </StatusBadge>
+  );
+}
+
+function DetailField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className={mono ? "font-mono text-xs break-all" : "break-words"}>{value || "—"}</p>
+    </div>
+  );
+}
+
+const PRESTAMO_OVERLAY_PANEL_CLASS = cn(
+  ALUMNO_OVERLAY_PANEL_CLASS,
+  "max-w-xl max-h-[90vh] overflow-y-auto p-6",
+);
+
+function PrestamoOverlayBackdrop({
+  ariaLabel,
+  onClose,
+}: {
+  ariaLabel: string;
+  onClose: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="fixed inset-0 z-40 bg-black/10"
+      aria-label={ariaLabel}
+      onClick={onClose}
+    />
+  );
+}
+
+function PrestamoOverlayHeader({
+  titleId,
+  title,
+  onClose,
+  back,
+  edit,
+}: {
+  titleId: string;
+  title: string;
+  onClose: () => void;
+  back?: { onClick: () => void };
+  edit?: { onClick: () => void; visible: boolean };
+}) {
+  return (
+    <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <div className="flex min-w-0 items-center gap-3">
+        {back ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-2 shrink-0"
+            onClick={back.onClick}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver
+          </Button>
+        ) : null}
+        <h2 id={titleId} className="truncate text-xl font-semibold">
+          {title}
+        </h2>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {edit?.visible ? (
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="gap-2 bg-black text-white hover:bg-black/90"
+            onClick={edit.onClick}
+          >
+            <Pencil className="h-4 w-4" />
+            Editar
+          </Button>
+        ) : null}
+        <Button type="button" variant="ghost" size="icon" aria-label="Cerrar" onClick={onClose}>
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+function PrestamoOverlayFooter({
+  onCancel,
+  submitLabel,
+  submitting,
+}: {
+  onCancel: () => void;
+  submitLabel: string;
+  submitting: boolean;
+}) {
+  return (
+    <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+      <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+        Cancelar
+      </Button>
+      <Button type="submit" form="prestamo-form" disabled={submitting}>
+        {submitting ? "Guardando..." : submitLabel}
+      </Button>
+    </div>
+  );
+}
+
+function PrestamoDetailContent({
+  prestamo,
+  isMaster,
+  actorLookups,
+  profesorById,
+  alumnoById,
+}: {
+  prestamo: PrestamoMaterialData;
+  isMaster: boolean;
+  actorLookups: ActorLookups;
+  profesorById: Map<string, string>;
+  alumnoById: Map<string, string>;
+}) {
+  return (
+    <div className="space-y-4">
+      {isMaster && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <DetailField label="ID_PRESTAMO" value={prestamo.ID_PRESTAMO} mono />
+          <DetailField label="ID_CLIENTE" value={prestamo.ID_CLIENTE ?? ""} mono />
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <DetailField
+          label="Prestado por"
+          value={displayActorNombre(prestamo.CREADO_POR, actorLookups, profesorById, alumnoById)}
+        />
+        <DetailField
+          label="Recogido por"
+          value={displayActorNombre(prestamo.RECOGIDO_POR, actorLookups, profesorById, alumnoById)}
+        />
+        <DetailField label="Categoría" value={categoriaLabel(prestamo.CATEGORIA)} />
+        <DetailField
+          label="Receptor"
+          value={resolveReceptorNombre(prestamo, alumnoById, profesorById) || "—"}
+        />
+        <DetailField label="Elemento" value={formatText(prestamo.ELEMENTO)} />
+        <DetailField label="Nº serie" value={formatText(prestamo.NUM_SERIE)} />
+        <DetailField label="Fecha préstamo" value={formatDate(prestamo.FECHA_PRESTAMO)} />
+        <DetailField
+          label="Fecha devolución prevista"
+          value={formatDate(prestamo.FECHA_FIN_PRESTAMO)}
+        />
+        <DetailField label="Fecha devolución real" value={formatDate(prestamo.FECHA_DEVOLUCION)} />
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Estado devolución</p>
+          <EstadoDevolucionBadge estado={prestamo.ESTADO_DEVOLUCION} />
+        </div>
+      </div>
+      <DetailField
+        label="Estado del material en la entrega"
+        value={formatText(prestamo.ESTADO_MATERIAL)}
+      />
+      <DetailField label="Notas" value={formatText(prestamo.NOTAS)} />
+    </div>
+  );
+}
+
+function usePrestamoOverlayEffects(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, onClose]);
+}
+
+function PrestamoDetailOverlay({
+  open,
+  mode,
+  prestamo,
+  canMutate,
+  isMaster,
+  submitting,
+  actorLookups,
+  profesorById,
+  alumnoById,
+  alumnos,
+  profesores,
+  perfiles,
+  alumnosLoading,
+  profesoresLoading,
+  canEditActors,
+  onClose,
+  onEdit,
+  onCancelEdit,
+  onSubmit,
+}: {
+  open: boolean;
+  mode: "detail" | "edit";
+  prestamo: PrestamoMaterialData | null;
+  canMutate: boolean;
+  isMaster: boolean;
+  submitting: boolean;
+  actorLookups: ActorLookups;
+  profesorById: Map<string, string>;
+  alumnoById: Map<string, string>;
+  alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string; ID_CENTRO?: string | null }[];
+  profesores: { ID_PROFESOR: string; NOMBRE_PROFESOR: string }[];
+  perfiles: PerfilData[];
+  alumnosLoading: boolean;
+  profesoresLoading: boolean;
+  canEditActors: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmit: (values: PrestamoMaterialUpdateInput) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === "edit") onCancelEdit();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, mode, onClose, onCancelEdit]);
+
+  if (!open) return null;
+
+  if (!prestamo) {
+    return createPortal(
+      <>
+        <PrestamoOverlayBackdrop ariaLabel="Cerrar" onClose={onClose} />
+        <div className={cn(PRESTAMO_OVERLAY_PANEL_CLASS, "flex items-center justify-center")}>
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <>
+      <PrestamoOverlayBackdrop ariaLabel="Cerrar detalle del préstamo" onClose={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prestamo-overlay-title"
+        className={PRESTAMO_OVERLAY_PANEL_CLASS}
+      >
+        {mode === "edit" ? (
+          <>
+            <PrestamoOverlayHeader
+              titleId="prestamo-overlay-title"
+              title="Editar préstamo de material"
+              onClose={onClose}
+              back={{ onClick: onCancelEdit }}
+            />
+            <PrestamoFormDialog
+              key={prestamo.ID_PRESTAMO}
+              open
+              embedded
+              title="Editar préstamo de material"
+              submitLabel="Guardar cambios"
+              initial={prestamo}
+              submitting={submitting}
+              isMaster={isMaster}
+              canEditActors={canEditActors}
+              actorLookups={actorLookups}
+              profesorById={profesorById}
+              alumnoById={alumnoById}
+              alumnos={alumnos}
+              profesores={profesores}
+              perfiles={perfiles}
+              alumnosLoading={alumnosLoading}
+              profesoresLoading={profesoresLoading}
+              onClose={onCancelEdit}
+              onSubmit={onSubmit}
+            />
+            <PrestamoOverlayFooter
+              onCancel={onCancelEdit}
+              submitLabel="Guardar cambios"
+              submitting={submitting}
+            />
+          </>
+        ) : (
+          <>
+            <PrestamoOverlayHeader
+              titleId="prestamo-overlay-title"
+              title={formatText(prestamo.ELEMENTO)}
+              onClose={onClose}
+              edit={{ onClick: onEdit, visible: canMutate }}
+            />
+            <PrestamoDetailContent
+              prestamo={prestamo}
+              isMaster={isMaster}
+              actorLookups={actorLookups}
+              profesorById={profesorById}
+              alumnoById={alumnoById}
+            />
+          </>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+function PrestamoCreateOverlay({
+  open,
+  onClose,
+  submitting,
+  actorLookups,
+  profesorById,
+  alumnoById,
+  alumnos,
+  profesores,
+  perfiles,
+  canEditActors,
+  alumnosLoading,
+  profesoresLoading,
+  showCentroSelector,
+  assignedCenterId,
+  centros,
+  centrosLoading,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  submitting: boolean;
+  actorLookups: ActorLookups;
+  profesorById: Map<string, string>;
+  alumnoById: Map<string, string>;
+  alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string; ID_CENTRO?: string | null }[];
+  profesores: { ID_PROFESOR: string; NOMBRE_PROFESOR: string }[];
+  perfiles: PerfilData[];
+  canEditActors: boolean;
+  alumnosLoading: boolean;
+  profesoresLoading: boolean;
+  showCentroSelector: boolean;
+  assignedCenterId: string | null;
+  centros: Array<{ ID_CENTRO: string; NOMBRE_CENTRO: string }>;
+  centrosLoading: boolean;
+  onSubmit: (values: PrestamoMaterialCreateInput) => void;
+}) {
+  usePrestamoOverlayEffects(open, onClose);
+
+  if (!open) return null;
+
+  return createPortal(
+    <>
+      <PrestamoOverlayBackdrop ariaLabel="Cerrar nuevo préstamo" onClose={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="prestamo-create-title"
+        className={PRESTAMO_OVERLAY_PANEL_CLASS}
+      >
+        <PrestamoOverlayHeader
+          titleId="prestamo-create-title"
+          title="Nuevo préstamo de material"
+          onClose={onClose}
+        />
+        <PrestamoFormDialog
+          open
+          embedded
+          title="Nuevo préstamo de material"
+          submitLabel="Registrar préstamo"
+          submitting={submitting}
+          actorLookups={actorLookups}
+          profesorById={profesorById}
+          alumnoById={alumnoById}
+          alumnos={alumnos}
+          profesores={profesores}
+          perfiles={perfiles}
+          canEditActors={canEditActors}
+          alumnosLoading={alumnosLoading}
+          profesoresLoading={profesoresLoading}
+          showCentroSelector={showCentroSelector}
+          assignedCenterId={assignedCenterId}
+          centros={centros}
+          centrosLoading={centrosLoading}
+          onClose={onClose}
+          onSubmit={onSubmit}
+        />
+        <PrestamoOverlayFooter
+          onCancel={onClose}
+          submitLabel="Registrar préstamo"
+          submitting={submitting}
+        />
+      </div>
+    </>,
+    document.body,
   );
 }
 
@@ -512,9 +999,12 @@ function PrestamosMaterialPage() {
   const { list: profesoresList } = useProfesores();
   const { list: perfilesList } = usePerfiles();
 
-  const alumnos = alumnosList.data ?? [];
-  const profesores = profesoresList.data?.profesores ?? [];
-  const perfiles = perfilesList.data ?? [];
+  const alumnos = useMemo(() => alumnosList.data ?? [], [alumnosList.data]);
+  const profesores = useMemo(
+    () => profesoresList.data?.profesores ?? [],
+    [profesoresList.data?.profesores],
+  );
+  const perfiles = useMemo(() => perfilesList.data ?? [], [perfilesList.data]);
 
   const alumnoById = useMemo(
     () => new Map(alumnos.map((a) => [a.ID_ALUMNO, a.NOMBRE_ALUMNO])),
@@ -529,9 +1019,22 @@ function PrestamosMaterialPage() {
   const [query, setQuery] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
-  const [editing, setEditing] = useState<PrestamoMaterialData | null>(null);
+  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<PrestamoMaterialData | null>(null);
+
+  const overlayPrestamo = useMemo(
+    () => (list.data ?? []).find((p) => p.ID_PRESTAMO === overlay?.id) ?? null,
+    [list.data, overlay?.id],
+  );
+
+  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
+  }, []);
 
   const handleQuickEstadoUpdate = async (row: PrestamoMaterialData, nextEstado: string) => {
     if (!canMutate) return;
@@ -549,23 +1052,6 @@ function PrestamosMaterialPage() {
       toast.success("Estado de devolución actualizado");
     } catch (err) {
       console.error("QUICK ESTADO UPDATE ERROR:", err);
-      toast.error(formatSupabaseError(err));
-    }
-  };
-
-  const handleMarcarDevuelto = async (row: PrestamoMaterialData) => {
-    if (!canMutate) return;
-    try {
-      await update.mutateAsync({
-        id: row.ID_PRESTAMO,
-        patch: {
-          ESTADO_DEVOLUCION: "Devuelto",
-          FECHA_DEVOLUCION: todayDateKey(),
-        },
-      });
-      toast.success("Préstamo marcado como devuelto");
-    } catch (err) {
-      console.error("MARCAR DEVUELTO ERROR:", err);
       toast.error(formatSupabaseError(err));
     }
   };
@@ -634,20 +1120,18 @@ function PrestamosMaterialPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Préstamos de material</h1>
-          <p className="text-sm text-muted-foreground">
-            {list.data?.length ?? 0} préstamos registrados
-          </p>
-        </div>
-        {canMutate && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo préstamo
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Préstamos de material"
+        description={`${list.data?.length ?? 0} préstamos registrados`}
+        actions={
+          canMutate && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo préstamo
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="mb-4 flex flex-wrap items-center gap-4">
@@ -656,10 +1140,10 @@ function PrestamosMaterialPage() {
             onValueChange={(v) => setFiltroEstado(v === ALL_VALUE ? "" : v)}
           >
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Todos los estados" />
+              <SelectValue placeholder="Estado" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_VALUE}>Todos los estados</SelectItem>
+              <SelectItem value={ALL_VALUE}>Estado</SelectItem>
               {ESTADO_DEVOLUCION_OPTIONS.map((opt) => (
                 <SelectItem key={opt} value={opt}>
                   {opt}
@@ -675,10 +1159,10 @@ function PrestamosMaterialPage() {
               }
             >
               <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Todos los centros" />
+                <SelectValue placeholder="Centro" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL_CENTROS_FILTER_VALUE}>Todos los centros</SelectItem>
+                <SelectItem value={ALL_CENTROS_FILTER_VALUE}>Centro</SelectItem>
                 {centrosOrdenados.map((centro) => (
                   <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
                     {centro.NOMBRE_CENTRO}
@@ -692,10 +1176,10 @@ function PrestamosMaterialPage() {
             onValueChange={(v) => setFiltroCategoria(v === ALL_VALUE ? "" : v)}
           >
             <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Todas las categorías" />
+              <SelectValue placeholder="Categoría" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_VALUE}>Todas las categorías</SelectItem>
+              <SelectItem value={ALL_VALUE}>Categoría</SelectItem>
               {PRESTAMO_CATEGORIA_VALUES.map((cat) => (
                 <SelectItem key={cat} value={cat}>
                   {categoriaLabel(cat)}
@@ -706,7 +1190,7 @@ function PrestamosMaterialPage() {
           <div className="relative min-w-[240px] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por elemento, categoría, nº serie, notas..."
+              placeholder="Buscar préstamo..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9"
@@ -727,7 +1211,7 @@ function PrestamosMaterialPage() {
                 {isMaster && <TableHead>ID_PRESTAMO</TableHead>}
                 {isMaster && <TableHead>ID_CLIENTE</TableHead>}
                 <TableHead>Elemento</TableHead>
-                <TableHead>Categoría</TableHead>
+                <TableHead>Prestado por</TableHead>
                 <TableHead>Receptor</TableHead>
                 <TableHead>Nº serie</TableHead>
                 <TableHead>Fecha préstamo</TableHead>
@@ -735,7 +1219,7 @@ function PrestamosMaterialPage() {
                 <TableHead>Fecha devolución real</TableHead>
                 <TableHead>Recogido por</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead className="w-12" />
+                <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -759,8 +1243,8 @@ function PrestamosMaterialPage() {
                 filtered.map((row) => (
                   <TableRow
                     key={row.ID_PRESTAMO}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => setEditing(row)}
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
+                    onClick={() => setOverlay({ id: row.ID_PRESTAMO, mode: "detail" })}
                   >
                     {isMaster && (
                       <TableCell className="font-mono text-xs text-muted-foreground">
@@ -773,42 +1257,22 @@ function PrestamosMaterialPage() {
                       </TableCell>
                     )}
                     <TableCell className="font-medium">{formatText(row.ELEMENTO)}</TableCell>
-                    <TableCell>{categoriaLabel(row.CATEGORIA)}</TableCell>
                     <TableCell>
-                      <ReceptorCell
-                        row={row}
-                        alumnoById={alumnoById}
-                        profesorById={profesorById}
-                      />
+                      {displayActorNombre(row.CREADO_POR, actorLookups, profesorById, alumnoById)}
+                    </TableCell>
+                    <TableCell>
+                      <ReceptorCell row={row} alumnoById={alumnoById} profesorById={profesorById} />
                     </TableCell>
                     <TableCell className="font-mono text-sm">{formatText(row.NUM_SERIE)}</TableCell>
                     <TableCell className="tabular-nums">{formatDate(row.FECHA_PRESTAMO)}</TableCell>
-                    <TableCell className="tabular-nums">{formatDate(row.FECHA_FIN_PRESTAMO)}</TableCell>
-                    <TableCell className="tabular-nums" onClick={(ev) => ev.stopPropagation()}>
-                      {row.FECHA_DEVOLUCION?.trim() ? (
-                        formatDate(row.FECHA_DEVOLUCION)
-                      ) : canMutate && estadoKey(row.ESTADO_DEVOLUCION) !== "devuelto" ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={update.isPending}
-                          onClick={() => void handleMarcarDevuelto(row)}
-                        >
-                          Marcar como devuelto
-                        </Button>
-                      ) : (
-                        "—"
-                      )}
+                    <TableCell className="tabular-nums">
+                      {formatDate(row.FECHA_FIN_PRESTAMO)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatDate(row.FECHA_DEVOLUCION)}
                     </TableCell>
                     <TableCell>
-                      {displayActorNombre(
-                        row.RECOGIDO_POR,
-                        actorLookups,
-                        profesorById,
-                        alumnoById,
-                      )}
+                      {displayActorNombre(row.RECOGIDO_POR, actorLookups, profesorById, alumnoById)}
                     </TableCell>
                     <TableCell onClick={(ev) => ev.stopPropagation()}>
                       <EstadoDevolucionInlineSelect
@@ -821,12 +1285,14 @@ function PrestamosMaterialPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
+                            <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {canMutate && (
-                            <DropdownMenuItem onClick={() => setEditing(row)}>
+                            <DropdownMenuItem
+                              onClick={() => setOverlay({ id: row.ID_PRESTAMO, mode: "edit" })}
+                            >
                               <Pencil className="mr-2 h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
@@ -852,11 +1318,9 @@ function PrestamosMaterialPage() {
       </Card>
 
       {canMutate && (
-        <PrestamoFormDialog
+        <PrestamoCreateOverlay
           open={creating}
           onClose={() => setCreating(false)}
-          title="Nuevo préstamo de material"
-          submitLabel="Registrar préstamo"
           submitting={create.isPending}
           actorLookups={actorLookups}
           profesorById={profesorById}
@@ -884,37 +1348,37 @@ function PrestamosMaterialPage() {
         />
       )}
 
-      {editing && (
-        <PrestamoFormDialog
-          open
-          onClose={() => setEditing(null)}
-          title={canMutate ? "Editar préstamo de material" : "Préstamo de material"}
-          submitLabel="Guardar cambios"
-          initial={editing}
-          submitting={update.isPending}
-          readOnly={!canMutate}
-          isMaster={isMaster}
-          canEditActors={canEditActors}
-          actorLookups={actorLookups}
-          profesorById={profesorById}
-          alumnoById={alumnoById}
-          alumnos={alumnos}
-          profesores={profesores}
-          perfiles={perfiles}
-          alumnosLoading={alumnosList.isLoading}
-          profesoresLoading={profesoresList.isLoading}
-          onSubmit={async (patch) => {
-            try {
-              await update.mutateAsync({ id: editing.ID_PRESTAMO, patch });
-              toast.success("Préstamo actualizado");
-              setEditing(null);
-            } catch (err) {
-              console.error("UPDATE PRESTAMO ERROR:", err);
-              toast.error(formatSupabaseError(err));
-            }
-          }}
-        />
-      )}
+      <PrestamoDetailOverlay
+        open={!!overlay}
+        mode={overlay?.mode ?? "detail"}
+        prestamo={overlayPrestamo}
+        canMutate={canMutate}
+        isMaster={isMaster}
+        submitting={update.isPending}
+        actorLookups={actorLookups}
+        profesorById={profesorById}
+        alumnoById={alumnoById}
+        alumnos={alumnos}
+        profesores={profesores}
+        perfiles={perfiles}
+        alumnosLoading={alumnosList.isLoading}
+        profesoresLoading={profesoresList.isLoading}
+        canEditActors={canEditActors}
+        onClose={handleCloseOverlay}
+        onEdit={handleEditOverlay}
+        onCancelEdit={handleCancelEditOverlay}
+        onSubmit={async (patch) => {
+          if (!overlay?.id) return;
+          try {
+            await update.mutateAsync({ id: overlay.id, patch });
+            toast.success("Préstamo actualizado");
+            setOverlay({ id: overlay.id, mode: "detail" });
+          } catch (err) {
+            console.error("UPDATE PRESTAMO ERROR:", err);
+            toast.error(formatSupabaseError(err));
+          }
+        }}
+      />
 
       {isAdmin && (
         <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
@@ -927,8 +1391,9 @@ function PrestamosMaterialPage() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel disabled={remove.isPending}>Cancelar</AlertDialogCancel>
               <AlertDialogAction
+                disabled={remove.isPending}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 onClick={async () => {
                   if (!deleting) return;
@@ -952,23 +1417,6 @@ function PrestamosMaterialPage() {
   );
 }
 
-function DetailField({
-  label,
-  value,
-  mono,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={mono ? "font-mono text-xs break-all" : "break-words"}>{value}</p>
-    </div>
-  );
-}
-
 type PrestamoFormSharedProps = {
   alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string; ID_CENTRO?: string | null }[];
   profesores: { ID_PROFESOR: string; NOMBRE_PROFESOR: string }[];
@@ -981,6 +1429,7 @@ type PrestamoFormSharedProps = {
   isMaster?: boolean;
   canEditActors?: boolean;
   readOnly?: boolean;
+  embedded?: boolean;
 };
 
 type PrestamoFormDialogCreateProps = PrestamoFormSharedProps & {
@@ -1027,10 +1476,11 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
     isMaster = false,
     canEditActors = false,
     readOnly = false,
+    embedded = false,
   } = props;
   const { tenantId } = useActiveTenant();
-  const initial = "initial" in props ? props.initial : undefined;
-  const isEdit = initial != null;
+  const editInitial = "initial" in props && props.initial != null ? props.initial : undefined;
+  const isEdit = editInitial != null;
   const createProps = !isEdit ? (props as PrestamoFormDialogCreateProps) : null;
   const showCentroSelector = createProps?.showCentroSelector ?? false;
   const assignedCenterId = createProps?.assignedCenterId ?? null;
@@ -1039,31 +1489,64 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
   const fieldsDisabled = readOnly || submitting;
   const showActorFieldsEditable = canEditActors && !readOnly;
   const showActorFieldsReadOnly = isEdit && !canEditActors;
-  const formInitializedRef = useRef(false);
 
-  const [categoria, setCategoria] = useState<PrestamoCategoria | "">("");
-  const [idReceptor, setIdReceptor] = useState("");
-  const [elemento, setElemento] = useState("");
-  const [estadoMaterial, setEstadoMaterial] = useState("");
-  const [numSerie, setNumSerie] = useState("");
-  const [fechaPrestamo, setFechaPrestamo] = useState(todayDateKey());
-  const [fechaFinPrestamo, setFechaFinPrestamo] = useState("");
-  const [fechaDevolucion, setFechaDevolucion] = useState("");
-  const [estadoDevolucion, setEstadoDevolucion] = useState<string>("Prestado");
-  const [notas, setNotas] = useState("");
-  const [creadoPorId, setCreadoPorId] = useState("");
-  const [recogidoPorId, setRecogidoPorId] = useState("");
-  const [idCentro, setIdCentro] = useState("");
-
-  const formCentroId = useMemo(
-    () => (showCentroSelector ? idCentro.trim() : assignedCenterId?.trim() ?? ""),
-    [showCentroSelector, idCentro, assignedCenterId],
+  const buildFields = useCallback(
+    (source?: PrestamoMaterialData) =>
+      buildPrestamoFormFields(source, perfiles, profesorById, {
+        showCentroSelector,
+        assignedCenterId,
+        centros,
+      }),
+    [perfiles, profesorById, showCentroSelector, assignedCenterId, centros],
   );
 
-  const actorProfileOptions = useMemo(
-    () => buildActorProfileOptions(perfiles),
-    [perfiles],
+  const [categoria, setCategoria] = useState<PrestamoCategoria | "">(
+    () => buildFields(editInitial).categoria,
   );
+  const [idReceptor, setIdReceptor] = useState(() => buildFields(editInitial).idReceptor);
+  const [elemento, setElemento] = useState(() => buildFields(editInitial).elemento);
+  const [estadoMaterial, setEstadoMaterial] = useState(() => buildFields(editInitial).estadoMaterial);
+  const [numSerie, setNumSerie] = useState(() => buildFields(editInitial).numSerie);
+  const [fechaPrestamo, setFechaPrestamo] = useState(() => buildFields(editInitial).fechaPrestamo);
+  const [fechaFinPrestamo, setFechaFinPrestamo] = useState(
+    () => buildFields(editInitial).fechaFinPrestamo,
+  );
+  const [fechaDevolucion, setFechaDevolucion] = useState(
+    () => buildFields(editInitial).fechaDevolucion,
+  );
+  const [estadoDevolucion, setEstadoDevolucion] = useState(
+    () => buildFields(editInitial).estadoDevolucion,
+  );
+  const [notas, setNotas] = useState(() => buildFields(editInitial).notas);
+  const [creadoPorId, setCreadoPorId] = useState(() => buildFields(editInitial).creadoPorId);
+  const [recogidoPorId, setRecogidoPorId] = useState(() => buildFields(editInitial).recogidoPorId);
+  const [idCentro, setIdCentro] = useState(() => buildFields(editInitial).idCentro);
+
+  const applyFormFields = useCallback((fields: PrestamoFormFields) => {
+    setCategoria(fields.categoria);
+    setIdReceptor(fields.idReceptor);
+    setElemento(fields.elemento);
+    setEstadoMaterial(fields.estadoMaterial);
+    setNumSerie(fields.numSerie);
+    setFechaPrestamo(fields.fechaPrestamo);
+    setFechaFinPrestamo(fields.fechaFinPrestamo);
+    setFechaDevolucion(fields.fechaDevolucion);
+    setEstadoDevolucion(fields.estadoDevolucion);
+    setNotas(fields.notas);
+    setCreadoPorId(fields.creadoPorId);
+    setRecogidoPorId(fields.recogidoPorId);
+    setIdCentro(fields.idCentro);
+  }, []);
+
+  const formCentroId = useMemo(() => {
+    if (isEdit && editInitial?.ID_CENTRO?.trim()) {
+      return editInitial.ID_CENTRO.trim();
+    }
+    if (showCentroSelector) return idCentro.trim();
+    return assignedCenterId?.trim() ?? "";
+  }, [isEdit, editInitial?.ID_CENTRO, showCentroSelector, idCentro, assignedCenterId]);
+
+  const actorProfileOptions = useMemo(() => buildActorProfileOptions(perfiles), [perfiles]);
 
   const selectedProfesorId = creadoPorId.trim();
 
@@ -1099,12 +1582,21 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
   );
 
   const receptorOptions = useMemo<EntityOption[]>(() => {
+    const selectedId = idReceptor.trim();
+
     if (categoria === "ALUMNO") {
-      if (!formCentroId || !selectedProfesorId) return [];
-      if (alumnosPorProfesorQuery.isLoading) return [];
+      if (!formCentroId) {
+        return ensureSelectedEntityOption([], selectedId, (id) => alumnoById.get(id));
+      }
+      if (!selectedProfesorId && !(isEdit && selectedId)) {
+        return ensureSelectedEntityOption([], selectedId, (id) => alumnoById.get(id));
+      }
+      if (alumnosPorProfesorQuery.isLoading && !(isEdit && selectedId)) return [];
 
       const centroAlumnoIds = alumnosByCentroId.get(formCentroId);
-      if (!centroAlumnoIds || centroAlumnoIds.size === 0) return [];
+      if (!centroAlumnoIds || centroAlumnoIds.size === 0) {
+        return ensureSelectedEntityOption([], selectedId, (id) => alumnoById.get(id));
+      }
 
       const options: EntityOption[] = [];
       for (const id of rpcAlumnoIds) {
@@ -1113,16 +1605,23 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
         if (label) options.push({ id, label });
       }
 
-      return options.sort((a, b) =>
-        a.label.localeCompare(b.label, "es", { sensitivity: "base" }),
+      return ensureSelectedEntityOption(
+        options.sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" })),
+        selectedId,
+        (id) => alumnoById.get(id),
       );
     }
     if (categoria === "PROFESOR") {
-      return toProfesorEntityOptions(profesores, idReceptor);
+      return ensureSelectedEntityOption(
+        toProfesorEntityOptions(profesores, idReceptor),
+        selectedId,
+        (id) => profesorById.get(id),
+      );
     }
     return [];
   }, [
     categoria,
+    isEdit,
     profesores,
     idReceptor,
     formCentroId,
@@ -1130,59 +1629,31 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
     rpcAlumnoIds,
     alumnosByCentroId,
     alumnoById,
+    profesorById,
     alumnosPorProfesorQuery.isLoading,
   ]);
 
   const receptorLoading =
     categoria === "ALUMNO"
-      ? alumnosLoading ||
-        (!!selectedProfesorId && alumnosPorProfesorQuery.isLoading)
+      ? !idReceptor.trim() &&
+        (alumnosLoading || (!!selectedProfesorId && alumnosPorProfesorQuery.isLoading))
       : categoria === "PROFESOR"
-        ? profesoresLoading
+        ? profesoresLoading && !idReceptor.trim()
         : false;
 
   const receptorLabel =
     categoria === "ALUMNO" ? "Alumno *" : categoria === "PROFESOR" ? "Profesor *" : "Receptor *";
 
   useEffect(() => {
-    if (!open) {
-      formInitializedRef.current = false;
-      return;
-    }
-    if (formInitializedRef.current) return;
-    formInitializedRef.current = true;
-
-    const initialCategoria = initial?.CATEGORIA?.trim() ?? "";
-
-    setCategoria(isPrestamoCategoria(initialCategoria) ? initialCategoria : "");
-    setIdReceptor(initial?.ID_RECEPTOR?.trim() ?? "");
-    setElemento(initial?.ELEMENTO ?? "");
-    setEstadoMaterial(initial?.ESTADO_MATERIAL ?? "");
-    setNumSerie(initial?.NUM_SERIE ?? "");
-    setFechaPrestamo(initial?.FECHA_PRESTAMO ?? todayDateKey());
-    setFechaFinPrestamo(initial?.FECHA_FIN_PRESTAMO ?? "");
-    setFechaDevolucion(initial?.FECHA_DEVOLUCION ?? "");
-    setEstadoDevolucion(normalizeEstado(initial?.ESTADO_DEVOLUCION));
-    setNotas(initial?.NOTAS ?? "");
-    setCreadoPorId(
-      resolveStoredActorToProfesorId(initial?.CREADO_POR, perfiles, profesorById),
-    );
-    setRecogidoPorId(
-      resolveStoredActorToProfesorId(initial?.RECOGIDO_POR, perfiles, profesorById),
-    );
-    setIdCentro(
-      showCentroSelector
-        ? centros[0]?.ID_CENTRO ?? ""
-        : assignedCenterId?.trim() ?? "",
-    );
+    if (!open) return;
+    applyFormFields(buildFields(isEdit ? editInitial : undefined));
   }, [
     open,
-    initial,
-    perfiles,
-    profesorById,
-    showCentroSelector,
-    assignedCenterId,
-    centros,
+    isEdit,
+    editInitial?.ID_PRESTAMO,
+    editInitial,
+    buildFields,
+    applyFormFields,
   ]);
 
   const handleCategoriaChange = (next: PrestamoCategoria) => {
@@ -1197,332 +1668,312 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription className="sr-only">
-            Formulario para la gestión de préstamos de materiales e instrumentos
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (readOnly) return;
-            if (!isPrestamoCategoria(categoria)) {
-              toast.error("La categoría debe ser ALUMNO o PROFESOR");
-              return;
-            }
-            if (!idReceptor.trim()) {
-              toast.error(
-                categoria === "ALUMNO"
-                  ? "Debes seleccionar un alumno"
-                  : "Debes seleccionar un profesor",
-              );
-              return;
-            }
-            if (!elemento.trim()) {
-              toast.error("Debes indicar el elemento prestado");
-              return;
-            }
-            if (!estadoMaterial.trim()) {
-              toast.error(
-                "Debes indicar el estado del material y artículos en el momento de la entrega",
-              );
-              return;
-            }
-            if (!fechaPrestamo) {
-              toast.error("Debes indicar la fecha de préstamo");
-              return;
-            }
+  const formBody = (
+    <form
+      id="prestamo-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (readOnly) return;
+        if (!isPrestamoCategoria(categoria)) {
+          toast.error("La categoría debe ser ALUMNO o PROFESOR");
+          return;
+        }
+        if (!idReceptor.trim()) {
+          toast.error(
+            categoria === "ALUMNO"
+              ? "Debes seleccionar un alumno"
+              : "Debes seleccionar un profesor",
+          );
+          return;
+        }
+        if (!elemento.trim()) {
+          toast.error("Debes indicar el elemento prestado");
+          return;
+        }
+        if (!estadoMaterial.trim()) {
+          toast.error(
+            "Debes indicar el estado del material y artículos en el momento de la entrega",
+          );
+          return;
+        }
+        if (!fechaPrestamo) {
+          toast.error("Debes indicar la fecha de préstamo");
+          return;
+        }
 
-            let resolvedCentroId = "";
-            if (!isEdit) {
-              resolvedCentroId = showCentroSelector
-                ? idCentro.trim()
-                : assignedCenterId?.trim() ?? "";
-              if (!resolvedCentroId) {
-                toast.error(
-                  showCentroSelector
-                    ? "Debes seleccionar un centro"
-                    : "No se pudo determinar el centro asignado a tu perfil.",
-                );
-                return;
-              }
-            }
+        let resolvedCentroId = "";
+        if (!isEdit) {
+          resolvedCentroId = showCentroSelector
+            ? idCentro.trim()
+            : (assignedCenterId?.trim() ?? "");
+          if (!resolvedCentroId) {
+            toast.error(
+              showCentroSelector
+                ? "Debes seleccionar un centro"
+                : "No se pudo determinar el centro asignado a tu perfil.",
+            );
+            return;
+          }
+        }
 
-            const payload: PrestamoMaterialCreateInput = {
-              ELEMENTO: elemento.trim(),
-              CATEGORIA: categoria,
-              ID_RECEPTOR: idReceptor.trim(),
-              ID_CENTRO: resolvedCentroId,
-              ESTADO_MATERIAL: estadoMaterial.trim(),
-              NUM_SERIE: numSerie.trim() || null,
-              FECHA_PRESTAMO: fechaPrestamo,
-              FECHA_FIN_PRESTAMO: fechaFinPrestamo.trim() || null,
-              ESTADO_DEVOLUCION: estadoDevolucion,
-              NOTAS: notas.trim() || null,
-            };
+        const payload: PrestamoMaterialCreateInput = {
+          ELEMENTO: elemento.trim(),
+          CATEGORIA: categoria,
+          ID_RECEPTOR: idReceptor.trim(),
+          ID_CENTRO: resolvedCentroId,
+          ESTADO_MATERIAL: estadoMaterial.trim(),
+          NUM_SERIE: numSerie.trim() || null,
+          FECHA_PRESTAMO: fechaPrestamo,
+          FECHA_FIN_PRESTAMO: fechaFinPrestamo.trim() || null,
+          ESTADO_DEVOLUCION: estadoDevolucion,
+          NOTAS: notas.trim() || null,
+        };
 
-            if (isEdit) {
-              const { ID_CENTRO: _omitCentro, ...updatePayload } = payload;
-              updatePayload.FECHA_DEVOLUCION = resolveFechaDevolucionOnReturn(
-                estadoDevolucion,
-                fechaDevolucion,
-              ) || null;
-              if (showActorFieldsEditable) {
-                updatePayload.CREADO_POR = creadoPorId.trim() || null;
-                updatePayload.RECOGIDO_POR = recogidoPorId.trim() || null;
-              }
-              (props as PrestamoFormDialogEditProps).onSubmit(updatePayload);
-              return;
-            }
+        if (isEdit) {
+          const { ID_CENTRO: _omitCentro, ...updatePayload } = payload;
+          updatePayload.FECHA_DEVOLUCION =
+            resolveFechaDevolucionOnReturn(estadoDevolucion, fechaDevolucion) || null;
+          if (showActorFieldsEditable) {
+            updatePayload.CREADO_POR = creadoPorId.trim() || null;
+            updatePayload.RECOGIDO_POR = recogidoPorId.trim() || null;
+          }
+          (props as PrestamoFormDialogEditProps).onSubmit(updatePayload);
+          return;
+        }
 
-            if (showActorFieldsEditable) {
-              payload.CREADO_POR = creadoPorId.trim() || null;
-              payload.RECOGIDO_POR = recogidoPorId.trim() || null;
-            }
+        if (showActorFieldsEditable) {
+          payload.CREADO_POR = creadoPorId.trim() || null;
+          payload.RECOGIDO_POR = recogidoPorId.trim() || null;
+        }
 
-            console.log("FINAL PAYLOAD (FORM CREATE):", payload);
-            (props as PrestamoFormDialogCreateProps).onSubmit(payload);
-          }}
-          className="space-y-4"
-        >
-          {!isEdit && showCentroSelector && (
-            <div className="space-y-2">
-              <Label>Centro *</Label>
-              <Select
-                value={idCentro || undefined}
-                onValueChange={(next) => {
-                  setIdCentro(next);
-                  if (categoria === "ALUMNO") setIdReceptor("");
-                }}
-                disabled={fieldsDisabled || centrosLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={centrosLoading ? "Cargando centros…" : "Seleccionar centro"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {centros.map((centro) => (
-                    <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
-                      {centro.NOMBRE_CENTRO}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {isEdit && initial && isMaster && (
-            <div className="space-y-2">
-              <Label>ID_PRESTAMO</Label>
-              <Input value={initial.ID_PRESTAMO} disabled readOnly className="font-mono text-sm" />
-            </div>
-          )}
-
-          {showActorFieldsReadOnly && initial && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <DetailField
-                label="Creado por"
-                value={displayActorNombre(
-                  initial.CREADO_POR,
-                  actorLookups,
-                  profesorById,
-                  alumnoById,
-                )}
+        console.log("FINAL PAYLOAD (FORM CREATE):", payload);
+        (props as PrestamoFormDialogCreateProps).onSubmit(payload);
+      }}
+      className="space-y-4"
+    >
+      {!isEdit && showCentroSelector && (
+        <div className="space-y-2">
+          <Label>Centro *</Label>
+          <Select
+            value={idCentro || undefined}
+            onValueChange={(next) => {
+              setIdCentro(next);
+              if (categoria === "ALUMNO") setIdReceptor("");
+            }}
+            disabled={fieldsDisabled || centrosLoading}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={centrosLoading ? "Cargando centros…" : "Seleccionar centro"}
               />
-              <DetailField
-                label="Recogido por"
-                value={displayActorNombre(
-                  initial.RECOGIDO_POR,
-                  actorLookups,
-                  profesorById,
-                  alumnoById,
-                )}
-              />
-            </div>
-          )}
+            </SelectTrigger>
+            <SelectContent>
+              {centros.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
-          {showActorFieldsEditable && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ActorProfesorSelect
-                label="Creado por"
-                value={creadoPorId}
-                onChange={(next) => {
-                  setCreadoPorId(next);
-                  if (categoria === "ALUMNO") setIdReceptor("");
-                }}
-                options={actorProfileOptions}
-                disabled={fieldsDisabled}
-              />
-              <ActorProfesorSelect
-                label="Recogido por"
-                value={recogidoPorId}
-                onChange={setRecogidoPorId}
-                options={actorProfileOptions}
-                disabled={fieldsDisabled}
-                allowEmpty
-              />
-            </div>
-          )}
+      {isEdit && editInitial && isMaster && (
+        <div className="space-y-2">
+          <Label>ID_PRESTAMO</Label>
+          <Input value={editInitial.ID_PRESTAMO} disabled readOnly className="font-mono text-sm" />
+        </div>
+      )}
 
-          <div className="space-y-2">
-            <Label>Categoría *</Label>
-            <Select
-              value={categoria === "" ? undefined : categoria}
-              onValueChange={(v) => handleCategoriaChange(v as PrestamoCategoria)}
-              disabled={fieldsDisabled}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar categoría" />
-              </SelectTrigger>
-              <SelectContent>
-                {PRESTAMO_CATEGORIA_VALUES.map((cat) => (
-                  <SelectItem key={cat} value={cat}>
-                    {categoriaLabel(cat)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <SearchableEntitySelect
-            label={receptorLabel}
-            placeholder={
-              !isPrestamoCategoria(categoria)
-                ? "Selecciona una categoría primero"
-                : categoria === "ALUMNO"
-                  ? "Seleccionar alumno"
-                  : "Seleccionar profesor"
-            }
-            options={receptorOptions}
-            value={idReceptor}
-            onChange={setIdReceptor}
-            disabled={fieldsDisabled || !isPrestamoCategoria(categoria)}
-            loading={receptorLoading}
+      {showActorFieldsReadOnly && editInitial && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <DetailField
+            label="Prestado por"
+            value={displayActorNombre(editInitial.CREADO_POR, actorLookups, profesorById, alumnoById)}
           />
-
-          <div className="space-y-2">
-            <Label>Elemento *</Label>
-            <Input
-              value={elemento}
-              onChange={(e) => setElemento(e.target.value)}
-              placeholder="Ej. Violín 4/4, Metrónomo, Libro de solfeo..."
-              required
-              disabled={fieldsDisabled}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Estado del material y artículos en el momento de la entrega *</Label>
-            <Textarea
-              value={estadoMaterial}
-              onChange={(e) => setEstadoMaterial(e.target.value)}
-              placeholder="Describe el estado del material en la entrega..."
-              rows={3}
-              required
-              disabled={fieldsDisabled}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>Nº serie / referencia</Label>
-            <Input
-              value={numSerie}
-              onChange={(e) => setNumSerie(e.target.value)}
-              placeholder="Opcional"
-              disabled={fieldsDisabled}
-            />
-          </div>
-
-          <div className={cn("grid gap-4", isEdit ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
-            <div className="space-y-2">
-              <Label>Fecha préstamo *</Label>
-              <Input
-                type="date"
-                value={fechaPrestamo}
-                onChange={(e) => setFechaPrestamo(e.target.value)}
-                required
-                disabled={fieldsDisabled}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Fecha devolución prevista</Label>
-              <Input
-                type="date"
-                value={fechaFinPrestamo}
-                onChange={(e) => setFechaFinPrestamo(e.target.value)}
-                disabled={fieldsDisabled}
-              />
-            </div>
-            {isEdit && (
-              <div className="space-y-2">
-                <Label>Fecha devolución real</Label>
-                <Input
-                  type="date"
-                  value={fechaDevolucion}
-                  onChange={(e) => setFechaDevolucion(e.target.value)}
-                  disabled={fieldsDisabled}
-                />
-              </div>
+          <DetailField
+            label="Recogido por"
+            value={displayActorNombre(
+              editInitial.RECOGIDO_POR,
+              actorLookups,
+              profesorById,
+              alumnoById,
             )}
-          </div>
+          />
+        </div>
+      )}
 
-          <div className="space-y-2">
-            <Label>Estado devolución</Label>
-            <Select
-              value={estadoDevolucion}
-              onValueChange={handleEstadoDevolucionChange}
-              disabled={fieldsDisabled}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ESTADO_DEVOLUCION_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {showActorFieldsEditable && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ActorProfesorSelect
+            label="Prestado por"
+            value={creadoPorId}
+            onChange={(next) => {
+              setCreadoPorId(next);
+              if (categoria === "ALUMNO") setIdReceptor("");
+            }}
+            options={actorProfileOptions}
+            disabled={fieldsDisabled}
+          />
+          <ActorProfesorSelect
+            label="Recogido por"
+            value={recogidoPorId}
+            onChange={setRecogidoPorId}
+            options={actorProfileOptions}
+            disabled={fieldsDisabled}
+            allowEmpty
+          />
+        </div>
+      )}
 
+      <div className="space-y-2">
+        <Label>Categoría *</Label>
+        <Select
+          value={categoria === "" ? undefined : categoria}
+          onValueChange={(v) => handleCategoriaChange(v as PrestamoCategoria)}
+          disabled={fieldsDisabled}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Seleccionar categoría" />
+          </SelectTrigger>
+          <SelectContent>
+            {PRESTAMO_CATEGORIA_VALUES.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {categoriaLabel(cat)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <SearchableEntitySelect
+        label={receptorLabel}
+        placeholder={
+          !isPrestamoCategoria(categoria)
+            ? "Selecciona una categoría primero"
+            : categoria === "ALUMNO"
+              ? "Seleccionar alumno"
+              : "Seleccionar profesor"
+        }
+        options={receptorOptions}
+        value={idReceptor}
+        onChange={setIdReceptor}
+        disabled={
+          fieldsDisabled ||
+          !isPrestamoCategoria(categoria) ||
+          (categoria === "ALUMNO" && !selectedProfesorId && !idReceptor.trim())
+        }
+        loading={receptorLoading}
+        selectedLabel={
+          idReceptor.trim()
+            ? categoria === "ALUMNO"
+              ? alumnoById.get(idReceptor.trim())
+              : categoria === "PROFESOR"
+                ? profesorById.get(idReceptor.trim())
+                : undefined
+            : undefined
+        }
+      />
+
+      <div className="space-y-2">
+        <Label>Elemento *</Label>
+        <Input
+          value={elemento}
+          onChange={(e) => setElemento(e.target.value)}
+          placeholder="Ej. Violín 4/4, Metrónomo, Libro de solfeo..."
+          required
+          disabled={fieldsDisabled}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Estado del material y artículos en el momento de la entrega *</Label>
+        <Textarea
+          value={estadoMaterial}
+          onChange={(e) => setEstadoMaterial(e.target.value)}
+          placeholder="Describe el estado del material en la entrega..."
+          rows={3}
+          required
+          disabled={fieldsDisabled}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Nº serie / referencia</Label>
+        <Input
+          value={numSerie}
+          onChange={(e) => setNumSerie(e.target.value)}
+          placeholder="Opcional"
+          disabled={fieldsDisabled}
+        />
+      </div>
+
+      <div className={cn("grid gap-4", isEdit ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
+        <div className="space-y-2">
+          <Label>Fecha préstamo *</Label>
+          <Input
+            type="date"
+            value={fechaPrestamo}
+            onChange={(e) => setFechaPrestamo(e.target.value)}
+            required
+            disabled={fieldsDisabled}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Fecha devolución prevista</Label>
+          <Input
+            type="date"
+            value={fechaFinPrestamo}
+            onChange={(e) => setFechaFinPrestamo(e.target.value)}
+            disabled={fieldsDisabled}
+          />
+        </div>
+        {isEdit && (
           <div className="space-y-2">
-            <Label>Notas</Label>
-            <Textarea
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              placeholder="Observaciones adicionales..."
-              rows={3}
+            <Label>Fecha devolución real</Label>
+            <Input
+              type="date"
+              value={fechaDevolucion}
+              onChange={(e) => setFechaDevolucion(e.target.value)}
               disabled={fieldsDisabled}
             />
           </div>
+        )}
+      </div>
 
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              {readOnly ? "Cerrar" : "Cancelar"}
-            </Button>
-            {!readOnly && (
-              <Button
-                type="submit"
-                disabled={
-                  submitting ||
-                  !isPrestamoCategoria(categoria) ||
-                  !idReceptor.trim() ||
-                  !elemento.trim() ||
-                  !estadoMaterial.trim() ||
-                  !fechaPrestamo ||
-                  (showCentroSelector && !idCentro.trim())
-                }
-              >
-                {submitting ? "Guardando..." : submitLabel}
-              </Button>
-            )}
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+      <div className="space-y-2">
+        <Label>Estado devolución</Label>
+        <Select
+          value={estadoDevolucion}
+          onValueChange={handleEstadoDevolucionChange}
+          disabled={fieldsDisabled}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ESTADO_DEVOLUCION_OPTIONS.map((opt) => (
+              <SelectItem key={opt} value={opt}>
+                {opt}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Notas</Label>
+        <Textarea
+          value={notas}
+          onChange={(e) => setNotas(e.target.value)}
+          placeholder="Observaciones adicionales..."
+          rows={3}
+          disabled={fieldsDisabled}
+        />
+      </div>
+    </form>
   );
+
+  if (!open) return null;
+  return formBody;
 }

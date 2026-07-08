@@ -46,6 +46,25 @@ export function collectBizumPhoneOptions(source: BizumPhoneSource): string[] {
   return phones;
 }
 
+export function sanitizeAlumnoPaymentPayloadForUpdate<T extends Record<string, unknown>>(
+  values: T,
+): T {
+  const metodo = values.METODO_PAGO as string | null | undefined;
+  const sanitized = { ...values } as Record<string, unknown>;
+
+  if (!isBankRemittancePaymentMethod(metodo)) {
+    sanitized.IBAN = null;
+    sanitized.TITULAR_CUENTA = null;
+    sanitized.MANDATO = null;
+  }
+
+  if (!isBizumPaymentMethod(metodo)) {
+    sanitized.TLF_BIZUM = null;
+  }
+
+  return sanitized as T;
+}
+
 export function sanitizeAlumnoPaymentPayload<T extends Record<string, unknown>>(values: T): T {
   const metodo = values.METODO_PAGO as string | null | undefined;
   const sanitized = { ...values } as Record<string, unknown>;

@@ -57,7 +57,7 @@ function parseCriterionArray(items: unknown[]): RubricCriterion[] {
 }
 
 export function parseRubricCriteria(
-  estructura: Record<string, unknown> | null | undefined,
+  estructura: Record<string, unknown> | unknown[] | null | undefined,
 ): RubricCriterion[] {
   if (!estructura) return [];
 
@@ -104,25 +104,70 @@ export function parseResultadosRubrica(
 export function buildResultadosRubrica(
   criteria: RubricCriterion[],
   values: Record<string, string>,
-): Record<string, number> | null {
-  const result: Record<string, number> = {};
+): Record<string, string | number> | null {
+  const result: Record<string, string | number> = {};
   let hasValue = false;
 
   for (const criterion of criteria) {
     const raw = values[criterion.key]?.trim();
     if (!raw) continue;
-    const num = parseFloat(raw);
-    if (!Number.isFinite(num)) {
-      throw new Error(`Puntuación inválida en "${criterion.label}".`);
-    }
-    if (num < 0 || num > 10) {
-      throw new Error(`"${criterion.label}" debe estar entre 0 y 10.`);
-    }
-    result[criterion.key] = Math.round(num * 100) / 100;
+    const num = Number(raw);
+    result[criterion.key] = Number.isFinite(num)
+      ? Math.round(num * 100) / 100
+      : raw;
     hasValue = true;
   }
 
   return hasValue ? result : null;
+}
+
+export function initCriterioGradeValues(
+  criteria: RubricCriterion[],
+  saved: Record<string, unknown> | null | undefined,
+): Record<string, string> {
+  const parsed = parseResultadosRubrica(saved);
+  const values: Record<string, string> = {};
+  for (const criterion of criteria) {
+    const raw = parsed[criterion.key] ?? parsed[criterion.label];
+    values[criterion.key] = raw ?? "";
+  }
+  return values;
+}
+
+export function buildResultadosRubricaByLabel(
+  criteria: RubricCriterion[],
+  values: Record<string, string>,
+): Record<string, string | number> | null {
+  const byKey = buildResultadosRubrica(criteria, values);
+  if (!byKey) return null;
+
+  const result: Record<string, string | number> = {};
+  for (const criterion of criteria) {
+    if (byKey[criterion.key] != null) {
+      result[criterion.label] = byKey[criterion.key];
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+/** Average with 2 decimals only when every non-empty criterion value is numeric. */
+export function computeAutoNotaMediaFromCriteria(
+  values: Record<string, string>,
+): string | null {
+  const nonEmpty = Object.values(values)
+    .map((value) => value.trim())
+    .filter((value) => value !== "");
+  if (nonEmpty.length === 0) return null;
+
+  const nums: number[] = [];
+  for (const val of nonEmpty) {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return null;
+    nums.push(num);
+  }
+
+  const avg = nums.reduce((sum, num) => sum + num, 0) / nums.length;
+  return avg.toFixed(2);
 }
 
 export function computeNotaMediaFromCriteria(values: Record<string, string>): number | null {
@@ -138,4 +183,22 @@ export function computeNotaMediaFromCriteria(values: Record<string, string>): nu
 
 export function isRubricaActiva(estado: string | null | undefined): boolean {
   return (estado ?? "").trim().toLowerCase() === "activa";
+}
+
+export type RubricaEstructuraItem = { criterio: string };
+
+export function buildEstructuraFromCriterionNames(
+  names: string[],
+): RubricaEstructuraItem[] {
+  return names
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((criterio) => ({ criterio }));
+}
+
+export function criterionNamesFromEstructura(
+  estructura: Record<string, unknown> | unknown[] | null | undefined,
+): string[] {
+  if (!estructura) return [];
+  return parseRubricCriteria(estructura).map((c) => c.label);
 }

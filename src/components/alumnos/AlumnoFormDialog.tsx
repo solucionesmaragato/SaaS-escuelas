@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import {
   alumnoFormSchema,
-  alumnoToFormValues,
+  alumnoRecordToFormValues,
   calcEdad,
   emptyAlumnoFormValues,
   type AlumnoFormInput,
@@ -15,6 +15,7 @@ import type { HorarioCreateInput, HorarioUpdateInput } from "@/hooks/useAlumnosT
 import { useAlumnoMatriculas } from "@/hooks/useAlumnoMatriculas";
 import type { Matricula } from "@/types/database";
 import { countGrupoAlumnos, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
+import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -59,7 +60,46 @@ import {
   isBankRemittancePaymentMethod,
   isBizumPaymentMethod,
   normalizeMetodoPago,
+  type MetodoPagoOption,
 } from "@/lib/alumnoPaymentUtils";
+
+function resolveMetodoPagoSelectValue(value: string | null | undefined): string {
+  const normalized = normalizeMetodoPago(value);
+  if (!normalized) return "__unset__";
+  if ((METODOS_PAGO_OPCIONES as readonly string[]).includes(normalized)) {
+    return normalized;
+  }
+  return normalized;
+}
+
+function buildAlumnoFormResetValues(alumno: AlumnoTree): AlumnoFormValues {
+  return alumnoRecordToFormValues(alumno);
+}
+
+function estadoSelectCurrentValue(
+  value: string | null | undefined,
+  options: readonly string[],
+): string {
+  const current = value?.trim() ?? "";
+  if (!current) return "__unset__";
+  return current;
+}
+
+function resolveEstadoSelectValue(value: string | null | undefined): string {
+  return estadoSelectCurrentValue(value, ESTADO_OPCIONES);
+}
+
+function estadoSelectOptions(
+  value: string | null | undefined,
+  options: readonly string[],
+): Array<{ value: string; label: string }> {
+  const current = value?.trim() ?? "";
+  const base = options.map((opt) => ({ value: opt, label: opt }));
+  if (current && !options.includes(current)) {
+    return [{ value: current, label: current }, ...base];
+  }
+  return base;
+}
 
 type LookupMaps = {
   profesorById: Map<string, string>;
@@ -89,8 +129,11 @@ function profesorSelectOptions(
 }
 
 const MATRICULA_ESTADOS = ["Activo", "Inactivo"] as const;
+const ESTADO_OPCIONES = ["Cobrar", "Pagado", "Devolver"] as const;
 
-function normalizeMatriculaEstado(estado: string | null | undefined): (typeof MATRICULA_ESTADOS)[number] {
+function normalizeMatriculaEstado(
+  estado: string | null | undefined,
+): (typeof MATRICULA_ESTADOS)[number] {
   return estado?.trim().toLowerCase() === "inactivo" ? "Inactivo" : "Activo";
 }
 
@@ -133,13 +176,17 @@ type HorarioFormState = {
   saldo: string;
 };
 
-function normalizeTipoClase(value: string | null | undefined): (typeof TIPO_CLASE_OPCIONES)[number] {
+function normalizeTipoClase(
+  value: string | null | undefined,
+): (typeof TIPO_CLASE_OPCIONES)[number] {
   const v = value?.trim().toLowerCase() ?? "";
   if (v === "colectiva" || v === "grupo") return "Colectiva";
   return "Individual";
 }
 
-function normalizeTipoSesion(value: string | null | undefined): (typeof TIPO_SESION_OPCIONES)[number] {
+function normalizeTipoSesion(
+  value: string | null | undefined,
+): (typeof TIPO_SESION_OPCIONES)[number] {
   return value?.trim().toLowerCase() === "extra" ? "Extra" : "Incluida";
 }
 
@@ -245,10 +292,7 @@ function slotToHorarioPatch(
     ID_AULA: slot.ID_AULA ?? null,
     DURACION:
       slot.HORA_INICIO && slot.HORA_FIN
-        ? durationMinutesBetween(
-            slot.HORA_INICIO.slice(0, 5),
-            slot.HORA_FIN.slice(0, 5),
-          )
+        ? durationMinutesBetween(slot.HORA_INICIO.slice(0, 5), slot.HORA_FIN.slice(0, 5))
         : null,
   };
 }
@@ -341,20 +385,10 @@ function hasScheduleResourceConflict(
   if (!idProfesor && !idAula) return false;
 
   for (const slot of existingSlots) {
-    if (
-      !schedulesTimeOverlap(
-        dia,
-        horaInicio,
-        horaFin,
-        slot.dia,
-        slot.horaInicio,
-        slot.horaFin,
-      )
-    ) {
+    if (!schedulesTimeOverlap(dia, horaInicio, horaFin, slot.dia, slot.horaInicio, slot.horaFin)) {
       continue;
     }
-    const profesorConflict =
-      !!idProfesor && !!slot.idProfesor && idProfesor === slot.idProfesor;
+    const profesorConflict = !!idProfesor && !!slot.idProfesor && idProfesor === slot.idProfesor;
     const aulaConflict = !!idAula && !!slot.idAula && idAula === slot.idAula;
     if (profesorConflict || aulaConflict) return true;
   }
@@ -400,9 +434,7 @@ function buildProfesorOcupacionShort(
   const diaNorm = dia.trim().toLowerCase();
   const slots = grupoSlots
     .filter(
-      (s) =>
-        s.ID_PROFESOR === idProfesor &&
-        (s.DIA_SEMANA ?? "").trim().toLowerCase() === diaNorm,
+      (s) => s.ID_PROFESOR === idProfesor && (s.DIA_SEMANA ?? "").trim().toLowerCase() === diaNorm,
     )
     .sort((a, b) => (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? ""));
 
@@ -759,11 +791,7 @@ function LockedScheduleBlock({
           <Label className="text-[10px] text-muted-foreground">Profesor</Label>
           <Input
             className="h-8 bg-muted/50"
-            value={
-              slot.ID_PROFESOR
-                ? lookups.profesorById.get(slot.ID_PROFESOR) ?? "—"
-                : "—"
-            }
+            value={slot.ID_PROFESOR ? (lookups.profesorById.get(slot.ID_PROFESOR) ?? "—") : "—"}
             readOnly
             disabled
           />
@@ -772,7 +800,7 @@ function LockedScheduleBlock({
           <Label className="text-[10px] text-muted-foreground">Aula</Label>
           <Input
             className="h-8 bg-muted/50"
-            value={slot.ID_AULA ? lookups.aulaById.get(slot.ID_AULA) ?? "—" : "—"}
+            value={slot.ID_AULA ? (lookups.aulaById.get(slot.ID_AULA) ?? "—") : "—"}
             readOnly
             disabled
           />
@@ -847,10 +875,7 @@ function HorarioSubForm({
     !scheduleItemGrupoId || rowEspecialidad !== enrollmentEspecialidad;
   const showStandaloneScheduleEspecialidad =
     showScheduleEspecialidad && !(showEnrollmentFields || appendMode);
-  const isTariffFreeGrupoSelected = isTariffFreeGrupo(
-    enrollmentForm.idGrupo,
-    grupoSlots,
-  );
+  const isTariffFreeGrupoSelected = isTariffFreeGrupo(enrollmentForm.idGrupo, grupoSlots);
 
   useEffect(() => {
     if (!isTariffFreeGrupoSelected) return;
@@ -858,10 +883,7 @@ function HorarioSubForm({
   }, [isTariffFreeGrupoSelected, enrollmentForm.idGrupo]);
 
   const occupancySlots = useMemo(
-    () =>
-      appendMode
-        ? buildScheduleOccupancySlots(grupoSlots, conflictCheckHorarios ?? [])
-        : [],
+    () => (appendMode ? buildScheduleOccupancySlots(grupoSlots, conflictCheckHorarios ?? []) : []),
     [appendMode, grupoSlots, conflictCheckHorarios],
   );
 
@@ -938,9 +960,7 @@ function HorarioSubForm({
 
   const grupoCapacity = useMemo(
     () =>
-      enrollmentForm.idGrupo
-        ? getGrupoCapacityMeta(enrollmentForm.idGrupo, grupoSlots)
-        : null,
+      enrollmentForm.idGrupo ? getGrupoCapacityMeta(enrollmentForm.idGrupo, grupoSlots) : null,
     [enrollmentForm.idGrupo, grupoSlots],
   );
 
@@ -959,15 +979,12 @@ function HorarioSubForm({
 
   const chivato = useMemo(
     () =>
-      !isColectiva
-        ? buildProfesorOcupacionShort(form.idProfesor, form.dia, grupoSlots)
-        : null,
+      !isColectiva ? buildProfesorOcupacionShort(form.idProfesor, form.dia, grupoSlots) : null,
     [isColectiva, form.idProfesor, form.dia, grupoSlots],
   );
 
   const profesorOptions = useMemo(
-    () =>
-      profesorSelectOptions(selectOptions.profesores, form.idProfesor, lookups.profesorById),
+    () => profesorSelectOptions(selectOptions.profesores, form.idProfesor, lookups.profesorById),
     [selectOptions.profesores, form.idProfesor, lookups.profesorById],
   );
 
@@ -1048,9 +1065,7 @@ function HorarioSubForm({
         await onSave(individualToHorarioPatch(effectiveForm, common));
       } else {
         await onSave(
-          grupoHorarioBlocks.map((slot) =>
-            slotToHorarioPatch(slot, effectiveForm.idGrupo, common),
-          ),
+          grupoHorarioBlocks.map((slot) => slotToHorarioPatch(slot, effectiveForm.idGrupo, common)),
         );
       }
       return;
@@ -1227,9 +1242,7 @@ function HorarioSubForm({
               </Select>
             </div>
           </div>
-          {chivato && !appendMode && (
-            <p className="text-xs text-muted-foreground">{chivato}</p>
-          )}
+          {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
           {appendMode && scheduleResourceConflict && (
             <p className="text-xs font-medium text-destructive">
               El profesor y/o el aula seleccionada ya están ocupados en este horario
@@ -1521,7 +1534,9 @@ function MatriculaHorariosGroup({
                   saving={horarioSaving}
                   onCancel={() => removeDraftHorario(draftId)}
                   onSave={async (patchOrPatches) => {
-                    const patch = Array.isArray(patchOrPatches) ? patchOrPatches[0] : patchOrPatches;
+                    const patch = Array.isArray(patchOrPatches)
+                      ? patchOrPatches[0]
+                      : patchOrPatches;
                     try {
                       const { ID_HORARIO: _omitHorario, ...createPayload } = {
                         ID_MATRICULA: matricula.ID_MATRICULA,
@@ -1584,12 +1599,7 @@ function MatriculaRowEditor({
     setEspecialidad(matricula.ESPECIALIDAD ?? "");
     setIdProfesor(matricula.ID_PROFESOR ?? "");
     setEstado(normalizeMatriculaEstado(matricula.ESTADO));
-  }, [
-    matricula.ID_MATRICULA,
-    matricula.ESPECIALIDAD,
-    matricula.ID_PROFESOR,
-    matricula.ESTADO,
-  ]);
+  }, [matricula.ID_MATRICULA, matricula.ESPECIALIDAD, matricula.ID_PROFESOR, matricula.ESTADO]);
 
   const savedEstado = normalizeMatriculaEstado(matricula.ESTADO);
   const dirty =
@@ -1598,7 +1608,7 @@ function MatriculaRowEditor({
     estado !== savedEstado;
 
   const tarifaLabel = matricula.ID_TARIFA
-    ? lookups.tarifaById.get(matricula.ID_TARIFA) ?? "Sin tarifa"
+    ? (lookups.tarifaById.get(matricula.ID_TARIFA) ?? "Sin tarifa")
     : "Sin tarifa";
 
   const profesorOptions = useMemo(
@@ -1641,7 +1651,11 @@ function MatriculaRowEditor({
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Especialidad</Label>
-          <Select value={especialidad || undefined} onValueChange={setEspecialidad} disabled={saving}>
+          <Select
+            value={especialidad || undefined}
+            onValueChange={setEspecialidad}
+            disabled={saving}
+          >
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Seleccionar" />
             </SelectTrigger>
@@ -1693,6 +1707,157 @@ function MatriculaRowEditor({
   );
 }
 
+export type DraftMatriculaInput = {
+  ESPECIALIDAD: string;
+  ID_TARIFA: string | null;
+  ID_PROFESOR: string | null;
+};
+
+function DraftMatriculaPanel({
+  selectOptions,
+  lookups,
+  draftMatriculas,
+  onAdd,
+  onRemove,
+}: {
+  selectOptions: SelectOptions;
+  lookups: LookupMaps;
+  draftMatriculas: DraftMatriculaInput[];
+  onAdd: (input: DraftMatriculaInput) => void;
+  onRemove: (index: number) => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEspecialidad, setNewEspecialidad] = useState("");
+  const [newTarifa, setNewTarifa] = useState("");
+  const [newProfesor, setNewProfesor] = useState("");
+
+  const newMatriculaProfesorOptions = useMemo(
+    () => profesorSelectOptions(selectOptions.profesores, newProfesor, lookups.profesorById),
+    [selectOptions.profesores, newProfesor, lookups.profesorById],
+  );
+
+  const resetAddForm = () => {
+    setNewEspecialidad("");
+    setNewTarifa("");
+    setNewProfesor("");
+    setShowAdd(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      {draftMatriculas.length === 0 ? (
+        <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+          Añade las matrículas del nuevo alumno. Se guardarán junto con su ficha.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {draftMatriculas.map((mat, index) => (
+            <Card key={index} className="flex items-center justify-between p-3">
+              <div className="text-sm">
+                <span className="font-medium">
+                  {selectOptions.especialidades.find((e) => e.id === mat.ESPECIALIDAD)?.label ??
+                    mat.ESPECIALIDAD}
+                </span>
+                {mat.ID_TARIFA && (
+                  <span className="ml-2 text-muted-foreground">
+                    {selectOptions.tarifas.find((t) => t.id === mat.ID_TARIFA)?.label}
+                  </span>
+                )}
+                {mat.ID_PROFESOR && (
+                  <span className="ml-2 text-muted-foreground">
+                    {lookups.profesorById.get(mat.ID_PROFESOR) ?? mat.ID_PROFESOR}
+                  </span>
+                )}
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showAdd ? (
+        <Card className="space-y-3 border-dashed p-4">
+          <p className="text-sm font-medium">Nueva matrícula</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Especialidad *</Label>
+              <Select value={newEspecialidad || undefined} onValueChange={setNewEspecialidad}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectOptions.especialidades.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Tarifa</Label>
+              <Select value={newTarifa || undefined} onValueChange={setNewTarifa}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectOptions.tarifas.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Profesor</Label>
+              <Select value={newProfesor || undefined} onValueChange={setNewProfesor}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Seleccionar" />
+                </SelectTrigger>
+                <SelectContent>
+                  {newMatriculaProfesorOptions.map((opt) => (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={resetAddForm}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!newEspecialidad}
+              onClick={() => {
+                onAdd({
+                  ESPECIALIDAD: newEspecialidad,
+                  ID_TARIFA: newTarifa || null,
+                  ID_PROFESOR: newProfesor || null,
+                });
+                resetAddForm();
+              }}
+            >
+              Añadir a la lista
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={() => setShowAdd(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Añadir Matrícula
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function MatriculaManagePanel({
   alumnoId,
   selectOptions,
@@ -1723,8 +1888,7 @@ function MatriculaManagePanel({
   const [newProfesor, setNewProfesor] = useState("");
 
   const matriculaSaving = create.isPending || update.isPending || remove.isPending;
-  const matriculas =
-    list.data && list.data.length > 0 ? list.data : (treeMatriculas ?? []);
+  const matriculas = list.data && list.data.length > 0 ? list.data : (treeMatriculas ?? []);
 
   const newMatriculaProfesorOptions = useMemo(
     () => profesorSelectOptions(selectOptions.profesores, newProfesor, lookups.profesorById),
@@ -1778,7 +1942,7 @@ function MatriculaManagePanel({
         matriculas.map((mat) => {
           const horarios = horariosByMatricula.get(mat.ID_MATRICULA) ?? [];
           const maxHorarios = mat.ID_TARIFA
-            ? tarifaSesionesById.get(mat.ID_TARIFA) ?? null
+            ? (tarifaSesionesById.get(mat.ID_TARIFA) ?? null)
             : null;
           return (
             <div key={mat.ID_MATRICULA} className="space-y-3">
@@ -1888,7 +2052,13 @@ function MatriculaManagePanel({
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={resetAddForm} disabled={matriculaSaving}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={resetAddForm}
+              disabled={matriculaSaving}
+            >
               Cancelar
             </Button>
             <Button
@@ -1964,7 +2134,10 @@ export function AlumnoFormDialog({
   defaultCreateCenterId?: string | null;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
-  onSubmit: (values: AlumnoFormValues) => void;
+  onSubmit: (
+    values: AlumnoFormValues,
+    draft?: { id: string; matriculas: DraftMatriculaInput[] },
+  ) => void;
   onCreateHorario: (input: HorarioCreateInput) => Promise<void>;
   onUpdateHorario: (id: string, patch: HorarioUpdateInput) => Promise<void>;
   onRemoveHorario: (id: string) => Promise<void>;
@@ -1975,466 +2148,577 @@ export function AlumnoFormDialog({
   const setActiveTab = onTabChange ?? setInternalActiveTab;
   const form = useForm<AlumnoFormInput, unknown, AlumnoFormValues>({
     resolver: zodResolver(alumnoFormSchema),
-    defaultValues: emptyAlumnoFormValues(),
+    defaultValues: initial ? buildAlumnoFormResetValues(initial) : emptyAlumnoFormValues(),
   });
 
   const nacimiento = form.watch("NACIMIENTO");
+  const nombreAlumno = form.watch("NOMBRE_ALUMNO") ?? "";
   const metodoPago = normalizeMetodoPago(form.watch("METODO_PAGO"));
   const tlfComunicacion = form.watch("TLF_COMUNICACION");
+  const tlfAlumno = form.watch("TLF_ALUMNO");
   const tlfMadre = form.watch("TLF_MADRE");
   const tlfPadre = form.watch("TLF_PADRE");
   const bizumPhones = useMemo(
     () =>
       collectBizumPhoneOptions({
         TLF_COMUNICACION: tlfComunicacion,
+        TLF_ALUMNO: tlfAlumno,
         TLF_MADRE: tlfMadre,
         TLF_PADRE: tlfPadre,
       }),
-    [tlfComunicacion, tlfMadre, tlfPadre],
+    [tlfComunicacion, tlfAlumno, tlfMadre, tlfPadre],
   );
   const edad = useMemo(() => calcEdad(nacimiento), [nacimiento]);
+  const isSepa = isBankRemittancePaymentMethod(metodoPago);
+  const isBizum = isBizumPaymentMethod(metodoPago);
+  const isSimplePayment = !isSepa && !isBizum;
 
   const initialId = initial?.ID_ALUMNO ?? null;
   const isCreate = !initial;
+  const editingKey = initialId ? String(initialId) : "create";
+  const formInitKeyRef = useRef<string | null>(null);
+  const [draftAlumnoId, setDraftAlumnoId] = useState("");
+  const [draftMatriculas, setDraftMatriculas] = useState<DraftMatriculaInput[]>([]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      formInitKeyRef.current = null;
+      return;
+    }
+    if (formInitKeyRef.current === editingKey) return;
+    formInitKeyRef.current = editingKey;
+
     if (initial) {
-      form.reset(alumnoToFormValues(initial));
+      form.reset(buildAlumnoFormResetValues(initial));
       return;
     }
     form.reset({
       ...emptyAlumnoFormValues(),
-      ID_CENTRO: showCentroSelector
-        ? defaultCreateCenterId
-        : assignedCenterId,
+      ID_CENTRO: showCentroSelector ? defaultCreateCenterId : assignedCenterId,
     });
-  }, [open, initialId, form, showCentroSelector, assignedCenterId, defaultCreateCenterId]);
+    setDraftAlumnoId(crypto.randomUUID());
+    setDraftMatriculas([]);
+  }, [
+    open,
+    editingKey,
+    initial,
+    form,
+    showCentroSelector,
+    assignedCenterId,
+    defaultCreateCenterId,
+  ]);
 
   const handleFormSubmit = (values: AlumnoFormValues) => {
     if (isCreate && showCentroSelector && !values.ID_CENTRO?.trim()) {
       form.setError("ID_CENTRO", { message: "Selecciona un centro" });
       return;
     }
+    const draft = isCreate ? { id: draftAlumnoId, matriculas: draftMatriculas } : undefined;
     if (isCreate && !showCentroSelector && assignedCenterId) {
-      onSubmit({ ...values, ID_CENTRO: assignedCenterId });
+      onSubmit({ ...values, ID_CENTRO: assignedCenterId }, draft);
       return;
     }
-    onSubmit(values);
+    onSubmit(values, draft);
   };
 
   const formBody = (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="mb-4 grid w-full grid-cols-4">
-                <TabsTrigger value="resumen">Resumen</TabsTrigger>
-                <TabsTrigger value="personales">Datos personales</TabsTrigger>
-                <TabsTrigger value="pago">Datos de pago</TabsTrigger>
-                <TabsTrigger value="matricula">Matrículas</TabsTrigger>
-              </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="mb-4 grid w-full grid-cols-4">
+            <TabsTrigger value="resumen">Resumen</TabsTrigger>
+            <TabsTrigger value="personales">Datos personales</TabsTrigger>
+            <TabsTrigger value="pago">Datos de pago</TabsTrigger>
+            <TabsTrigger value="matricula">Matrículas</TabsTrigger>
+          </TabsList>
 
-              <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {isCreate && showCentroSelector && (
-                  <FormField
-                    control={form.control as any}
-                    name="ID_CENTRO"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Centro *</FormLabel>
-                        <Select
-                          value={field.value ?? ""}
-                          onValueChange={field.onChange}
-                          disabled={submitting}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar centro" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {centros.map((centro) => (
-                              <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
-                                {centro.NOMBRE_CENTRO}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+          <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {isCreate && showCentroSelector && (
+              <FormField
+                control={form.control as any}
+                name="ID_CENTRO"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Centro *</FormLabel>
+                    <Select
+                      value={field.value ? String(field.value) : "__unset__"}
+                      onValueChange={(v) => field.onChange(v === "__unset__" ? null : v)}
+                      disabled={submitting}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar centro" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {centros.map((centro) => (
+                          <SelectItem key={centro.ID_CENTRO} value={String(centro.ID_CENTRO)}>
+                            {centro.NOMBRE_CENTRO}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
                 )}
-                <FormField
-                  control={form.control as any}
-                  name="NOMBRE_ALUMNO"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Nombre alumno *</FormLabel>
-                      <FormControl>
-                        <Input {...field} disabled={submitting} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="TLF_COMUNICACION"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tel. comunicación</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="MAIL"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="email"
-                          {...field}
-                          value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value.toLowerCase())}
-                          disabled={submitting}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="ESTADO_MATRICULA"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estado matrícula</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="ESTADO_RESERVA"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estado reserva</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="TOTAL_MENSUAL"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Total mensual (€)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value)}
-                          disabled={submitting}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="NOTAS"
-                  render={({ field }) => (
-                    <FormItem className="sm:col-span-2 lg:col-span-3">
-                      <FormLabel>Notas</FormLabel>
-                      <FormControl>
-                        <Textarea {...field} value={field.value ?? ""} rows={3} disabled={submitting} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </TabsContent>
+              />
+            )}
+            <FormField
+              control={form.control as any}
+              name="NOMBRE_ALUMNO"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nombre alumno *</FormLabel>
+                  <FormControl>
+                    <Input {...field} disabled={submitting} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="TLF_COMUNICACION"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tel. comunicación</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="MAIL"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      {...field}
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value.toLowerCase())}
+                      disabled={submitting}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="ESTADO_MATRICULA"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estado matrícula</FormLabel>
+                  <Select
+                    value={resolveEstadoSelectValue(field.value)}
+                    onValueChange={(v) => field.onChange(v === "__unset__" ? null : v)}
+                    disabled={submitting}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="__unset__">—</SelectItem>
+                      {estadoSelectOptions(field.value, ESTADO_OPCIONES).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="ESTADO_RESERVA"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estado reserva</FormLabel>
+                  <Select
+                    value={resolveEstadoSelectValue(field.value)}
+                    onValueChange={(v) => field.onChange(v === "__unset__" ? null : v)}
+                    disabled={submitting}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Seleccionar" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="__unset__">—</SelectItem>
+                      {estadoSelectOptions(field.value, ESTADO_OPCIONES).map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="TOTAL_MENSUAL"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Total mensual (€)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={field.value ?? ""}
+                      readOnly
+                      disabled
+                      className="bg-muted/40"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control as any}
+              name="NOTAS"
+              render={({ field }) => (
+                <FormItem className="sm:col-span-2 lg:col-span-3">
+                  <FormLabel>Notas</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} value={field.value ?? ""} rows={3} disabled={submitting} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </TabsContent>
 
-              <TabsContent value="personales" className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  <FormField
-                    control={form.control as any}
-                    name="DNI"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>DNI</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="NACIMIENTO"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nacimiento</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <div className="space-y-2">
-                    <Label>Edad actual</Label>
-                    <Input value={edad} disabled readOnly className="bg-muted/40" />
-                  </div>
-                  <FormField
-                    control={form.control as any}
-                    name="NOMBRE_MADRE"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre madre</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="TLF_MADRE"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tel. madre</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="NOMBRE_PADRE"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nombre padre</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="TLF_PADRE"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tel. padre</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="DIRECCION"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>Dirección</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="CP"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>CP</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="rounded-md border p-4 space-y-3">
-                  <p className="text-sm font-medium">Autorizaciones legales</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {(
-                      [
-                        ["AUT_MEDIOS", "Medios"],
-                        ["AUT_INSTALACIONES", "Instalaciones"],
-                        ["AUT_WEB", "Web"],
-                        ["AUT_RRSS", "RRSS"],
-                        ["AUT_COMUNICACION_TOTAL", "Comunicación total"],
-                      ] as const
-                    ).map(([name, label]) => (
-                      <FormField
-                        key={name}
-                        control={form.control as any}
-                        name={name}
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-md border px-3 py-2">
-                            <FormLabel className="!mt-0">{label}</FormLabel>
-                            <FormControl>
-                              <Switch
-                                checked={!!field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={submitting}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
+          <TabsContent value="personales" className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <FormField
+                control={form.control as any}
+                name="DNI"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>DNI</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="NACIMIENTO"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nacimiento</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="date"
+                        {...field}
+                        value={field.value ?? ""}
+                        disabled={submitting}
                       />
-                    ))}
-                  </div>
-                </div>
-              </TabsContent>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <div className="space-y-2">
+                <Label>Edad actual</Label>
+                <Input value={edad} disabled readOnly className="bg-muted/40" />
+              </div>
+              <FormField
+                control={form.control as any}
+                name="NOMBRE_MADRE"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tutor A — Nombre</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="TLF_MADRE"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tutor A — Teléfono</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="NOMBRE_PADRE"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tutor B — Nombre</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="TLF_PADRE"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Tutor B — Teléfono</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="DIRECCION"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Dirección</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="CP"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>CP</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
 
-              <TabsContent value="pago" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded-md border p-4 space-y-3">
+              <p className="text-sm font-medium">Autorizaciones legales</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {(
+                  [
+                    ["AUT_MEDIOS", "Medios"],
+                    ["AUT_INSTALACIONES", "Instalaciones"],
+                    ["AUT_WEB", "Web"],
+                    ["AUT_RRSS", "RRSS"],
+                    ["AUT_COMUNICACION_TOTAL", "Comunicación total"],
+                  ] as const
+                ).map(([name, label]) => (
+                  <FormField
+                    key={name}
+                    control={form.control as any}
+                    name={name}
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-md border px-3 py-2">
+                        <FormLabel className="!mt-0">{label}</FormLabel>
+                        <FormControl>
+                          <Switch
+                            checked={!!field.value}
+                            onCheckedChange={field.onChange}
+                            disabled={submitting}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="pago" className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <FormField
+                control={form.control as any}
+                name="METODO_PAGO"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Método de pago</FormLabel>
+                    <Select
+                      value={resolveMetodoPagoSelectValue(field.value)}
+                      onValueChange={(v) => {
+                        const next =
+                          v === "__unset__"
+                            ? null
+                            : (v as MetodoPagoOption);
+                        field.onChange(next);
+                        const normalized = normalizeMetodoPago(next);
+                        if (!isBankRemittancePaymentMethod(normalized)) {
+                          form.setValue("IBAN", null);
+                          form.setValue("TITULAR_CUENTA", null);
+                          form.setValue("MANDATO", null);
+                        }
+                        if (!isBizumPaymentMethod(normalized)) {
+                          form.setValue("TLF_BIZUM", null);
+                        }
+                      }}
+                      disabled={submitting}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar método" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="__unset__">—</SelectItem>
+                        {(() => {
+                          const current = normalizeMetodoPago(field.value);
+                          const options = [...METODOS_PAGO_OPCIONES];
+                          if (
+                            current &&
+                            !(METODOS_PAGO_OPCIONES as readonly string[]).includes(current)
+                          ) {
+                            return [current, ...options];
+                          }
+                          return options;
+                        })().map((opt) => (
+                          <SelectItem key={opt} value={opt}>
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {isSepa && (
+                <>
+                  <FormField
+                    control={form.control as any}
+                    name="IBAN"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>IBAN</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control as any}
+                    name="TITULAR_CUENTA"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Titular cuenta</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+
+              {isBizum && (
                 <FormField
                   control={form.control as any}
-                  name="METODO_PAGO"
+                  name="TLF_BIZUM"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Método de pago</FormLabel>
+                    <FormItem className="lg:col-span-2">
+                      <FormLabel>Teléfono Bizum</FormLabel>
                       <Select
                         value={field.value ?? "__unset__"}
-                        onValueChange={(v) => {
-                          const next = v === "__unset__" ? null : v;
-                          field.onChange(next);
-                          const normalized = normalizeMetodoPago(next);
-                          if (!isBankRemittancePaymentMethod(normalized)) {
-                            form.setValue("IBAN", null);
-                            form.setValue("TITULAR_CUENTA", null);
-                            form.setValue("MANDATO", null);
-                          }
-                          if (!isBizumPaymentMethod(normalized)) {
-                            form.setValue("TLF_BIZUM", null);
-                          }
-                        }}
-                        disabled={submitting}
+                        onValueChange={(v) => field.onChange(v === "__unset__" ? null : v)}
+                        disabled={submitting || bizumPhones.length === 0}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Seleccionar método" />
+                            <SelectValue placeholder="Seleccionar teléfono" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="__unset__">—</SelectItem>
-                          {METODOS_PAGO_OPCIONES.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
+                          {bizumPhones.map((phone) => (
+                            <SelectItem key={phone} value={phone}>
+                              {phone}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      {bizumPhones.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Añade un teléfono del alumno o tutores en Datos personales.
+                        </p>
+                      )}
                     </FormItem>
                   )}
                 />
+              )}
 
-                {isBankRemittancePaymentMethod(metodoPago) && (
-                  <>
-                    <FormField
-                      control={form.control as any}
-                      name="IBAN"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>IBAN</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control as any}
-                      name="TITULAR_CUENTA"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Titular cuenta</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control as any}
-                      name="MANDATO"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Mandato</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </>
-                )}
-
-                {isBizumPaymentMethod(metodoPago) && (
+              {isSimplePayment && (
+                <>
                   <FormField
                     control={form.control as any}
-                    name="TLF_BIZUM"
+                    name="DTO_HERMANOS_PORCENTAJE"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Teléfono Bizum</FormLabel>
-                        <Select
-                          value={field.value ?? "__unset__"}
-                          onValueChange={(v) => field.onChange(v === "__unset__" ? null : v)}
-                          disabled={submitting || bizumPhones.length === 0}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Seleccionar teléfono" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__unset__">—</SelectItem>
-                            {bizumPhones.map((phone) => (
-                              <SelectItem key={phone} value={phone}>
-                                {phone}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        {bizumPhones.length === 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            Añade un teléfono del alumno o tutores en Datos personales.
-                          </p>
-                        )}
+                        <FormLabel>Dto. hermanos (%)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            disabled={submitting}
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />
-                )}
+                  <FormField
+                    control={form.control as any}
+                    name="AJUSTE_MANUAL_EUR"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Ajuste manual (€)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value)}
+                            disabled={submitting}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+            </div>
 
-                <FormField
-                  control={form.control as any}
-                  name="MOTIVO_AJUSTE"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Motivo ajuste</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+            {(isSepa || isBizum) && (
+              <div
+                className={cn(
+                  "grid gap-4 sm:grid-cols-2",
+                  isSepa ? "lg:grid-cols-3" : "lg:grid-cols-2",
+                )}
+              >
+                {isSepa && (
+                  <SepaMandatoBlock
+                    alumnoId={initialId}
+                    alumnoNombre={nombreAlumno.trim() || "Alumno"}
+                    interactive
+                    createMode={isCreate}
+                    disabled={submitting}
+                  />
+                )}
                 <FormField
                   control={form.control as any}
                   name="DTO_HERMANOS_PORCENTAJE"
@@ -2471,25 +2755,50 @@ export function AlumnoFormDialog({
                     </FormItem>
                   )}
                 />
-              </TabsContent>
+              </div>
+            )}
 
-              <TabsContent value="matricula">
-                <MatriculaManagePanel
-                  alumnoId={initial?.ID_ALUMNO ?? null}
-                  selectOptions={selectOptions}
-                  lookups={lookups}
-                  tarifaSesionesById={tarifaSesionesById}
-                  grupoSlots={grupoSlots}
-                  horarioSaving={horarioSaving}
-                  treeMatriculas={
-                    Array.isArray(initial?.MATRICULAS) ? initial.MATRICULAS : undefined
-                  }
-                  onCreateHorario={onCreateHorario}
-                  onUpdateHorario={onUpdateHorario}
-                  onRemoveHorario={onRemoveHorario}
-                />
-              </TabsContent>
-            </Tabs>
+            <FormField
+              control={form.control as any}
+              name="MOTIVO_AJUSTE"
+              render={({ field }) => (
+                <FormItem className="w-full">
+                  <FormLabel>Motivo ajuste</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </TabsContent>
+
+          <TabsContent value="matricula">
+            {isCreate ? (
+              <DraftMatriculaPanel
+                selectOptions={selectOptions}
+                lookups={lookups}
+                draftMatriculas={draftMatriculas}
+                onAdd={(input) => setDraftMatriculas((prev) => [...prev, input])}
+                onRemove={(index) =>
+                  setDraftMatriculas((prev) => prev.filter((_, i) => i !== index))
+                }
+              />
+            ) : (
+              <MatriculaManagePanel
+                alumnoId={initial?.ID_ALUMNO ?? null}
+                selectOptions={selectOptions}
+                lookups={lookups}
+                tarifaSesionesById={tarifaSesionesById}
+                grupoSlots={grupoSlots}
+                horarioSaving={horarioSaving}
+                treeMatriculas={Array.isArray(initial?.MATRICULAS) ? initial.MATRICULAS : undefined}
+                onCreateHorario={onCreateHorario}
+                onUpdateHorario={onUpdateHorario}
+                onRemoveHorario={onRemoveHorario}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
 
         {variant === "dialog" ? (
           <DialogFooter className="mt-6">

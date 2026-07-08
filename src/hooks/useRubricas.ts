@@ -2,11 +2,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import {
-  isMasterRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
-import { isRubricaActiva } from "@/lib/rubricStructure";
+import {
+  buildEstructuraFromCriterionNames,
+  isRubricaActiva,
+} from "@/lib/rubricStructure";
 
 const RUBRICA_SELECT_COLUMNS =
   "ID_RUBRICA, ID_CLIENTE, NOMBRE, DESCRIPCION, ESTADO, ESTRUCTURA, CREATED_AT, UPDATED_AT" as const;
@@ -17,7 +19,7 @@ export interface RubricaData {
   NOMBRE: string;
   DESCRIPCION: string | null;
   ESTADO: string | null;
-  ESTRUCTURA: Record<string, unknown> | null;
+  ESTRUCTURA: Record<string, unknown> | unknown[] | null;
   CREATED_AT: string | null;
   UPDATED_AT: string | null;
 }
@@ -31,11 +33,15 @@ export function isRubricaEstadoValue(
   return RUBRICA_ESTADO_VALUES.includes(value as RubricaEstadoValue);
 }
 
-export type RubricaCreateInput = {
+export type RubricaUpsertInput = {
+  ID_RUBRICA?: string;
   NOMBRE: string;
   DESCRIPCION?: string | null;
   ESTADO: string;
+  criterios?: string[];
 };
+
+export type RubricaCreateInput = Omit<RubricaUpsertInput, "ID_RUBRICA">;
 
 type SupabaseErrorLike = {
   message?: string;
@@ -70,16 +76,26 @@ function normalizeEstado(value: string): RubricaEstadoValue {
   throw new Error(`ESTADO inválido: "${value}". Solo se permite Activa o Inactiva.`);
 }
 
-function buildCreatePayload(input: RubricaCreateInput): Record<string, unknown> {
+function buildUpsertPayload(
+  input: RubricaUpsertInput,
+  tenantId: string,
+): Record<string, unknown> {
   const nombre = input.NOMBRE.trim();
   if (!nombre) throw new Error("NOMBRE es obligatorio.");
 
-  return {
+  const estructura = buildEstructuraFromCriterionNames(input.criterios ?? []);
+  const payload: Record<string, unknown> = {
+    ID_CLIENTE: tenantId,
     NOMBRE: nombre,
     DESCRIPCION: input.DESCRIPCION?.trim() || null,
     ESTADO: normalizeEstado(input.ESTADO),
-    ESTRUCTURA: {},
+    ESTRUCTURA: estructura,
   };
+
+  const id = input.ID_RUBRICA?.trim();
+  if (id) payload.ID_RUBRICA = id;
+
+  return payload;
 }
 
 export function useRubricas() {
@@ -99,29 +115,42 @@ export function useRubricas() {
     },
   });
 
-  const create = useMutation({
-    mutationFn: async (input: RubricaCreateInput) => {
-      const payload = buildCreatePayload(input);
-      console.log("PAYLOAD SENT TO SUPABASE (RUBRICA CREATE):", payload);
+  const saveRubrica = async (input: RubricaUpsertInput) => {
+    const payload = buildUpsertPayload(input, tenantId);
+    const isUpdate = Boolean(input.ID_RUBRICA?.trim());
+    console.log(
+      `PAYLOAD SENT TO SUPABASE (RUBRICA ${isUpdate ? "UPDATE" : "CREATE"}):`,
+      payload,
+    );
 
-      const { data, error } = await supabase
-        .from("RUBRICAS")
-        .insert(payload)
-        .select(RUBRICA_SELECT_COLUMNS)
-        .single();
+    const { data, error } = await supabase
+      .from("RUBRICAS")
+      .upsert(payload, isUpdate ? { onConflict: "ID_RUBRICA" } : undefined)
+      .select(RUBRICA_SELECT_COLUMNS)
+      .single();
 
-      if (error) {
-        logSupabaseError("RUBRICA CREATE", error);
-        throw error;
-      }
-      return data as RubricaData;
-    },
+    if (error) {
+      logSupabaseError(`RUBRICA ${isUpdate ? "UPDATE" : "CREATE"}`, error);
+      throw error;
+    }
+    return data as RubricaData;
+  };
+
+  const upsert = useMutation({
+    mutationFn: saveRubrica,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
     },
   });
 
-  return { list, create };
+  const create = useMutation({
+    mutationFn: async (input: RubricaCreateInput) => saveRubrica(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+    },
+  });
+
+  return { list, upsert, create, tenantId };
 }
 
 export function filterActiveRubricas(rubricas: RubricaData[]): RubricaData[] {

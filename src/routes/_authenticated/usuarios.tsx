@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Plus, Search, Trash2, Pencil } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
   usePerfiles,
   type PerfilCreateInput,
@@ -11,10 +12,7 @@ import { useClientes } from "@/hooks/useClientes";
 import { useProfesores } from "@/hooks/useProfesores";
 import { useActiveTenant } from "@/context/AppContext";
 import { ROLE_LABEL } from "@/lib/rbac";
-import {
-  formatProfesorOptionLabel,
-  profesorSelectorOptions,
-} from "@/lib/profesorSelector";
+import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
 import {
   canManageUsuarios,
   canViewUsuariosYMensajes,
@@ -64,6 +62,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { EntityLink } from "@/components/navigation/EntityLink";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Rol } from "@/types/database";
 
@@ -114,6 +116,217 @@ function formatEstado(estado: string | null | undefined): string {
   return estado;
 }
 
+type PendingSave =
+  | { kind: "create"; values: PerfilCreateInput }
+  | { kind: "update"; id: string; values: PerfilUpdateInput };
+
+function PerfilDetailOverlay({
+  open,
+  mode,
+  perfil,
+  canMutate,
+  isMaster,
+  submitting,
+  onClose,
+  onEdit,
+  onCancelEdit,
+  onRequestSave,
+}: {
+  open: boolean;
+  mode: "detail" | "edit";
+  perfil: PerfilData | null;
+  canMutate: boolean;
+  isMaster: boolean;
+  submitting: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onRequestSave: (values: PerfilUpdateInput) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (mode === "edit") onCancelEdit();
+        else onClose();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [open, mode, onClose, onCancelEdit]);
+
+  if (!open) return null;
+
+  if (!perfil) {
+    return createPortal(
+      <>
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/10"
+          aria-label="Cerrar"
+          onClick={onClose}
+        />
+        <div
+          className={cn(
+            ALUMNO_OVERLAY_PANEL_CLASS,
+            "max-w-xl flex items-center justify-center p-6",
+          )}
+        >
+          <Skeleton className="h-8 w-48" />
+        </div>
+      </>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-40 bg-black/10"
+        aria-label="Cerrar detalle del usuario"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="perfil-overlay-title"
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-xl p-6")}
+      >
+        {mode === "edit" ? (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 shrink-0"
+                  onClick={onCancelEdit}
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Volver
+                </Button>
+                <h2 id="perfil-overlay-title" className="truncate text-xl font-semibold">
+                  Editar usuario
+                </h2>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Cerrar"
+                onClick={onClose}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </header>
+            <PerfilFormDialog
+              open
+              embedded
+              title="Editar usuario"
+              submitLabel="Guardar"
+              isMaster={isMaster}
+              initial={perfil}
+              submitting={submitting}
+              onClose={onCancelEdit}
+              onSubmit={onRequestSave}
+            />
+            <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+              <Button type="button" variant="outline" onClick={onCancelEdit}>
+                Cancelar
+              </Button>
+              <Button type="submit" form="perfil-form" disabled={submitting}>
+                {submitting ? "Guardando..." : "Guardar"}
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <h2 id="perfil-overlay-title" className="truncate text-xl font-semibold">
+                  Vista detalle
+                </h2>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {canMutate && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    onClick={onEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Cerrar"
+                  onClick={onClose}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </header>
+            <dl className="grid grid-cols-2 gap-3 text-sm">
+              {isMaster && (
+                <div>
+                  <dt className="text-muted-foreground">ID_CLIENTE</dt>
+                  <dd className="font-mono text-xs">{perfil.ID_CLIENTE}</dd>
+                </div>
+              )}
+              {isMaster && (
+                <div>
+                  <dt className="text-muted-foreground">ID_PROFESOR</dt>
+                  <dd className="font-mono text-xs">
+                    {perfil.ID_PROFESOR ? (
+                      <EntityLink type="profesor" id={perfil.ID_PROFESOR}>
+                        {perfil.ID_PROFESOR}
+                      </EntityLink>
+                    ) : (
+                      "—"
+                    )}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-muted-foreground">Nombre</dt>
+                <dd className="font-semibold">{perfil.NOMBRE}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Email</dt>
+                <dd>{perfil.EMAIL}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Rol</dt>
+                <dd>{formatRol(perfil.ROL)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Estado</dt>
+                <dd>{formatEstado(perfil.ESTADO)}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-muted-foreground">Fecha de alta</dt>
+                <dd>{formatCreatedAt(perfil.created_at)}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 function UsuariosPage() {
   const { rol } = useActiveTenant();
   const isMaster = isMasterRole(rol);
@@ -122,12 +335,51 @@ function UsuariosPage() {
   const { list, create, update, remove } = usePerfiles();
 
   const [query, setQuery] = useState("");
-  const [editing, setEditing] = useState<PerfilData | null>(null);
+  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<PerfilData | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+
+  const perfiles = useMemo(() => list.data ?? [], [list.data]);
+
+  const overlayPerfil = useMemo(
+    () => perfiles.find((p) => p.ID_PERFIL === overlay?.id) ?? null,
+    [perfiles, overlay?.id],
+  );
+
+  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleEditOverlay = useCallback(() => {
+    setOverlay((prev) => (prev ? { ...prev, mode: "edit" } : null));
+  }, []);
+  const handleCancelEditOverlay = useCallback(() => {
+    setOverlay((prev) => (prev ? { ...prev, mode: "detail" } : null));
+  }, []);
+
+  const executePendingSave = async () => {
+    if (!pendingSave) return;
+    try {
+      if (pendingSave.kind === "create") {
+        await create.mutateAsync(pendingSave.values);
+        toast.success("Usuario creado");
+        setCreating(false);
+      } else {
+        await update.mutateAsync({
+          id: pendingSave.id,
+          patch: pendingSave.values,
+        });
+        toast.success("Usuario actualizado");
+        setOverlay((prev) =>
+          prev?.id === pendingSave.id ? { id: pendingSave.id, mode: "detail" } : prev,
+        );
+      }
+      setPendingSave(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al guardar");
+    }
+  };
 
   const filtered = useMemo(() => {
-    const rows = list.data ?? [];
+    const rows = perfiles;
     if (!query.trim()) return rows;
     const q = query.toLowerCase();
     return rows.filter(
@@ -138,7 +390,7 @@ function UsuariosPage() {
         p.ESTADO?.toLowerCase().includes(q) ||
         p.ID_CLIENTE?.toLowerCase().includes(q),
     );
-  }, [list.data, query]);
+  }, [perfiles, query]);
 
   if (isProfesorRole(rol) || !canView) {
     return (
@@ -152,19 +404,17 @@ function UsuariosPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Usuarios</h1>
-          <p className="text-sm text-muted-foreground">
-            {list.data?.length ?? 0} perfiles registrados
-          </p>
-        </div>
-        {canMutate && (
-          <Button onClick={() => setCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nuevo usuario
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Usuarios"
+        description={`${perfiles.length} perfiles registrados`}
+        actions={
+          canMutate && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo usuario
+            </Button>
+          )
+        }
+      />
 
       <Card className="p-4">
         <div className="relative mb-4 max-w-md">
@@ -216,23 +466,27 @@ function UsuariosPage() {
                 filtered.map((p) => (
                   <TableRow
                     key={p.ID_PERFIL}
-                    className={
-                      canMutate
-                        ? "cursor-pointer hover:bg-muted/50 transition-colors"
-                        : undefined
-                    }
-                    onClick={canMutate ? () => setEditing(p) : undefined}
+                    className="cursor-pointer transition-colors hover:bg-muted/50"
+                    onClick={() => setOverlay({ id: p.ID_PERFIL, mode: "detail" })}
                   >
                     {isMaster && (
                       <TableCell className="font-mono text-xs">{p.ID_CLIENTE}</TableCell>
                     )}
                     <TableCell className="font-medium">{p.NOMBRE}</TableCell>
                     <TableCell>{p.EMAIL}</TableCell>
-                    <TableCell>{formatRol(p.ROL)}</TableCell>
-                    <TableCell>{formatEstado(p.ESTADO)}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>{formatRol(p.ROL)}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {formatEstado(p.ESTADO)}
+                    </TableCell>
                     {isMaster && (
-                      <TableCell className="font-mono text-xs">
-                        {p.ID_PROFESOR ?? "—"}
+                      <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                        {p.ID_PROFESOR ? (
+                          <EntityLink type="profesor" id={p.ID_PROFESOR}>
+                            {p.ID_PROFESOR}
+                          </EntityLink>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                     )}
                     <TableCell className="text-sm text-muted-foreground">
@@ -243,18 +497,14 @@ function UsuariosPage() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
+                              <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditing(p)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => setDeleting(p)}
-                              className="text-destructive focus:text-destructive"
+                              onClick={() => setOverlay({ id: p.ID_PERFIL, mode: "edit" })}
                             >
-                              <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+                              <Pencil className="mr-2 h-4 w-4" /> Editar
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -276,69 +526,85 @@ function UsuariosPage() {
           submitLabel="Crear"
           isMaster={isMaster}
           submitting={create.isPending}
-          onSubmit={async (values) => {
-            try {
-              await create.mutateAsync(values);
-              toast.success("Usuario creado");
-              setCreating(false);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Error al crear");
-            }
+          onSubmit={(values) => {
+            setPendingSave({ kind: "create", values });
           }}
         />
       )}
 
-      {canMutate && editing && (
-      <PerfilFormDialog
-        open
-        onClose={() => setEditing(null)}
-        title="Editar usuario"
-        submitLabel="Guardar"
+      <PerfilDetailOverlay
+        open={!!overlay}
+        mode={overlay?.mode ?? "detail"}
+        perfil={overlayPerfil}
+        canMutate={canMutate}
         isMaster={isMaster}
-        initial={editing}
         submitting={update.isPending}
-        onSubmit={async (values) => {
-          try {
-            await update.mutateAsync({ id: editing.ID_PERFIL, patch: values });
-            toast.success("Usuario actualizado");
-            setEditing(null);
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Error al actualizar");
-          }
+        onClose={handleCloseOverlay}
+        onEdit={handleEditOverlay}
+        onCancelEdit={handleCancelEditOverlay}
+        onRequestSave={(values) => {
+          if (!overlay?.id) return;
+          setPendingSave({ kind: "update", id: overlay.id, values });
         }}
       />
-      )}
 
-      {canMutate && (
-      <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+      <AlertDialog open={!!pendingSave} onOpenChange={(o) => !o && setPendingSave(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
+            <AlertDialogTitle>¿Confirmar guardado?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará el perfil de <b>{deleting?.NOMBRE}</b> ({deleting?.EMAIL}). Esta acción
-              no se puede deshacer.
+              {pendingSave?.kind === "create"
+                ? "Se creará un nuevo usuario en el sistema. ¿Deseas continuar?"
+                : "Se actualizarán los datos de este usuario. ¿Deseas continuar?"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={create.isPending || update.isPending}>
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={async () => {
-                if (!deleting) return;
-                try {
-                  await remove.mutateAsync(deleting.ID_PERFIL);
-                  toast.success("Usuario eliminado");
-                  setDeleting(null);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Error al eliminar");
-                }
+              disabled={create.isPending || update.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void executePendingSave();
               }}
             >
-              Eliminar
+              {create.isPending || update.isPending ? "Guardando..." : "Confirmar y guardar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {canMutate && (
+        <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Eliminar usuario</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se eliminará el perfil de <b>{deleting?.NOMBRE}</b> ({deleting?.EMAIL}). Esta acción
+                no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={async () => {
+                  if (!deleting) return;
+                  try {
+                    await remove.mutateAsync(deleting.ID_PERFIL);
+                    toast.success("Usuario eliminado");
+                    setDeleting(null);
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : "Error al eliminar");
+                  }
+                }}
+              >
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );
@@ -351,6 +617,7 @@ type PerfilFormDialogBaseProps = {
   submitLabel: string;
   isMaster: boolean;
   submitting: boolean;
+  embedded?: boolean;
 };
 
 type PerfilFormDialogCreateProps = PerfilFormDialogBaseProps & {
@@ -366,7 +633,7 @@ type PerfilFormDialogEditProps = PerfilFormDialogBaseProps & {
 type PerfilFormDialogProps = PerfilFormDialogCreateProps | PerfilFormDialogEditProps;
 
 function PerfilFormDialog(props: PerfilFormDialogProps) {
-  const { open, onClose, title, submitLabel, isMaster, submitting } = props;
+  const { open, onClose, title, submitLabel, isMaster, submitting, embedded } = props;
   const initial = "initial" in props ? props.initial : undefined;
   const { tenantId } = useActiveTenant();
   const { list: clientesList } = useClientes();
@@ -383,7 +650,10 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   const effectiveIdCliente = isMaster ? idCliente : tenantId;
   const masterNeedsCliente = isMaster && !effectiveIdCliente;
 
-  const profesoresRows = profesoresList.data?.profesores ?? [];
+  const profesoresRows = useMemo(
+    () => profesoresList.data?.profesores ?? [],
+    [profesoresList.data?.profesores],
+  );
 
   const profesoresFiltrados = useMemo(() => {
     if (!effectiveIdCliente) return [];
@@ -430,15 +700,190 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   }, [open, initial, tenantId, isMaster, profesoresRows]);
 
   useEffect(() => {
-    if (
-      idProfesor &&
-      !profesoresFiltrados.some((p) => p.ID_PROFESOR === idProfesor)
-    ) {
+    if (idProfesor && !profesoresFiltrados.some((p) => p.ID_PROFESOR === idProfesor)) {
       clearTrabajador();
     }
   }, [profesoresFiltrados, idProfesor]);
 
-  const clientes = clientesList.data ?? [];
+  const clientes = useMemo(() => clientesList.data ?? [], [clientesList.data]);
+
+  const formBody = (
+    <form
+      id={embedded ? "perfil-form" : undefined}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (isMaster && !idCliente) {
+          toast.error("Debes seleccionar un cliente primero");
+          return;
+        }
+        if (!idProfesor) {
+          toast.error("Debes seleccionar un trabajador");
+          return;
+        }
+        if (!nombre.trim()) {
+          toast.error("El trabajador seleccionado no tiene nombre registrado");
+          return;
+        }
+        if (!email.trim()) {
+          toast.error("El trabajador seleccionado no tiene email registrado");
+          return;
+        }
+
+        if (isEdit && initial) {
+          const patch: PerfilUpdateInput = {
+            NOMBRE: nombre.trim(),
+            ROL: rolValue,
+            ESTADO: estado,
+            ID_PROFESOR: idProfesor,
+            ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
+          };
+          (props as PerfilFormDialogEditProps).onSubmit(patch);
+          return;
+        }
+
+        const payload: PerfilCreateInput = {
+          NOMBRE: nombre.trim(),
+          EMAIL: email.trim(),
+          ROL: rolValue,
+          ESTADO: estado,
+          ID_PROFESOR: idProfesor,
+          ID_CLIENTE: isMaster ? idCliente : tenantId,
+          ID_CENTRO: null,
+        };
+        (props as PerfilFormDialogCreateProps).onSubmit(payload);
+      }}
+      className="space-y-4"
+    >
+      {isMaster && (
+        <div className="space-y-2">
+          <Label>ID_CLIENTE *</Label>
+          {clientes.length > 0 ? (
+            <Select value={idCliente} onValueChange={handleClienteChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {clientes.map((c) => (
+                  <SelectItem key={c.ID_CLIENTE} value={c.ID_CLIENTE}>
+                    {c.NOMBRE_ESCUELA} ({c.ID_CLIENTE})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input value={idCliente} onChange={(e) => handleClienteChange(e.target.value)} />
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="perfil-trabajador">Trabajador *</Label>
+        {profesoresList.isLoading ? (
+          <Skeleton className="h-9 w-full" />
+        ) : masterNeedsCliente ? (
+          <Select disabled>
+            <SelectTrigger id="perfil-trabajador">
+              <SelectValue placeholder="Selecciona un cliente primero..." />
+            </SelectTrigger>
+          </Select>
+        ) : profesoresFiltrados.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay trabajadores disponibles para este cliente.
+          </p>
+        ) : (
+          <Select value={idProfesor} onValueChange={applyTrabajador} required>
+            <SelectTrigger id="perfil-trabajador" aria-required="true">
+              <SelectValue placeholder="Seleccionar trabajador *" />
+            </SelectTrigger>
+            <SelectContent>
+              {profesoresFiltrados.map((p) => (
+                <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
+                  {formatProfesorOptionLabel(p)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label>EMAIL</Label>
+        <Input
+          type="email"
+          value={email}
+          readOnly
+          disabled
+          placeholder="Se rellena al seleccionar un trabajador"
+          className="bg-muted"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>ROL</Label>
+        <Select value={rolValue} onValueChange={(v) => setRolValue(v as Rol)}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(isMaster ? ROL_OPTIONS_MASTER : ROL_OPTIONS_BASE).map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>ESTADO</Label>
+        <Select value={estado} onValueChange={setEstado}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ESTADO_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isEdit && initial?.created_at && (
+        <p className="text-sm text-muted-foreground">
+          Fecha de alta: {formatCreatedAt(initial.created_at)}
+        </p>
+      )}
+
+      {!embedded ? (
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              (isMaster && !idCliente) ||
+              masterNeedsCliente ||
+              !idProfesor ||
+              !nombre.trim() ||
+              !email.trim() ||
+              profesoresFiltrados.length === 0
+            }
+          >
+            {submitting ? "Guardando..." : submitLabel}
+          </Button>
+        </DialogFooter>
+      ) : null}
+    </form>
+  );
+
+  if (embedded) {
+    if (!open) return null;
+    return formBody;
+  }
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -446,176 +891,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (isMaster && !idCliente) {
-              toast.error("Debes seleccionar un cliente primero");
-              return;
-            }
-            if (!idProfesor) {
-              toast.error("Debes seleccionar un trabajador");
-              return;
-            }
-            if (!nombre.trim()) {
-              toast.error("El trabajador seleccionado no tiene nombre registrado");
-              return;
-            }
-            if (!email.trim()) {
-              toast.error("El trabajador seleccionado no tiene email registrado");
-              return;
-            }
-
-            if (isEdit && initial) {
-              const patch: PerfilUpdateInput = {
-                NOMBRE: nombre.trim(),
-                ROL: rolValue,
-                ESTADO: estado,
-                ID_PROFESOR: idProfesor,
-                ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
-              };
-              (props as PerfilFormDialogEditProps).onSubmit(patch);
-              return;
-            }
-
-            const payload: PerfilCreateInput = {
-              NOMBRE: nombre.trim(),
-              EMAIL: email.trim(),
-              ROL: rolValue,
-              ESTADO: estado,
-              ID_PROFESOR: idProfesor,
-              ID_CLIENTE: isMaster ? idCliente : tenantId,
-            };
-            (props as PerfilFormDialogCreateProps).onSubmit(payload);
-          }}
-          className="space-y-4"
-        >
-          {isMaster && (
-            <div className="space-y-2">
-              <Label>ID_CLIENTE *</Label>
-              {clientes.length > 0 ? (
-                <Select value={idCliente} onValueChange={handleClienteChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar cliente" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {clientes.map((c) => (
-                      <SelectItem key={c.ID_CLIENTE} value={c.ID_CLIENTE}>
-                        {c.NOMBRE_ESCUELA} ({c.ID_CLIENTE})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input value={idCliente} onChange={(e) => handleClienteChange(e.target.value)} />
-              )}
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label htmlFor="perfil-trabajador">Trabajador *</Label>
-            {profesoresList.isLoading ? (
-              <Skeleton className="h-9 w-full" />
-            ) : masterNeedsCliente ? (
-              <Select disabled>
-                <SelectTrigger id="perfil-trabajador">
-                  <SelectValue placeholder="Selecciona un cliente primero..." />
-                </SelectTrigger>
-              </Select>
-            ) : profesoresFiltrados.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No hay trabajadores disponibles para este cliente.
-              </p>
-            ) : (
-              <Select
-                value={idProfesor}
-                onValueChange={applyTrabajador}
-                required
-              >
-                <SelectTrigger id="perfil-trabajador" aria-required="true">
-                  <SelectValue placeholder="Seleccionar trabajador *" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profesoresFiltrados.map((p) => (
-                    <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
-                      {formatProfesorOptionLabel(p)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>EMAIL</Label>
-            <Input
-              type="email"
-              value={email}
-              readOnly
-              disabled
-              placeholder="Se rellena al seleccionar un trabajador"
-              className="bg-muted"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label>ROL</Label>
-            <Select value={rolValue} onValueChange={(v) => setRolValue(v as Rol)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(isMaster ? ROL_OPTIONS_MASTER : ROL_OPTIONS_BASE).map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>ESTADO</Label>
-            <Select value={estado} onValueChange={setEstado}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ESTADO_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isEdit && initial?.created_at && (
-            <p className="text-sm text-muted-foreground">
-              Fecha de alta: {formatCreatedAt(initial.created_at)}
-            </p>
-          )}
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                submitting ||
-                (isMaster && !idCliente) ||
-                masterNeedsCliente ||
-                !idProfesor ||
-                !nombre.trim() ||
-                !email.trim() ||
-                profesoresFiltrados.length === 0
-              }
-            >
-              {submitting ? "Guardando..." : submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
+        {formBody}
       </DialogContent>
     </Dialog>
   );

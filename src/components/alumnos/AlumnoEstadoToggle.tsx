@@ -1,5 +1,4 @@
 import type { AlumnoTree } from "@/hooks/useAlumnosTree";
-import { cn } from "@/lib/utils";
 
 export function isAlumnoActivo(estado: string | null | undefined): boolean {
   if (!estado) return false;
@@ -13,33 +12,29 @@ export function toggleEstadoAlumno(estado: string | null | undefined): "Activo" 
 export function AlumnoEstadoToggle({
   alumno,
   disabled,
-  onToggle,
+  onClick,
 }: {
   alumno: AlumnoTree;
   disabled?: boolean;
-  onToggle: (nextEstado: "Activo" | "Inactivo") => void;
+  onClick: () => void;
 }) {
-  const activo = isAlumnoActivo(alumno.ESTADO_ALUMNO);
+  const isActive = isAlumnoActivo(alumno.ESTADO_ALUMNO);
 
   return (
     <button
       type="button"
-      disabled={disabled}
       onClick={(e) => {
         e.stopPropagation();
-        onToggle(toggleEstadoAlumno(alumno.ESTADO_ALUMNO));
+        onClick();
       }}
-      className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
-        "transition-colors hover:opacity-80",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-        "disabled:pointer-events-none disabled:opacity-50",
-        activo
-          ? "bg-green-600 text-white"
-          : "bg-red-600 text-white",
-      )}
+      disabled={disabled}
+      className={
+        isActive
+          ? "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-normal transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+          : "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-normal transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 border-destructive/30 bg-destructive/10 text-destructive"
+      }
     >
-      {activo ? "Activo" : "Inactivo"}
+      {isActive ? "Activo" : "Inactivo"}
     </button>
   );
 }
