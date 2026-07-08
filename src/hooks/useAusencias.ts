@@ -128,12 +128,16 @@ function sortAusencias(rows: AusenciaData[]): AusenciaData[] {
   return indexed.map(({ row }) => row);
 }
 
-export function useAusencias(filterCenterId?: string | null) {
+export function useAusencias(
+  filterCenterId?: string | null,
+  forcedProfesorId?: string | null,
+) {
   const { tenantId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("ausencias", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    forcedProfesorId ?? "all",
   ] as const;
 
   const list = useQuery({
@@ -148,8 +152,11 @@ export function useAusencias(filterCenterId?: string | null) {
       let ausenciaQuery = supabase.from("AUSENCIAS_PERMISOS").select(AUSENCIA_SELECT_COLUMNS);
       ausenciaQuery = scopeTenantQuery(ausenciaQuery, rol, tenantId);
 
-      if (isProfesorRole(rol) && perfil?.ID_PROFESOR) {
-        ausenciaQuery = ausenciaQuery.eq("ID_PROFESOR", perfil.ID_PROFESOR);
+      const effectiveProfesorId =
+        forcedProfesorId ?? (isProfesorRole(rol) ? perfil?.ID_PROFESOR : null);
+
+      if (effectiveProfesorId) {
+        ausenciaQuery = ausenciaQuery.eq("ID_PROFESOR", effectiveProfesorId);
       } else {
         const scoped = appendIdInFilter(ausenciaQuery, "ID_PROFESOR", profesorIds);
         if (scoped === "empty") {
