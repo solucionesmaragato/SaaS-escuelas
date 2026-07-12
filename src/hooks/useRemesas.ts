@@ -82,11 +82,10 @@ export type RemesaEnvioValidationRow = {
 type ReciboBankingRow = {
   RECEPTOR_NOMBRE?: string | null;
   CIF_DNI?: string | null;
-  IBAN?: string | null;
   ID_ALUMNO?: string | null;
   ALUMNOS?:
-    | { NOMBRE_ALUMNO?: string | null }
-    | { NOMBRE_ALUMNO?: string | null }[]
+    | { NOMBRE_ALUMNO?: string | null; IBAN?: string | null }
+    | { NOMBRE_ALUMNO?: string | null; IBAN?: string | null }[]
     | null;
 };
 
@@ -95,8 +94,11 @@ function isMissingBankingField(value: unknown): boolean {
 }
 
 function isReciboBankingIncomplete(recibo: ReciboBankingRow): boolean {
+  const alumnos = recibo.ALUMNOS;
+  const iban = Array.isArray(alumnos) ? alumnos[0]?.IBAN : alumnos?.IBAN;
+
   return (
-    isMissingBankingField(recibo.IBAN) ||
+    isMissingBankingField(iban) ||
     isMissingBankingField(recibo.RECEPTOR_NOMBRE) ||
     isMissingBankingField(recibo.CIF_DNI)
   );
@@ -129,7 +131,7 @@ export async function fetchIncompleteRemesaBankingNames(
 
   let query = supabase
     .from("RECIBOS_MENSUALES")
-    .select("RECEPTOR_NOMBRE, CIF_DNI, IBAN, ID_ALUMNO, ALUMNOS(NOMBRE_ALUMNO)")
+    .select("RECEPTOR_NOMBRE, CIF_DNI, ID_ALUMNO, ALUMNOS(NOMBRE_ALUMNO, IBAN)")
     .eq("MES_PERIODO", mesPeriodo);
   query = scopeTenantQuery(query, rol, tenantId);
 

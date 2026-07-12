@@ -60,6 +60,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
@@ -70,12 +71,29 @@ export const Route = createFileRoute("/_authenticated/incidencias")({
 
 const PAGE_SIZE = 10;
 const ESTADO_CONSULTA_OPTIONS = ["Pendiente", "Resuelto", "Justificada"] as const;
+type IncidenciaTab = "faltas" | "recuperaciones" | "consultas";
+
+function formatFechaCreacion(value: string | null | undefined): string {
+  if (!value?.trim()) return "—";
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  return value;
+}
+
+function incidenciaTipoBadgeStatus(
+  tipo: string | null | undefined,
+): "destructive" | "success" | "info" | "neutral" {
+  if (tipo === "Falta") return "destructive";
+  if (tipo === "Recuperación") return "success";
+  if (tipo === "Consulta") return "info";
+  return "neutral";
+}
 
 type IncidenciaFormValues = {
   ID_ALUMNO: string;
   ID_PROFESOR: string | null;
   ID_ESPECIALIDAD: string | null;
   TIPO_INCIDENCIA: string | null;
+  TIPO_FALTA: string | null;
   FECHA_EXACTA: string | null;
   HORA_INICIO: string | null;
   HORA_FIN: string | null;
@@ -324,6 +342,7 @@ function IncidenciasPage() {
   const { list, create, update, remove } = useIncidencias(filterCenterId);
 
   const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<IncidenciaTab>("faltas");
   const [page, setPage] = useState(1);
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
@@ -372,19 +391,40 @@ function IncidenciasPage() {
             inc.NOTAS?.toLowerCase().includes(q),
         );
 
-    return filteredRows.sort((a, b) => {
-      const order: Record<string, number> = { Consulta: 1, Falta: 2, Recuperación: 3 };
-      const weightA = order[a.TIPO_INCIDENCIA ?? ""] || 99;
-      const weightB = order[b.TIPO_INCIDENCIA ?? ""] || 99;
-      if (weightA !== weightB) return weightA - weightB;
-      const dateA = a.FECHA_EXACTA || "";
-      const dateB = b.FECHA_EXACTA || "";
-      return dateB.localeCompare(dateA);
-    });
+    return filteredRows;
   }, [list.data, query]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const { faltasRows, recuperacionesRows, consultasRows } = useMemo(() => {
+    const sortByFechaExacta = (a: IncidenciaData, b: IncidenciaData) =>
+      (b.FECHA_EXACTA || "").localeCompare(a.FECHA_EXACTA || "");
+    const sortByFechaCreacion = (a: IncidenciaData, b: IncidenciaData) =>
+      (b.FECHA_CREACION || "").localeCompare(a.FECHA_CREACION || "");
+
+    return {
+      faltasRows: filtered
+        .filter((inc) => inc.TIPO_INCIDENCIA === "Falta")
+        .sort(sortByFechaExacta),
+      recuperacionesRows: filtered
+        .filter((inc) => inc.TIPO_INCIDENCIA === "Recuperación")
+        .sort(sortByFechaExacta),
+      consultasRows: filtered
+        .filter((inc) => inc.TIPO_INCIDENCIA === "Consulta")
+        .sort(sortByFechaCreacion),
+    };
+  }, [filtered]);
+
+  const activeTabRows =
+    activeTab === "faltas"
+      ? faltasRows
+      : activeTab === "recuperaciones"
+        ? recuperacionesRows
+        : consultasRows;
+  const totalPages = Math.max(1, Math.ceil(activeTabRows.length / PAGE_SIZE));
+  const paginate = (rows: IncidenciaData[]) =>
+    rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const faltasPageRows = paginate(faltasRows);
+  const recuperacionesPageRows = paginate(recuperacionesRows);
+  const consultasPageRows = paginate(consultasRows);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -427,133 +467,164 @@ function IncidenciasPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha / Horario</TableHead>
-                <TableHead>Alumno</TableHead>
-                <TableHead>Profesor</TableHead>
-                <TableHead>Tipo Incidencia</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="w-[50px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={6}>
-                      <Skeleton className="h-8 w-full" />
-                    </TableCell>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            setActiveTab(value as IncidenciaTab);
+            setPage(1);
+          }}
+        >
+          <TabsList className="mb-4 grid w-full max-w-lg grid-cols-3">
+            <TabsTrigger value="faltas">Faltas</TabsTrigger>
+            <TabsTrigger value="recuperaciones">Recuperaciones</TabsTrigger>
+            <TabsTrigger value="consultas">Consultas</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="faltas" className="mt-0">
+            <IncidenciaScheduleTable
+              rows={faltasPageRows}
+              isLoading={list.isLoading}
+              emptyMessage={query ? "Sin resultados." : "No hay faltas registradas."}
+              canWrite={canWrite}
+              onOpenDetail={(id) => setOverlay({ id, mode: "detail" })}
+              onOpenEdit={(id) => setOverlay({ id, mode: "edit" })}
+            />
+          </TabsContent>
+
+          <TabsContent value="recuperaciones" className="mt-0">
+            <IncidenciaScheduleTable
+              rows={recuperacionesPageRows}
+              isLoading={list.isLoading}
+              emptyMessage={
+                query ? "Sin resultados." : "No hay recuperaciones registradas."
+              }
+              canWrite={canWrite}
+              onOpenDetail={(id) => setOverlay({ id, mode: "detail" })}
+              onOpenEdit={(id) => setOverlay({ id, mode: "edit" })}
+            />
+          </TabsContent>
+
+          <TabsContent value="consultas" className="mt-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha Registro</TableHead>
+                    <TableHead>Alumno</TableHead>
+                    <TableHead>Profesor</TableHead>
+                    <TableHead>Especialidad</TableHead>
+                    <TableHead>Notas / Detalle</TableHead>
+                    <TableHead>Estado Consulta</TableHead>
+                    <TableHead className="w-[50px]" />
                   </TableRow>
-                ))
-              ) : pageRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    {query ? "Sin resultados." : "No hay ninguna incidencia registrada."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                pageRows.map((inc) => (
-                  <TableRow
-                    key={inc.ID_INCIDENCIA}
-                    className="cursor-pointer transition-colors hover:bg-muted/50"
-                    onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "detail" })}
-                  >
-                    <TableCell className="text-sm">
-                      <IncidenciaFechaHorarioCell inc={inc} />
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
-                        <EntityLink type="alumno" id={inc.ID_ALUMNO}>
-                          {inc.ALUMNOS.NOMBRE_ALUMNO}
-                        </EntityLink>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">
-                          {inc.ID_ALUMNO || "—"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {inc.PROFESOR?.NOMBRE_PROFESOR ? (
-                        <EntityLink type="profesor" id={inc.ID_PROFESOR}>
-                          {inc.PROFESOR.NOMBRE_PROFESOR}
-                        </EntityLink>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">
-                          {inc.ID_PROFESOR || "—"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <StatusBadge
-                        status={
-                          inc.TIPO_INCIDENCIA === "Consulta"
-                            ? "info"
-                            : inc.TIPO_INCIDENCIA === "Falta"
-                              ? "destructive"
-                              : inc.TIPO_INCIDENCIA === "Recuperación"
-                                ? "success"
-                                : "neutral"
-                        }
+                </TableHeader>
+                <TableBody>
+                  {list.isLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell colSpan={7}>
+                          <Skeleton className="h-8 w-full" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : consultasPageRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                        {query ? "Sin resultados." : "No hay consultas registradas."}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    consultasPageRows.map((inc) => (
+                      <TableRow
+                        key={inc.ID_INCIDENCIA}
+                        className="cursor-pointer transition-colors hover:bg-muted/50"
+                        onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "detail" })}
                       >
-                        {inc.TIPO_INCIDENCIA ?? "—"}
-                      </StatusBadge>
-                      {inc.TIPO_FALTA && (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          Detalle: {inc.TIPO_FALTA}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Select
-                        value={inc.ESTADO_CONSULTA ?? "Pendiente"}
-                        disabled={!canWrite || updatingEstadoId === inc.ID_INCIDENCIA}
-                        onValueChange={(val) => {
-                          if (val === (inc.ESTADO_CONSULTA ?? "Pendiente")) return;
-                          void handleEstadoConsultaChange(inc.ID_INCIDENCIA, val);
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-[120px] border-0 bg-muted/50 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ESTADO_CONSULTA_OPTIONS.map((opt) => (
-                            <SelectItem key={opt} value={opt}>
-                              {opt}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {canWrite ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "edit" })}
-                            >
-                              Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                        <TableCell className="text-sm">
+                          {formatFechaCreacion(inc.FECHA_CREACION)}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
+                            <EntityLink type="alumno" id={inc.ID_ALUMNO}>
+                              {inc.ALUMNOS.NOMBRE_ALUMNO}
+                            </EntityLink>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              {inc.ID_ALUMNO || "—"}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {inc.PROFESOR?.NOMBRE_PROFESOR ? (
+                            <EntityLink type="profesor" id={inc.ID_PROFESOR}>
+                              {inc.PROFESOR.NOMBRE_PROFESOR}
+                            </EntityLink>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">
+                              {inc.ID_PROFESOR || "—"}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
+                            <span className="text-muted-foreground text-xs">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs text-sm text-muted-foreground">
+                          <span className="line-clamp-2">{inc.NOTAS?.trim() || "—"}</span>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Select
+                            value={inc.ESTADO_CONSULTA ?? "Pendiente"}
+                            disabled={!canWrite || updatingEstadoId === inc.ID_INCIDENCIA}
+                            onValueChange={(val) => {
+                              if (val === (inc.ESTADO_CONSULTA ?? "Pendiente")) return;
+                              void handleEstadoConsultaChange(inc.ID_INCIDENCIA, val);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 w-[120px] border-0 bg-muted/50 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ESTADO_CONSULTA_OPTIONS.map((opt) => (
+                                <SelectItem key={opt} value={opt}>
+                                  {opt}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {canWrite ? (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setOverlay({ id: inc.ID_INCIDENCIA, mode: "edit" })
+                                  }
+                                >
+                                  Editar
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
 
         {/* Paginación */}
-        {filtered.length > PAGE_SIZE && (
+        {activeTabRows.length > PAGE_SIZE && (
           <div className="mt-4 flex items-center justify-between text-sm border-t pt-4">
             <div className="text-muted-foreground">
               Página {page} de {totalPages}
@@ -673,7 +744,13 @@ const LOADING_REC_ESPECIALIDADES = "__loading_rec_especialidades__";
 const EMPTY_REC_AULAS = "__empty_rec_aulas__";
 const LOADING_REC_AULAS = "__loading_rec_aulas__";
 const LOADING_REC_PROFESORES = "__loading_rec_profesores__";
+const LOADING_ALUMNO_HORARIOS = "__loading_alumno_horarios__";
+const EMPTY_ALUMNO_HORARIOS = "__empty_alumno_horarios__";
+const SELECT_ALUMNO_FIRST = "__select_alumno_first__";
+const LOADING_REC_ALUMNOS = "__loading_rec_alumnos__";
+const EMPTY_REC_ALUMNOS = "__empty_rec_alumnos__";
 const TIPO_INCIDENCIA_OPTIONS = ["Consulta", "Falta", "Recuperación"] as const;
+const TIPO_FALTA_OPTIONS = ["Recuperable", "No recuperable"] as const;
 
 type TipoIncidencia = (typeof TIPO_INCIDENCIA_OPTIONS)[number];
 
@@ -682,6 +759,10 @@ type ProfesorLookup = { ID_PROFESOR: string; NOMBRE_PROFESOR: string };
 type RecuperacionProfesorLookup = { ID_PROFESOR: string; NOMBRE: string };
 type EspecialidadLookup = { ID_ESPECIALIDAD: string; ESPECIALIDAD: string };
 type AulaLookup = { ID_AULA: string; NOMBRE_AULA: string };
+type AlumnoHorarioActivoRow = {
+  ID_ESPECIALIDAD: string | null;
+  ID_PROFESOR: string | null;
+};
 
 type SesionRow = {
   ID_SESION: string;
@@ -694,6 +775,27 @@ type SesionRow = {
   ID_HORARIO: string | null;
   ID_AULA: string | null;
 };
+
+// --- Recuperación: additive types (only used when TIPO_INCIDENCIA === "Recuperación") ---
+type AlumnoHorarioSaldoRow = {
+  ID_ESPECIALIDAD: string | null;
+  SALDO: number | null;
+};
+
+type ProfesorSesionRow = {
+  ID_SESION: string;
+  HORA_INICIO: string | null;
+  HORA_FIN: string | null;
+  ESPECIALIDAD: string | null;
+  ESTADO: string | null;
+};
+
+type AlumnoSaldoEligibleRow = {
+  ID_ALUMNO: string | null;
+  SALDO: number | null;
+};
+
+const SESIONES_TIMELINE_EXCLUDED_ESTADOS = ["Cancelada", "Incidencia"] as const;
 
 function toDateInputValue(value: string | null | undefined): string {
   if (!value) return "";
@@ -732,6 +834,11 @@ function normalizeTipoIncidencia(value: unknown): TipoIncidencia {
   if (value === "Consulta") return "Consulta";
   if (value === "Recuperación") return "Recuperación";
   return "Falta";
+}
+
+function normalizeTipoFalta(value: string | null | undefined): string {
+  const v = value?.trim() ?? "";
+  return TIPO_FALTA_OPTIONS.includes(v as (typeof TIPO_FALTA_OPTIONS)[number]) ? v : "";
 }
 
 function incidenciaSchedulePlaceholder(tipo: string | null | undefined): string {
@@ -795,6 +902,119 @@ function IncidenciaFechaHorarioCell({ inc }: { inc: IncidenciaData }) {
   );
 }
 
+function IncidenciaScheduleTable({
+  rows,
+  isLoading,
+  emptyMessage,
+  canWrite,
+  onOpenDetail,
+  onOpenEdit,
+}: {
+  rows: IncidenciaData[];
+  isLoading: boolean;
+  emptyMessage: string;
+  canWrite: boolean;
+  onOpenDetail: (id: string) => void;
+  onOpenEdit: (id: string) => void;
+}) {
+  const colCount = 6;
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Fecha / Horario</TableHead>
+            <TableHead>Alumno</TableHead>
+            <TableHead>Profesor</TableHead>
+            <TableHead>Especialidad</TableHead>
+            <TableHead>Tipo Incidencia</TableHead>
+            <TableHead className="w-[50px]" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <TableRow key={i}>
+                <TableCell colSpan={colCount}>
+                  <Skeleton className="h-8 w-full" />
+                </TableCell>
+              </TableRow>
+            ))
+          ) : rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={colCount} className="py-10 text-center text-muted-foreground">
+                {emptyMessage}
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((inc) => (
+              <TableRow
+                key={inc.ID_INCIDENCIA}
+                className="cursor-pointer transition-colors hover:bg-muted/50"
+                onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
+              >
+                <TableCell className="text-sm">
+                  <IncidenciaFechaHorarioCell inc={inc} />
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
+                    <EntityLink type="alumno" id={inc.ID_ALUMNO}>
+                      {inc.ALUMNOS.NOMBRE_ALUMNO}
+                    </EntityLink>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>
+                  )}
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  {inc.PROFESOR?.NOMBRE_PROFESOR ? (
+                    <EntityLink type="profesor" id={inc.ID_PROFESOR}>
+                      {inc.PROFESOR.NOMBRE_PROFESOR}
+                    </EntityLink>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">{inc.ID_PROFESOR || "—"}</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
+                    <span className="text-muted-foreground text-xs">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm">
+                  <StatusBadge status={incidenciaTipoBadgeStatus(inc.TIPO_INCIDENCIA)}>
+                    {inc.TIPO_INCIDENCIA ?? "—"}
+                  </StatusBadge>
+                  {inc.TIPO_FALTA && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Detalle: {inc.TIPO_FALTA}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  {canWrite ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => onOpenEdit(inc.ID_INCIDENCIA)}>
+                          Editar
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function ReadOnlyFormField({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-2">
@@ -829,6 +1049,37 @@ function dedupeSelectOptions<T>(
     result.push(item);
   }
   return result;
+}
+
+function buildAlumnoScopedEspecialidades(
+  horarios: AlumnoHorarioActivoRow[],
+  especialidades: EspecialidadLookup[],
+): EspecialidadLookup[] {
+  const espIds = new Set(
+    horarios.map((h) => h.ID_ESPECIALIDAD?.trim()).filter(Boolean) as string[],
+  );
+  return dedupeSelectOptions(
+    especialidades.filter((e) => espIds.has(e.ID_ESPECIALIDAD)),
+    (e) => e.ID_ESPECIALIDAD,
+  );
+}
+
+function buildAlumnoScopedProfesores(
+  horarios: AlumnoHorarioActivoRow[],
+  profesores: ProfesorLookup[],
+  especialidadId?: string,
+): ProfesorLookup[] {
+  const selectedEspecialidadId = especialidadId?.trim() ?? "";
+  const filteredHorarios = selectedEspecialidadId
+    ? horarios.filter((h) => h.ID_ESPECIALIDAD?.trim() === selectedEspecialidadId)
+    : horarios;
+  const profIds = new Set(
+    filteredHorarios.map((h) => h.ID_PROFESOR?.trim()).filter(Boolean) as string[],
+  );
+  return dedupeSelectOptions(
+    profesores.filter((p) => profIds.has(p.ID_PROFESOR)),
+    (p) => p.ID_PROFESOR,
+  );
 }
 
 function normalizeRpcEspecialidades(data: unknown): EspecialidadLookup[] {
@@ -910,6 +1161,7 @@ function IncidenciaFormDialog({
   const [tipoIncidencia, setTipoIncidencia] = useState<TipoIncidencia>(() =>
     normalizeTipoIncidencia(initial?.TIPO_INCIDENCIA),
   );
+  const [tipoFalta, setTipoFalta] = useState(() => normalizeTipoFalta(initial?.TIPO_FALTA));
   const [fechaExacta, setFechaExacta] = useState(() =>
     toDateInputValue(initial?.FECHA_EXACTA ?? ""),
   );
@@ -963,6 +1215,25 @@ function IncidenciaFormDialog({
     },
   });
 
+  const alumnoHorariosActivosQuery = useQuery({
+    queryKey: ["incidencia-form-horarios-activos", tenantId ?? "", selectedAlumnoId],
+    enabled: open && isConsulta && !!selectedAlumnoId,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      let query = supabase
+        .from("HORARIOS_MATRICULAS")
+        .select("ID_ESPECIALIDAD, ID_PROFESOR")
+        .eq("ID_ALUMNO", selectedAlumnoId)
+        .eq("ESTADO", "Activo");
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as AlumnoHorarioActivoRow[];
+    },
+  });
+
   const recuperacionEspQuery = useQuery({
     queryKey: ["rec-esp", selectedAlumnoId],
     enabled: open && isRecuperacion && !!selectedAlumnoId,
@@ -1006,6 +1277,69 @@ function IncidenciaFormDialog({
     [recuperacionAulasQuery.data],
   );
   const recuperacionAulasLoading = recuperacionAulasQuery.isLoading;
+
+  // Additive: recovery balance check — ONLY runs when TIPO_INCIDENCIA === "Recuperación".
+  // Falta/Consulta never trigger this fetch (enabled flag below).
+  const recuperacionSaldoQuery = useQuery({
+    queryKey: ["incidencia-form-recuperacion-saldo", tenantId ?? "", selectedAlumnoId],
+    enabled: open && isRecuperacion && !!selectedAlumnoId,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      let query = supabase
+        .from("HORARIOS_MATRICULAS")
+        .select("ID_ESPECIALIDAD, SALDO")
+        .eq("ID_ALUMNO", selectedAlumnoId)
+        .eq("ESTADO", "Activo");
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as AlumnoHorarioSaldoRow[];
+    },
+  });
+
+  // Additive: teacher schedule timeline preview — ONLY runs when TIPO_INCIDENCIA === "Recuperación"
+  // AND both Profesor and Fecha del suceso are selected.
+  const recuperacionProfesorSesionesQuery = useQuery({
+    queryKey: ["incidencia-form-recuperacion-timeline", idProfesor, fechaExacta],
+    enabled: open && isRecuperacion && !!idProfesor.trim() && !!fechaExacta,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("SESIONES")
+        .select("ID_SESION, HORA_INICIO, HORA_FIN, ESPECIALIDAD, ESTADO")
+        .eq("ID_PROFESOR", idProfesor.trim())
+        .eq("FECHA_EXACTA", fechaExacta)
+        .order("HORA_INICIO", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as ProfesorSesionRow[];
+    },
+  });
+
+  // Additive: eligible-students-for-recovery lookup — ONLY runs when TIPO_INCIDENCIA ===
+  // "Recuperación". Falta/Consulta never trigger this fetch and keep seeing the full
+  // alumnosOptions list (see activeAlumnosOptions below).
+  const recuperacionAlumnosElegiblesQuery = useQuery({
+    queryKey: ["incidencia-form-recuperacion-alumnos-elegibles", tenantId ?? ""],
+    enabled: open && isRecuperacion,
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      let query = supabase
+        .from("HORARIOS_MATRICULAS")
+        .select("ID_ALUMNO, SALDO")
+        .eq("ESTADO", "Activo")
+        .gt("SALDO", 0);
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as AlumnoSaldoEligibleRow[];
+    },
+  });
 
   const lookupsQuery = useQuery({
     queryKey: ["incidencia-form-lookups", tenantId, filterCenterId ?? ""],
@@ -1102,6 +1436,26 @@ function IncidenciaFormDialog({
     [especialidades],
   );
   const alumnosOptions = useMemo(() => dedupeSelectOptions(alumnos, (a) => a.ID_ALUMNO), [alumnos]);
+
+  // Additive: restrict the Alumno dropdown to students with at least one active
+  // enrollment with SALDO > 0, but ONLY while isRecuperacion is true. Any other tipo
+  // (or while this query hasn't run yet) falls straight back to the full alumnosOptions
+  // list — zero regression for Falta/Consulta.
+  const recuperacionAlumnosEligiblesIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of recuperacionAlumnosElegiblesQuery.data ?? []) {
+      const id = row.ID_ALUMNO?.trim();
+      if (id) set.add(id);
+    }
+    return set;
+  }, [recuperacionAlumnosElegiblesQuery.data]);
+  const recuperacionAlumnosOptions = useMemo(
+    () => alumnosOptions.filter((a) => recuperacionAlumnosEligiblesIds.has(a.ID_ALUMNO)),
+    [alumnosOptions, recuperacionAlumnosEligiblesIds],
+  );
+  const recuperacionAlumnosLoading = isRecuperacion && recuperacionAlumnosElegiblesQuery.isLoading;
+  const activeAlumnosOptions = isRecuperacion ? recuperacionAlumnosOptions : alumnosOptions;
+
   const profesoresOptions = useMemo(
     () => dedupeSelectOptions(profesores, (p) => p.ID_PROFESOR),
     [profesores],
@@ -1110,6 +1464,22 @@ function IncidenciaFormDialog({
     () => dedupeSelectOptions(especialidades, (e) => e.ID_ESPECIALIDAD),
     [especialidades],
   );
+  const alumnoHorariosActivos = useMemo(
+    () => alumnoHorariosActivosQuery.data ?? [],
+    [alumnoHorariosActivosQuery.data],
+  );
+  const alumnoHorariosLoading = isConsulta && !!selectedAlumnoId && alumnoHorariosActivosQuery.isLoading;
+  const consultaEspecialidadesOptions = useMemo(
+    () => buildAlumnoScopedEspecialidades(alumnoHorariosActivos, especialidades),
+    [alumnoHorariosActivos, especialidades],
+  );
+  const consultaProfesoresOptions = useMemo(
+    () =>
+      buildAlumnoScopedProfesores(alumnoHorariosActivos, profesores, selectedEspecialidadId),
+    [alumnoHorariosActivos, profesores, selectedEspecialidadId],
+  );
+  const activeProfesoresOptions = isConsulta ? consultaProfesoresOptions : profesoresOptions;
+  const activeEspecialidadesOptions = isConsulta ? consultaEspecialidadesOptions : especialidadesOptions;
   const sesionesOptions = useMemo(
     () => dedupeSelectOptions(sesionesQuery.data ?? [], (s) => s.ID_SESION),
     [sesionesQuery.data],
@@ -1118,6 +1488,39 @@ function IncidenciaFormDialog({
     () => dedupeSelectOptions(recuperacionAulas, (a) => a.ID_AULA),
     [recuperacionAulas],
   );
+
+  // Additive: total recovery balance across the student's active enrollments.
+  // Only meaningful/used when isRecuperacion is true.
+  const totalSaldoRecuperaciones = useMemo(
+    () =>
+      (recuperacionSaldoQuery.data ?? []).reduce(
+        (sum, row) => sum + (typeof row.SALDO === "number" ? row.SALDO : 0),
+        0,
+      ),
+    [recuperacionSaldoQuery.data],
+  );
+  const recuperacionSaldoReady =
+    isRecuperacion && !!selectedAlumnoId && !recuperacionSaldoQuery.isLoading;
+  const hasZeroSaldoRecuperaciones = recuperacionSaldoReady && totalSaldoRecuperaciones <= 0;
+
+  // Additive: booked slots for the selected Profesor on the selected Fecha, for the
+  // read-only availability preview. Excludes cancelled/incident sessions per spec.
+  const recuperacionProfesorSesiones = useMemo(() => {
+    const activas = (recuperacionProfesorSesionesQuery.data ?? []).filter(
+      (s) =>
+        !SESIONES_TIMELINE_EXCLUDED_ESTADOS.includes(
+          (s.ESTADO ?? "") as (typeof SESIONES_TIMELINE_EXCLUDED_ESTADOS)[number],
+        ),
+    );
+    // Additive UI-only dedup: group classes insert one SESIONES row per enrolled
+    // student, so the same time slot/specialty can repeat several times. Collapse
+    // those into a single displayed row per unique HORA_INICIO+HORA_FIN+ESPECIALIDAD.
+    // Purely a rendering concern — the underlying query/data is untouched.
+    return dedupeSelectOptions(
+      activas,
+      (s) => `${s.HORA_INICIO ?? ""}|${s.HORA_FIN ?? ""}|${s.ESPECIALIDAD ?? ""}`,
+    );
+  }, [recuperacionProfesorSesionesQuery.data]);
 
   const aulaById = useMemo(
     () =>
@@ -1150,6 +1553,7 @@ function IncidenciaFormDialog({
     setIdProfesor(String(initial?.ID_PROFESOR ?? ""));
     setIdEspecialidad(String(initial?.ID_ESPECIALIDAD ?? ""));
     setTipoIncidencia(initialTipo);
+    setTipoFalta(normalizeTipoFalta(initial?.TIPO_FALTA));
     setFechaExacta(toDateInputValue(String(initial?.FECHA_EXACTA ?? "")));
     setHoraInicio(toTimeInputValue(String(initial?.HORA_INICIO ?? "")));
     setHoraFin(toTimeInputValue(String(initial?.HORA_FIN ?? "")));
@@ -1187,6 +1591,9 @@ function IncidenciaFormDialog({
     if (tipoIncidencia === "Consulta") {
       setEstadoConsulta("Pendiente");
     }
+    if (tipoIncidencia !== "Falta") {
+      setTipoFalta("");
+    }
   }, [tipoIncidencia, open, editingKey]);
 
   const clearScheduleFields = () => {
@@ -1215,7 +1622,16 @@ function IncidenciaFormDialog({
     setHoraInicio("");
     setHoraFin("");
     setIdAula("");
+    setIdProfesor("");
+    setIdEspecialidad("");
     clearRecuperacionCascade();
+  };
+
+  const handleConsultaEspecialidadChange = (value: string) => {
+    const nextEspecialidadId = value === NONE_VALUE ? "" : value.trim();
+    if (nextEspecialidadId === selectedEspecialidadId) return;
+    setIdEspecialidad(nextEspecialidadId);
+    setIdProfesor("");
   };
 
   const handleRecuperacionEspecialidadChange = (value: string) => {
@@ -1247,12 +1663,15 @@ function IncidenciaFormDialog({
   const showPersonFields =
     !isEditing && (isConsulta || (isFalta && Boolean(selectedSessionId)));
 
-  const alumnoSelectValue =
-    alumnosOptions.length === 0
-      ? EMPTY_ALUMNOS
+  const alumnoSelectValue = recuperacionAlumnosLoading
+    ? LOADING_REC_ALUMNOS
+    : activeAlumnosOptions.length === 0
+      ? isRecuperacion
+        ? EMPTY_REC_ALUMNOS
+        : EMPTY_ALUMNOS
       : safeSelectValue(
           idAlumno,
-          alumnosOptions.map((a) => ({ id: a.ID_ALUMNO })),
+          activeAlumnosOptions.map((a) => ({ id: a.ID_ALUMNO })),
         );
   const sessionSelectValue = sesionesQuery.isLoading
     ? LOADING_SESIONES
@@ -1262,20 +1681,34 @@ function IncidenciaFormDialog({
           selectedSessionId,
           sesionesOptions.map((s) => ({ id: s.ID_SESION })),
         );
-  const profesorSelectValue =
-    !isConsulta && profesoresOptions.length === 0
+  const profesorSelectValue = isConsulta
+    ? !selectedAlumnoId
+      ? SELECT_ALUMNO_FIRST
+      : alumnoHorariosLoading
+        ? LOADING_ALUMNO_HORARIOS
+        : activeProfesoresOptions.length === 0
+          ? EMPTY_ALUMNO_HORARIOS
+          : safeSelectValue(idProfesor, [
+              { id: NONE_VALUE },
+              ...activeProfesoresOptions.map((p) => ({ id: p.ID_PROFESOR })),
+            ])
+    : activeProfesoresOptions.length === 0
       ? EMPTY_PROFESORES
-      : safeSelectValue(idProfesor, [
-          ...(isConsulta ? [{ id: NONE_VALUE }] : []),
-          ...profesoresOptions.map((p) => ({ id: p.ID_PROFESOR })),
-        ]);
-  const especialidadSelectValue =
-    !isConsulta && especialidadesOptions.length === 0
+      : safeSelectValue(idProfesor, activeProfesoresOptions.map((p) => ({ id: p.ID_PROFESOR })));
+  const especialidadSelectValue = isConsulta
+    ? !selectedAlumnoId
+      ? SELECT_ALUMNO_FIRST
+      : alumnoHorariosLoading
+        ? LOADING_ALUMNO_HORARIOS
+        : activeEspecialidadesOptions.length === 0
+          ? EMPTY_ALUMNO_HORARIOS
+          : safeSelectValue(idEspecialidad, [
+              { id: NONE_VALUE },
+              ...activeEspecialidadesOptions.map((e) => ({ id: e.ID_ESPECIALIDAD })),
+            ])
+    : activeEspecialidadesOptions.length === 0
       ? EMPTY_ESPECIALIDADES
-      : safeSelectValue(idEspecialidad, [
-          ...(isConsulta ? [{ id: NONE_VALUE }] : []),
-          ...especialidadesOptions.map((e) => ({ id: e.ID_ESPECIALIDAD })),
-        ]);
+      : safeSelectValue(idEspecialidad, activeEspecialidadesOptions.map((e) => ({ id: e.ID_ESPECIALIDAD })));
   const recuperacionEspecialidadSelectValue = recuperacionEspQuery.isLoading
     ? LOADING_REC_ESPECIALIDADES
     : (recuperacionEspQuery.data ?? []).length === 0
@@ -1346,6 +1779,10 @@ function IncidenciaFormDialog({
           toast.error("Selecciona la sesión a la que corresponde la falta.");
           return;
         }
+        if (isFalta && !tipoFalta.trim()) {
+          toast.error("Selecciona el tipo de falta.");
+          return;
+        }
         if (isRecuperacion && !idEspecialidad.trim()) {
           toast.error("Selecciona una especialidad.");
           return;
@@ -1354,10 +1791,27 @@ function IncidenciaFormDialog({
           toast.error("Selecciona un profesor.");
           return;
         }
+        if (isRecuperacion && !fechaExacta.trim()) {
+          toast.error("Selecciona la fecha del suceso.");
+          return;
+        }
+        if (isRecuperacion && !horaInicio.trim()) {
+          toast.error("Selecciona la hora de inicio.");
+          return;
+        }
+        if (isRecuperacion && !horaFin.trim()) {
+          toast.error("Selecciona la hora de fin.");
+          return;
+        }
+        if (isRecuperacion && hasZeroSaldoRecuperaciones) {
+          toast.error("Este alumno no tiene recuperaciones pendientes.");
+          return;
+        }
 
         const payload: IncidenciaFormValues = {
           ID_ALUMNO: idAlumno.trim(),
           TIPO_INCIDENCIA: tipoIncidencia,
+          TIPO_FALTA: null,
           NOTAS: notas.trim() || null,
           ID_PROFESOR: idProfesor || null,
           ID_ESPECIALIDAD: idEspecialidad || null,
@@ -1373,6 +1827,8 @@ function IncidenciaFormDialog({
 
         if (isConsulta) {
           payload.ESTADO_CONSULTA = estadoConsulta || null;
+          payload.TIPO_FALTA = null;
+          payload.ID_SESION = null;
         } else if (isFalta) {
           payload.FECHA_EXACTA = fechaExacta || null;
           payload.HORA_INICIO = horaInicio || null;
@@ -1380,6 +1836,7 @@ function IncidenciaFormDialog({
           payload.ID_SESION = idSesion || null;
           payload.ID_MATRICULA = idMatricula || null;
           payload.ID_HORARIO = idHorario || null;
+          payload.TIPO_FALTA = tipoFalta || null;
         } else if (isRecuperacion) {
           payload.FECHA_EXACTA = fechaExacta || null;
           payload.HORA_INICIO = horaInicio || null;
@@ -1419,6 +1876,33 @@ function IncidenciaFormDialog({
             </Select>
           </div>
 
+          {isRecuperacion && selectedAlumnoId && hasZeroSaldoRecuperaciones ? (
+            <div
+              role="alert"
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+              Este alumno no tiene recuperaciones pendientes.
+            </div>
+          ) : null}
+
+          {isFalta ? (
+            <div className="space-y-2">
+              <Label>Tipo de Falta *</Label>
+              <Select value={tipoFalta || undefined} onValueChange={setTipoFalta}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar tipo de falta" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIPO_FALTA_OPTIONS.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
           {isEditing && initial ? (
             <ReadOnlyFormField
               label="Alumno *"
@@ -1430,20 +1914,43 @@ function IncidenciaFormDialog({
               <Select
                 value={alumnoSelectValue}
                 onValueChange={(v) => {
-                  if (v === EMPTY_ALUMNOS) return;
+                  if (
+                    v === EMPTY_ALUMNOS ||
+                    v === LOADING_REC_ALUMNOS ||
+                    v === EMPTY_REC_ALUMNOS
+                  ) {
+                    return;
+                  }
                   handleAlumnoChange(v === NONE_VALUE ? "" : v);
                 }}
+                disabled={recuperacionAlumnosLoading}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar alumno" />
+                  <SelectValue
+                    placeholder={
+                      recuperacionAlumnosLoading
+                        ? "Cargando alumnos elegibles..."
+                        : "Seleccionar alumno"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  {alumnosOptions.length === 0 ? (
-                    <SelectItem key={EMPTY_ALUMNOS} value={EMPTY_ALUMNOS} disabled>
-                      No hay alumnos disponibles
+                  {recuperacionAlumnosLoading ? (
+                    <SelectItem key={LOADING_REC_ALUMNOS} value={LOADING_REC_ALUMNOS} disabled>
+                      Cargando alumnos elegibles...
+                    </SelectItem>
+                  ) : activeAlumnosOptions.length === 0 ? (
+                    <SelectItem
+                      key={isRecuperacion ? EMPTY_REC_ALUMNOS : EMPTY_ALUMNOS}
+                      value={isRecuperacion ? EMPTY_REC_ALUMNOS : EMPTY_ALUMNOS}
+                      disabled
+                    >
+                      {isRecuperacion
+                        ? "No hay alumnos con recuperaciones pendientes"
+                        : "No hay alumnos disponibles"}
                     </SelectItem>
                   ) : (
-                    alumnosOptions.map((a) => (
+                    activeAlumnosOptions.map((a) => (
                       <SelectItem key={a.ID_ALUMNO} value={a.ID_ALUMNO}>
                         {a.NOMBRE_ALUMNO ?? "—"}
                       </SelectItem>
@@ -1678,6 +2185,7 @@ function IncidenciaFormDialog({
                   value={fechaExacta}
                   onChange={(e) => setFechaExacta(e.target.value)}
                   disabled={faltaFieldsLocked}
+                  required={isRecuperacion}
                 />
               </div>
               <div className="space-y-2">
@@ -1687,6 +2195,7 @@ function IncidenciaFormDialog({
                   value={horaInicio}
                   onChange={(e) => setHoraInicio(e.target.value)}
                   disabled={faltaFieldsLocked}
+                  required={isRecuperacion}
                 />
               </div>
               <div className="space-y-2">
@@ -1696,7 +2205,37 @@ function IncidenciaFormDialog({
                   value={horaFin}
                   onChange={(e) => setHoraFin(e.target.value)}
                   disabled={faltaFieldsLocked}
+                  required={isRecuperacion}
                 />
+              </div>
+            </div>
+          ) : null}
+
+          {isRecuperacion && idProfesor.trim() && fechaExacta ? (
+            <div className="space-y-2">
+              <Label>Disponibilidad del profesor ({fechaExacta})</Label>
+              <div className="rounded-md border border-input bg-muted/40 p-3 text-sm">
+                {recuperacionProfesorSesionesQuery.isLoading ? (
+                  <p className="text-xs text-muted-foreground">Cargando agenda del profesor...</p>
+                ) : recuperacionProfesorSesiones.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Sin sesiones registradas para este profesor en la fecha seleccionada.
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {recuperacionProfesorSesiones.map((s) => (
+                      <li key={s.ID_SESION} className="flex items-center gap-2 text-xs">
+                        <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="font-medium">
+                          {formatHorarioRange(s.HORA_INICIO, s.HORA_FIN) ?? "—"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {resolveEspecialidadLabel(s.ESPECIALIDAD, especialidades)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           ) : null}
@@ -1711,30 +2250,68 @@ function IncidenciaFormDialog({
                 <Select
                   value={profesorSelectValue}
                   onValueChange={(v) => {
-                    if (v === EMPTY_PROFESORES) return;
+                    if (
+                      v === EMPTY_PROFESORES ||
+                      v === EMPTY_ALUMNO_HORARIOS ||
+                      v === LOADING_ALUMNO_HORARIOS ||
+                      v === SELECT_ALUMNO_FIRST
+                    ) {
+                      return;
+                    }
                     setIdProfesor(v === NONE_VALUE ? "" : v);
                   }}
-                  disabled={faltaFieldsLocked}
+                  disabled={
+                    faltaFieldsLocked ||
+                    (isConsulta && (!selectedAlumnoId || alumnoHorariosLoading))
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar profesor" />
+                    <SelectValue
+                      placeholder={
+                        isConsulta && !selectedAlumnoId
+                          ? "Selecciona un alumno primero"
+                          : isConsulta && alumnoHorariosLoading
+                            ? "Cargando profesores..."
+                            : "Seleccionar profesor"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {isConsulta && (
-                      <SelectItem key={NONE_VALUE} value={NONE_VALUE}>
-                        Sin profesor
+                    {isConsulta && !selectedAlumnoId ? (
+                      <SelectItem key={SELECT_ALUMNO_FIRST} value={SELECT_ALUMNO_FIRST} disabled>
+                        Selecciona un alumno primero
                       </SelectItem>
-                    )}
-                    {!isConsulta && profesoresOptions.length === 0 ? (
-                      <SelectItem key={EMPTY_PROFESORES} value={EMPTY_PROFESORES} disabled>
-                        No hay profesores disponibles
+                    ) : isConsulta && alumnoHorariosLoading ? (
+                      <SelectItem
+                        key={LOADING_ALUMNO_HORARIOS}
+                        value={LOADING_ALUMNO_HORARIOS}
+                        disabled
+                      >
+                        Cargando profesores...
+                      </SelectItem>
+                    ) : isConsulta && activeProfesoresOptions.length === 0 ? (
+                      <SelectItem key={EMPTY_ALUMNO_HORARIOS} value={EMPTY_ALUMNO_HORARIOS} disabled>
+                        No hay profesores activos para este alumno
                       </SelectItem>
                     ) : (
-                      profesoresOptions.map((p) => (
-                        <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
-                          {p.NOMBRE_PROFESOR ?? "—"}
-                        </SelectItem>
-                      ))
+                      <>
+                        {isConsulta && (
+                          <SelectItem key={NONE_VALUE} value={NONE_VALUE}>
+                            Sin profesor
+                          </SelectItem>
+                        )}
+                        {!isConsulta && activeProfesoresOptions.length === 0 ? (
+                          <SelectItem key={EMPTY_PROFESORES} value={EMPTY_PROFESORES} disabled>
+                            No hay profesores disponibles
+                          </SelectItem>
+                        ) : (
+                          activeProfesoresOptions.map((p) => (
+                            <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
+                              {p.NOMBRE_PROFESOR ?? "—"}
+                            </SelectItem>
+                          ))
+                        )}
+                      </>
                     )}
                   </SelectContent>
                 </Select>
@@ -1748,30 +2325,72 @@ function IncidenciaFormDialog({
                 <Select
                   value={especialidadSelectValue}
                   onValueChange={(v) => {
-                    if (v === EMPTY_ESPECIALIDADES) return;
+                    if (
+                      v === EMPTY_ESPECIALIDADES ||
+                      v === EMPTY_ALUMNO_HORARIOS ||
+                      v === LOADING_ALUMNO_HORARIOS ||
+                      v === SELECT_ALUMNO_FIRST
+                    ) {
+                      return;
+                    }
+                    if (isConsulta) {
+                      handleConsultaEspecialidadChange(v);
+                      return;
+                    }
                     setIdEspecialidad(v === NONE_VALUE ? "" : v);
                   }}
-                  disabled={faltaFieldsLocked}
+                  disabled={
+                    faltaFieldsLocked ||
+                    (isConsulta && (!selectedAlumnoId || alumnoHorariosLoading))
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Seleccionar especialidad" />
+                    <SelectValue
+                      placeholder={
+                        isConsulta && !selectedAlumnoId
+                          ? "Selecciona un alumno primero"
+                          : isConsulta && alumnoHorariosLoading
+                            ? "Cargando especialidades..."
+                            : "Seleccionar especialidad"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {isConsulta && (
-                      <SelectItem key={NONE_VALUE} value={NONE_VALUE}>
-                        Sin especialidad
+                    {isConsulta && !selectedAlumnoId ? (
+                      <SelectItem key={SELECT_ALUMNO_FIRST} value={SELECT_ALUMNO_FIRST} disabled>
+                        Selecciona un alumno primero
                       </SelectItem>
-                    )}
-                    {!isConsulta && especialidadesOptions.length === 0 ? (
-                      <SelectItem key={EMPTY_ESPECIALIDADES} value={EMPTY_ESPECIALIDADES} disabled>
-                        No hay especialidades disponibles
+                    ) : isConsulta && alumnoHorariosLoading ? (
+                      <SelectItem
+                        key={LOADING_ALUMNO_HORARIOS}
+                        value={LOADING_ALUMNO_HORARIOS}
+                        disabled
+                      >
+                        Cargando especialidades...
+                      </SelectItem>
+                    ) : isConsulta && activeEspecialidadesOptions.length === 0 ? (
+                      <SelectItem key={EMPTY_ALUMNO_HORARIOS} value={EMPTY_ALUMNO_HORARIOS} disabled>
+                        No hay especialidades activas para este alumno
                       </SelectItem>
                     ) : (
-                      especialidadesOptions.map((e) => (
-                        <SelectItem key={e.ID_ESPECIALIDAD} value={e.ID_ESPECIALIDAD}>
-                          {e.ESPECIALIDAD ?? "—"}
-                        </SelectItem>
-                      ))
+                      <>
+                        {isConsulta && (
+                          <SelectItem key={NONE_VALUE} value={NONE_VALUE}>
+                            Sin especialidad
+                          </SelectItem>
+                        )}
+                        {!isConsulta && activeEspecialidadesOptions.length === 0 ? (
+                          <SelectItem key={EMPTY_ESPECIALIDADES} value={EMPTY_ESPECIALIDADES} disabled>
+                            No hay especialidades disponibles
+                          </SelectItem>
+                        ) : (
+                          activeEspecialidadesOptions.map((e) => (
+                            <SelectItem key={e.ID_ESPECIALIDAD} value={e.ID_ESPECIALIDAD}>
+                              {e.ESPECIALIDAD ?? "—"}
+                            </SelectItem>
+                          ))
+                        )}
+                      </>
                     )}
                   </SelectContent>
                 </Select>
@@ -1825,7 +2444,14 @@ function IncidenciaFormDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || (!lookupsReady && !isEditing)}>
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              (!lookupsReady && !isEditing) ||
+              (!isEditing && isRecuperacion && hasZeroSaldoRecuperaciones)
+            }
+          >
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

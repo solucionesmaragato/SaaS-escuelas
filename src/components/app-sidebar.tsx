@@ -120,7 +120,7 @@ const NAV: NavGroup[] = [
     label: "Facturación",
     items: [
       { title: "Facturas", to: "/facturas", icon: ScrollText, perms: ["recibos:read"] },
-      { title: "Remesas", to: "/remesas", icon: Banknote, perms: ["remesas:write"] },
+      { title: "Recibos Mensuales", to: "/remesas", icon: Banknote, perms: ["remesas:write"] },
       { title: "Tarifas", to: "/tarifas", icon: Tags, perms: ["tarifas:read"] },
     ],
   },

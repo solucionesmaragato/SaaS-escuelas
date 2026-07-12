@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
@@ -120,6 +120,150 @@ type PendingSave =
   | { kind: "create"; values: PerfilCreateInput }
   | { kind: "update"; id: string; values: PerfilUpdateInput };
 
+type PerfilEditField = "NOMBRE" | "ROL" | "ESTADO" | "ID_PROFESOR" | "ID_CENTRO" | "ID_CLIENTE";
+
+type PerfilFormRecord = {
+  NOMBRE: string;
+  EMAIL: string;
+  ROL: Rol;
+  ESTADO: string;
+  ID_PROFESOR: string;
+  ID_CENTRO: string;
+  ID_CLIENTE: string;
+};
+
+type PerfilEditSnapshot = {
+  NOMBRE: string;
+  ROL: Rol;
+  ESTADO: string;
+  ID_PROFESOR: string;
+  ID_CENTRO: string;
+  ID_CLIENTE?: string;
+};
+
+const PERFIL_ROL_VALUES = [
+  "MASTER",
+  "ADMIN",
+  "DIRECCION",
+  "SECRETARIA",
+  "PROFESOR",
+] as const satisfies readonly Rol[];
+
+function normalizePerfilEstado(estado: string | null | undefined): string {
+  return estado?.toUpperCase() === "INACTIVO" ? "INACTIVO" : "ACTIVO";
+}
+
+function normalizePerfilRol(rol: string | null | undefined): Rol {
+  const upper = (rol ?? "").trim().toUpperCase();
+  if ((PERFIL_ROL_VALUES as readonly string[]).includes(upper)) {
+    return upper as Rol;
+  }
+  return "ADMIN";
+}
+
+function buildPerfilFormRecord(
+  perfil: PerfilData | undefined,
+  isMaster: boolean,
+  tenantId: string,
+  profesoresRows: {
+    ID_PROFESOR: string;
+    NOMBRE_PROFESOR: string;
+    EMAIL_PROFESORES?: string | null;
+  }[],
+): PerfilFormRecord {
+  if (!perfil) {
+    return {
+      NOMBRE: "",
+      EMAIL: "",
+      ROL: "ADMIN",
+      ESTADO: "ACTIVO",
+      ID_PROFESOR: "",
+      ID_CENTRO: "",
+      ID_CLIENTE: isMaster ? "" : tenantId,
+    };
+  }
+
+  const profId = perfil.ID_PROFESOR ?? "";
+  const prof = profId
+    ? profesoresRows.find((p) => p.ID_PROFESOR === profId)
+    : undefined;
+
+  return {
+    NOMBRE: prof?.NOMBRE_PROFESOR ?? perfil.NOMBRE ?? "",
+    EMAIL: prof?.EMAIL_PROFESORES ?? perfil.EMAIL ?? "",
+    ROL: normalizePerfilRol(perfil.ROL),
+    ESTADO: normalizePerfilEstado(perfil.ESTADO),
+    ID_PROFESOR: profId,
+    ID_CENTRO: perfil.ID_CENTRO ?? "",
+    ID_CLIENTE: isMaster ? (perfil.ID_CLIENTE ?? "") : tenantId,
+  };
+}
+
+function buildPerfilEditSnapshot(perfil: PerfilData, isMaster: boolean): PerfilEditSnapshot {
+  return {
+    NOMBRE: (perfil.NOMBRE ?? "").trim(),
+    ROL: normalizePerfilRol(perfil.ROL),
+    ESTADO: normalizePerfilEstado(perfil.ESTADO),
+    ID_PROFESOR: perfil.ID_PROFESOR ?? "",
+    ID_CENTRO: perfil.ID_CENTRO ?? "",
+    ...(isMaster ? { ID_CLIENTE: perfil.ID_CLIENTE ?? "" } : {}),
+  };
+}
+
+function buildPerfilUpdatePatch(
+  original: PerfilEditSnapshot,
+  current: PerfilEditSnapshot,
+  dirty: ReadonlySet<PerfilEditField>,
+): PerfilUpdateInput {
+  const patch: PerfilUpdateInput = {};
+
+  if (dirty.has("NOMBRE") && current.NOMBRE !== original.NOMBRE) {
+    patch.NOMBRE = current.NOMBRE;
+  }
+  if (dirty.has("ROL") && current.ROL !== original.ROL) {
+    patch.ROL = current.ROL;
+  }
+  if (dirty.has("ESTADO") && current.ESTADO !== original.ESTADO) {
+    patch.ESTADO = current.ESTADO;
+  }
+  if (dirty.has("ID_PROFESOR") && current.ID_PROFESOR !== original.ID_PROFESOR) {
+    patch.ID_PROFESOR = current.ID_PROFESOR || null;
+  }
+  if (dirty.has("ID_CENTRO") && current.ID_CENTRO !== original.ID_CENTRO) {
+    patch.ID_CENTRO = current.ID_CENTRO || null;
+  }
+  if (
+    dirty.has("ID_CLIENTE") &&
+    original.ID_CLIENTE !== undefined &&
+    current.ID_CLIENTE !== original.ID_CLIENTE
+  ) {
+    patch.ID_CLIENTE = current.ID_CLIENTE;
+  }
+
+  return patch;
+}
+
+function applyPerfilFormRecord(
+  record: PerfilFormRecord,
+  setters: {
+    setNombre: (v: string) => void;
+    setEmail: (v: string) => void;
+    setRolValue: (v: Rol) => void;
+    setEstado: (v: string) => void;
+    setIdProfesor: (v: string) => void;
+    setIdCentro: (v: string) => void;
+    setIdCliente: (v: string) => void;
+  },
+) {
+  setters.setNombre(record.NOMBRE);
+  setters.setEmail(record.EMAIL);
+  setters.setRolValue(record.ROL);
+  setters.setEstado(record.ESTADO);
+  setters.setIdProfesor(record.ID_PROFESOR);
+  setters.setIdCentro(record.ID_CENTRO);
+  setters.setIdCliente(record.ID_CLIENTE);
+}
+
 function PerfilDetailOverlay({
   open,
   mode,
@@ -226,6 +370,7 @@ function PerfilDetailOverlay({
               </Button>
             </header>
             <PerfilFormDialog
+              key={perfil.ID_PERFIL}
               open
               embedded
               title="Editar usuario"
@@ -639,13 +784,29 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   const { list: clientesList } = useClientes();
   const { list: profesoresList } = useProfesores();
   const isEdit = initial != null;
+  const dirtyFieldsRef = useRef<Set<PerfilEditField>>(new Set());
 
-  const [nombre, setNombre] = useState("");
-  const [email, setEmail] = useState("");
-  const [rolValue, setRolValue] = useState<Rol>("ADMIN");
-  const [estado, setEstado] = useState<string>("ACTIVO");
-  const [idCliente, setIdCliente] = useState("");
-  const [idProfesor, setIdProfesor] = useState("");
+  const [nombre, setNombre] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).NOMBRE,
+  );
+  const [email, setEmail] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).EMAIL,
+  );
+  const [rolValue, setRolValue] = useState<Rol>(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).ROL,
+  );
+  const [estado, setEstado] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).ESTADO,
+  );
+  const [idCliente, setIdCliente] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CLIENTE,
+  );
+  const [idProfesor, setIdProfesor] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_PROFESOR,
+  );
+  const [idCentro, setIdCentro] = useState(() =>
+    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CENTRO,
+  );
 
   const effectiveIdCliente = isMaster ? idCliente : tenantId;
   const masterNeedsCliente = isMaster && !effectiveIdCliente;
@@ -655,18 +816,70 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
     [profesoresList.data?.profesores],
   );
 
+  const selectedProfesorId = idProfesor || (isEdit ? initial?.ID_PROFESOR ?? "" : "");
+
   const profesoresFiltrados = useMemo(() => {
     if (!effectiveIdCliente) return [];
     const scoped = profesoresRows.filter((p) => p.ID_CLIENTE === effectiveIdCliente);
-    return profesorSelectorOptions(scoped, idProfesor);
-  }, [profesoresRows, effectiveIdCliente, idProfesor]);
+    return profesorSelectorOptions(scoped, selectedProfesorId);
+  }, [profesoresRows, effectiveIdCliente, selectedProfesorId]);
+
+  const trabajadorOptions = useMemo(() => {
+    if (!selectedProfesorId) return profesoresFiltrados;
+    if (profesoresFiltrados.some((p) => p.ID_PROFESOR === selectedProfesorId)) {
+      return profesoresFiltrados;
+    }
+    if (!isEdit || !initial) return profesoresFiltrados;
+
+    return [
+      {
+        ID_PROFESOR: selectedProfesorId,
+        NOMBRE_PROFESOR: initial.NOMBRE?.trim() || "Trabajador asignado",
+        FECHA_BAJA: null,
+      },
+      ...profesoresFiltrados,
+    ];
+  }, [profesoresFiltrados, selectedProfesorId, isEdit, initial]);
+
+  const rolOptions = useMemo(() => {
+    const base = isMaster ? ROL_OPTIONS_MASTER : ROL_OPTIONS_BASE;
+    if (!rolValue || base.some((opt) => opt.value === rolValue)) return base;
+    return [
+      { value: rolValue, label: ROLE_LABEL[rolValue as Rol] ?? rolValue },
+      ...base,
+    ];
+  }, [isMaster, rolValue]);
+
+  const resetFormFromPerfil = useCallback(
+    (perfil: PerfilData | undefined) => {
+      const record = buildPerfilFormRecord(perfil, isMaster, tenantId, profesoresRows);
+      applyPerfilFormRecord(record, {
+        setNombre,
+        setEmail,
+        setRolValue,
+        setEstado,
+        setIdProfesor,
+        setIdCentro,
+        setIdCliente,
+      });
+    },
+    [isMaster, tenantId, profesoresRows],
+  );
 
   const applyTrabajador = (profesorId: string) => {
+    dirtyFieldsRef.current.add("ID_PROFESOR");
+    dirtyFieldsRef.current.add("NOMBRE");
     setIdProfesor(profesorId);
-    const prof = profesoresFiltrados.find((p) => p.ID_PROFESOR === profesorId);
+    const prof =
+      profesoresFiltrados.find((p) => p.ID_PROFESOR === profesorId) ??
+      trabajadorOptions.find((p) => p.ID_PROFESOR === profesorId);
     if (prof) {
       setNombre(prof.NOMBRE_PROFESOR);
-      setEmail(prof.EMAIL_PROFESORES ?? "");
+      setEmail(
+        ("EMAIL_PROFESORES" in prof ? prof.EMAIL_PROFESORES : null) ??
+          initial?.EMAIL ??
+          "",
+      );
     }
   };
 
@@ -677,33 +890,31 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   };
 
   const handleClienteChange = (clienteId: string) => {
+    dirtyFieldsRef.current.add("ID_CLIENTE");
     setIdCliente(clienteId);
     clearTrabajador();
   };
 
   useEffect(() => {
-    if (open) {
-      setRolValue((initial?.ROL as Rol) ?? "ADMIN");
-      setEstado(initial?.ESTADO?.toUpperCase() === "INACTIVO" ? "INACTIVO" : "ACTIVO");
-      setIdCliente(isMaster ? (initial?.ID_CLIENTE ?? "") : tenantId);
+    if (!open) return;
 
-      const profId = initial?.ID_PROFESOR ?? "";
-      if (profId) {
-        setIdProfesor(profId);
-        const prof = profesoresRows.find((p) => p.ID_PROFESOR === profId);
-        setNombre(prof?.NOMBRE_PROFESOR ?? initial?.NOMBRE ?? "");
-        setEmail(prof?.EMAIL_PROFESORES ?? initial?.EMAIL ?? "");
-      } else {
-        clearTrabajador();
-      }
-    }
-  }, [open, initial, tenantId, isMaster, profesoresRows]);
+    dirtyFieldsRef.current = new Set();
 
-  useEffect(() => {
-    if (idProfesor && !profesoresFiltrados.some((p) => p.ID_PROFESOR === idProfesor)) {
-      clearTrabajador();
+    if (isEdit && initial) {
+      resetFormFromPerfil(initial);
+      return;
     }
-  }, [profesoresFiltrados, idProfesor]);
+
+    applyPerfilFormRecord(buildPerfilFormRecord(undefined, isMaster, tenantId, profesoresRows), {
+      setNombre,
+      setEmail,
+      setRolValue,
+      setEstado,
+      setIdProfesor,
+      setIdCentro,
+      setIdCliente,
+    });
+  }, [open, isEdit, initial, initial?.ID_PERFIL, resetFormFromPerfil, isMaster, tenantId, profesoresRows]);
 
   const clientes = useMemo(() => clientesList.data ?? [], [clientesList.data]);
 
@@ -716,7 +927,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           toast.error("Debes seleccionar un cliente primero");
           return;
         }
-        if (!idProfesor) {
+        if (!selectedProfesorId) {
           toast.error("Debes seleccionar un trabajador");
           return;
         }
@@ -730,13 +941,27 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
         }
 
         if (isEdit && initial) {
-          const patch: PerfilUpdateInput = {
+          const baseline = buildPerfilEditSnapshot(initial, isMaster);
+          const current: PerfilEditSnapshot = {
             NOMBRE: nombre.trim(),
             ROL: rolValue,
             ESTADO: estado,
-            ID_PROFESOR: idProfesor,
+            ID_PROFESOR: selectedProfesorId,
+            ID_CENTRO: idCentro,
             ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
           };
+
+          const patch = buildPerfilUpdatePatch(
+            baseline,
+            current,
+            dirtyFieldsRef.current,
+          );
+
+          if (Object.keys(patch).length === 0) {
+            toast.info("No hay cambios que guardar");
+            return;
+          }
+
           (props as PerfilFormDialogEditProps).onSubmit(patch);
           return;
         }
@@ -746,9 +971,9 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           EMAIL: email.trim(),
           ROL: rolValue,
           ESTADO: estado,
-          ID_PROFESOR: idProfesor,
+          ID_PROFESOR: selectedProfesorId,
           ID_CLIENTE: isMaster ? idCliente : tenantId,
-          ID_CENTRO: null,
+          ID_CENTRO: idCentro || null,
         };
         (props as PerfilFormDialogCreateProps).onSubmit(payload);
       }}
@@ -778,7 +1003,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
 
       <div className="space-y-2">
         <Label htmlFor="perfil-trabajador">Trabajador *</Label>
-        {profesoresList.isLoading ? (
+        {profesoresList.isLoading && !(isEdit && initial?.ID_PROFESOR) ? (
           <Skeleton className="h-9 w-full" />
         ) : masterNeedsCliente ? (
           <Select disabled>
@@ -786,17 +1011,22 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
               <SelectValue placeholder="Selecciona un cliente primero..." />
             </SelectTrigger>
           </Select>
-        ) : profesoresFiltrados.length === 0 ? (
+        ) : trabajadorOptions.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay trabajadores disponibles para este cliente.
           </p>
         ) : (
-          <Select value={idProfesor} onValueChange={applyTrabajador} required>
+          <Select
+            key={`perfil-trabajador-${initial?.ID_PERFIL ?? "new"}-${selectedProfesorId}`}
+            value={selectedProfesorId}
+            onValueChange={applyTrabajador}
+            required
+          >
             <SelectTrigger id="perfil-trabajador" aria-required="true">
               <SelectValue placeholder="Seleccionar trabajador *" />
             </SelectTrigger>
             <SelectContent>
-              {profesoresFiltrados.map((p) => (
+              {trabajadorOptions.map((p) => (
                 <SelectItem key={p.ID_PROFESOR} value={p.ID_PROFESOR}>
                   {formatProfesorOptionLabel(p)}
                 </SelectItem>
@@ -820,12 +1050,19 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
 
       <div className="space-y-2">
         <Label>ROL</Label>
-        <Select value={rolValue} onValueChange={(v) => setRolValue(v as Rol)}>
+        <Select
+          key={`perfil-rol-${initial?.ID_PERFIL ?? "new"}-${rolValue}`}
+          value={rolValue}
+          onValueChange={(v) => {
+            dirtyFieldsRef.current.add("ROL");
+            setRolValue(v as Rol);
+          }}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(isMaster ? ROL_OPTIONS_MASTER : ROL_OPTIONS_BASE).map((opt) => (
+            {rolOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -836,7 +1073,13 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
 
       <div className="space-y-2">
         <Label>ESTADO</Label>
-        <Select value={estado} onValueChange={setEstado}>
+        <Select
+          value={estado}
+          onValueChange={(v) => {
+            dirtyFieldsRef.current.add("ESTADO");
+            setEstado(v);
+          }}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -867,10 +1110,10 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
               submitting ||
               (isMaster && !idCliente) ||
               masterNeedsCliente ||
-              !idProfesor ||
+              !selectedProfesorId ||
               !nombre.trim() ||
               !email.trim() ||
-              profesoresFiltrados.length === 0
+              trabajadorOptions.length === 0
             }
           >
             {submitting ? "Guardando..." : submitLabel}

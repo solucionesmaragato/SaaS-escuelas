@@ -765,6 +765,16 @@ function LeadsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const activePageRows = pageRows.filter(
+    (lead) =>
+      lead.ESTADO !== "Matriculado" &&
+      lead.ESTADO !== "Cerrado (No matriculado)" &&
+      lead.ESTADO !== "Cerrado",
+  );
+  const matriculadoPageRows = pageRows.filter((lead) => lead.ESTADO === "Matriculado");
+  const cerradoPageRows = pageRows.filter(
+    (lead) => lead.ESTADO === "Cerrado (No matriculado)" || lead.ESTADO === "Cerrado",
+  );
 
   const handleStatusChange = async (leadId: string, estado: string) => {
     try {
@@ -773,6 +783,73 @@ function LeadsPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al actualizar el estado.");
     }
+  };
+
+  const renderLeadTableRow = (lead: LeadData) => (
+    <TableRow
+      key={lead.ID_LEAD}
+      className="cursor-pointer transition-colors hover:bg-muted/50"
+      onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "detail" })}
+    >
+      <TableCell className="font-medium text-sm">{lead.FECHA ?? "—"}</TableCell>
+      <TableCell>
+        <div className="font-medium">{lead.NOMBRE ?? "—"}</div>
+        {lead.NOMBRE_CONTACTO && (
+          <div className="text-xs text-muted-foreground">Contacto: {lead.NOMBRE_CONTACTO}</div>
+        )}
+      </TableCell>
+      <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+        <ContactCompactCell phone={lead.TELEFONO} email={lead.EMAIL_LEAD} />
+      </TableCell>
+      <TableCell className="text-sm">
+        {lead.ESPECIALIDADES?.ESPECIALIDAD ?? (
+          <span className="text-muted-foreground text-xs">—</span>
+        )}
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <EstadoStatusDropdown
+          lead={lead}
+          canWrite={canWrite}
+          isPending={update.isPending}
+          onStatusChange={handleStatusChange}
+        />
+      </TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        {canWrite ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "edit" })}>
+                Editar
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </TableCell>
+    </TableRow>
+  );
+
+  const renderLeadCollapsibleSection = (rows: LeadData[], label: string) => {
+    if (rows.length === 0) return null;
+    return (
+      <TableRow>
+        <TableCell colSpan={6} className="p-0">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-3 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
+              <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+              {label} ({rows.length})
+            </summary>
+            <table className="w-full caption-bottom text-sm">
+              <tbody>{rows.map((lead) => renderLeadTableRow(lead))}</tbody>
+            </table>
+          </details>
+        </TableCell>
+      </TableRow>
+    );
   };
 
   if (isProfesorRole(rol)) {
@@ -861,57 +938,14 @@ function LeadsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                pageRows.map((lead) => (
-                  <TableRow
-                    key={lead.ID_LEAD}
-                    className="cursor-pointer transition-colors hover:bg-muted/50"
-                    onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "detail" })}
-                  >
-                    <TableCell className="font-medium text-sm">{lead.FECHA ?? "—"}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{lead.NOMBRE ?? "—"}</div>
-                      {lead.NOMBRE_CONTACTO && (
-                        <div className="text-xs text-muted-foreground">
-                          Contacto: {lead.NOMBRE_CONTACTO}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
-                      <ContactCompactCell phone={lead.TELEFONO} email={lead.EMAIL_LEAD} />
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {lead.ESPECIALIDADES?.ESPECIALIDAD ?? (
-                        <span className="text-muted-foreground text-xs">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <EstadoStatusDropdown
-                        lead={lead}
-                        canWrite={canWrite}
-                        isPending={update.isPending}
-                        onStatusChange={handleStatusChange}
-                      />
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {canWrite ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "edit" })}
-                            >
-                              Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : null}
-                    </TableCell>
-                  </TableRow>
-                ))
+                <>
+                  {activePageRows.map((lead) => renderLeadTableRow(lead))}
+                  {renderLeadCollapsibleSection(
+                    cerradoPageRows,
+                    "Cerrado (No matriculado)",
+                  )}
+                  {renderLeadCollapsibleSection(matriculadoPageRows, "Matriculado")}
+                </>
               )}
             </TableBody>
           </Table>

@@ -98,7 +98,7 @@ export type AlumnoLookup = {
   ID_ALUMNO: string;
   NOMBRE_ALUMNO: string;
   ID_CENTRO: string | null;
-  MATRICULAS?: { ID_TARIFA: string | null }[];
+  MATRICULAS?: { ID_TARIFA: string | null; ESTADO: string | null; ESPECIALIDAD: string | null }[];
 };
 
 export type ProfesorLookup = {
@@ -550,7 +550,7 @@ export function useGrupos(
 
         let aluQuery = supabase
           .from("ALUMNOS")
-          .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ID_TARIFA)");
+          .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)");
         aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
         aluQuery = appendCenterFilter(aluQuery, resolvedCenterId);
 
@@ -626,7 +626,7 @@ export function useGrupos(
 
       let aluQuery = supabase
         .from("ALUMNOS")
-        .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ID_TARIFA)");
+        .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)");
       aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
       aluQuery = appendCenterFilter(aluQuery, effectiveCenterId);
 

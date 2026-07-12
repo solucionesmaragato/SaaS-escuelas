@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
+  AlertTriangle,
   ChevronDown,
+  Loader2,
   MoreHorizontal,
   Plus,
   Search,
@@ -16,6 +19,7 @@ import type {
   HorarioMatriculaRowInput,
   HorarioMatriculaSyncInput,
   MatriculaRow,
+  ScheduleConflict,
 } from "@/hooks/useMatriculas";
 import type { HorarioMatricula } from "@/types/database";
 import { cn } from "@/lib/utils";
@@ -23,6 +27,7 @@ import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useMatriculas } from "@/hooks/useMatriculas";
 import { useAlumnos } from "@/hooks/useAlumnos";
+import { useAulas, type AulaData } from "@/hooks/useAulas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useProfesores, type ProfesoresQueryData } from "@/hooks/useProfesores";
 import { useTarifas, type TarifaData } from "@/hooks/useTarifas";
@@ -33,6 +38,7 @@ import {
   type CursoEscolarData,
 } from "@/hooks/useCentros";
 import { useActiveTenant } from "@/context/AppContext";
+import { supabase } from "@/integrations/supabase/client";
 import { canWriteUi } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -65,6 +71,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -102,16 +109,96 @@ const DIAS_SEMANA_OPCIONES = [
 ] as const;
 type MatriculaEstado = (typeof MATRICULA_ESTADO_OPTIONS)[number];
 
+/** Shared 8-column layout: alert | expand | alumno | especialidad | profesor | estado | fecha | actions */
+const MATRICULA_TABLE_COL_COUNT = 8;
+
+const MATRICULA_ALERT_TOOLTIP =
+  "Atención: Esta matrícula tiene menos horarios activos asignados que las sesiones permitidas por su tarifa (Horario incompleto).";
+
+const MATRICULA_LIST_COL = {
+  alert: "w-6 px-0",
+  expand: "w-10 px-2",
+  alumno: "font-medium",
+  especialidad: "hidden sm:table-cell",
+  profesor: "hidden text-sm md:table-cell",
+  estado: "w-[110px] min-w-[110px] text-center align-middle",
+  fecha: "hidden text-sm text-muted-foreground sm:table-cell",
+  actions: "w-12",
+} as const;
+
+const MATRICULA_LIST_HEAD = {
+  alert: "w-6",
+  expand: "w-10",
+  alumno: "",
+  especialidad: "hidden sm:table-cell",
+  profesor: "hidden md:table-cell",
+  estado: "w-[110px] min-w-[110px] text-center",
+  fecha: "hidden sm:table-cell",
+  actions: "w-12",
+} as const;
+
 type HorarioEditRow = {
   clientKey: string;
   ID_HORARIO: string | null;
+  /** Group membership inherited from the DB row (read-only), used only to exclude group-mates from collision checks. */
+  ID_GRUPO: string | null;
+  ID_GRUPO_HORARIO: string | null;
   idEspecialidad: string;
   idProfesor: string;
+  idAula: string;
   dia: string;
   horaInicio: string;
   horaFin: string;
   saldo: string;
 };
+
+const DIA_SEMANA_WEIGHT: Record<string, number> = {
+  Lunes: 1,
+  Martes: 2,
+  Miércoles: 3,
+  Jueves: 4,
+  Viernes: 5,
+  Sábado: 6,
+  Domingo: 7,
+};
+
+function diaSemanaWeight(dia: string | null | undefined): number {
+  const trimmed = dia?.trim() ?? "";
+  return DIA_SEMANA_WEIGHT[trimmed] ?? 99;
+}
+
+function horaInicioSortKey(time: string | null | undefined): string {
+  const trimmed = time?.trim() ?? "";
+  if (!trimmed) return "99:99:99";
+  if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
+  return trimmed;
+}
+
+type HorarioChronologyFields = {
+  dia?: string | null;
+  horaInicio?: string | null;
+  DIA?: string | null;
+  HORA_INICIO?: string | null;
+};
+
+function compareHorariosChronologically(
+  a: HorarioChronologyFields,
+  b: HorarioChronologyFields,
+): number {
+  const dayDiff = diaSemanaWeight(a.dia ?? a.DIA) - diaSemanaWeight(b.dia ?? b.DIA);
+  if (dayDiff !== 0) return dayDiff;
+  return horaInicioSortKey(a.horaInicio ?? a.HORA_INICIO).localeCompare(
+    horaInicioSortKey(b.horaInicio ?? b.HORA_INICIO),
+  );
+}
+
+function sortHorariosMatriculasChronologically<T extends HorarioMatricula>(horarios: T[]): T[] {
+  return [...horarios].sort(compareHorariosChronologically);
+}
+
+function sortHorarioEditRowsChronologically(rows: HorarioEditRow[]): HorarioEditRow[] {
+  return [...rows].sort(compareHorariosChronologically);
+}
 
 type MatriculaFormValues = {
   ID_ALUMNO: string;
@@ -128,6 +215,21 @@ type MatriculaFormValues = {
 
 function normalizeMatriculaEstado(estado: string | null | undefined): MatriculaEstado {
   return estado?.trim().toLowerCase() === "inactivo" ? "Inactivo" : "Activo";
+}
+
+function isMatriculaActiva(estado: string | null | undefined): boolean {
+  return normalizeMatriculaEstado(estado) === "Activo";
+}
+
+function toggleMatriculaEstado(estado: string | null | undefined): MatriculaEstado {
+  return isMatriculaActiva(estado) ? "Inactivo" : "Activo";
+}
+
+function matriculaStatusLabel(matricula: MatriculaRow): string {
+  const alumno = matricula.ALUMNOS?.NOMBRE_ALUMNO ?? "el alumno";
+  const especialidad =
+    matricula.ESPECIALIDADES?.ESPECIALIDAD ?? matricula.ESPECIALIDAD ?? "sin especialidad";
+  return `${alumno} — ${especialidad}`;
 }
 
 function toDateInputValue(value: string | null | undefined): string {
@@ -156,6 +258,18 @@ function resolveProfesoresList(listData: unknown): ProfesorData[] {
   return [];
 }
 
+function MatriculaAlertSlot({ active }: { active: boolean }) {
+  return (
+    <div className="flex h-6 w-6 shrink-0 items-center justify-center" aria-hidden={!active}>
+      {active ? (
+        <span className="inline-flex" title={MATRICULA_ALERT_TOOLTIP}>
+          <AlertTriangle className="h-4 w-4 text-amber-500" aria-hidden />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function MatriculaEstadoBadge({ estado }: { estado: string | null | undefined }) {
   const label = normalizeMatriculaEstado(estado);
   const active = label === "Activo";
@@ -174,6 +288,90 @@ function MatriculaEstadoBadge({ estado }: { estado: string | null | undefined })
   );
 }
 
+function MatriculaEstadoToggle({
+  estado,
+  disabled,
+  onClick,
+}: {
+  estado: string | null | undefined;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  const label = normalizeMatriculaEstado(estado);
+  const active = label === "Activo";
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={disabled}
+      aria-label={
+        active
+          ? "Matrícula activa. Pulsa para desactivar."
+          : "Matrícula inactiva. Pulsa para activar."
+      }
+      className={cn(
+        "inline-flex h-7 w-20 shrink-0 items-center justify-center rounded-full border text-xs font-semibold shadow-sm transition-all hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        active
+          ? "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : "border-red-200 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function HorarioEstadoControl({
+  horarioId,
+  estado,
+  canWrite,
+  loading,
+  disabled,
+  onToggle,
+}: {
+  horarioId: string;
+  estado: string | null | undefined;
+  canWrite: boolean;
+  loading?: boolean;
+  disabled?: boolean;
+  onToggle?: (horarioId: string, currentEstado: string | null | undefined) => void;
+}) {
+  if (!canWrite || !onToggle) {
+    return <MatriculaEstadoBadge estado={estado} />;
+  }
+
+  const label = normalizeMatriculaEstado(estado);
+  const active = label === "Activo";
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(horarioId, estado);
+      }}
+      disabled={disabled || loading}
+      aria-label={
+        active
+          ? "Horario activo. Pulsa para desactivar."
+          : "Horario inactivo. Pulsa para activar."
+      }
+      className={cn(
+        "inline-flex h-7 w-20 shrink-0 items-center justify-center rounded-full border text-xs font-semibold shadow-sm transition-all hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        active
+          ? "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : "border-red-200 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400",
+      )}
+    >
+      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : label}
+    </button>
+  );
+}
+
 function formatHorarioSchedule(
   dia: string | null | undefined,
   horaInicio: string | null | undefined,
@@ -185,6 +383,12 @@ function formatHorarioSchedule(
   if (start && end) return `${day}, ${start} - ${end}`;
   if (start) return `${day}, ${start}`;
   return day;
+}
+
+/** HORARIOS_MATRICULAS stores status in `ESTADO`; types may also expose `ESTADO_MATRICULA`. */
+function resolveHorarioEstado(horario: HorarioMatricula): string | null | undefined {
+  const record = horario as HorarioMatricula & { ESTADO?: string | null };
+  return record.ESTADO ?? horario.ESTADO_MATRICULA;
 }
 
 function resolveHorarioEspecialidad(
@@ -242,6 +446,27 @@ function selectId(value: unknown): string {
   return String(value).trim();
 }
 
+function matriculaHorariosRows(matricula: MatriculaRow): HorarioMatricula[] {
+  const record = matricula as unknown as Record<string, unknown>;
+  const raw =
+    record.HORARIOS_MATRICULAS ?? record.horarios_matriculas ?? record.Horarios_Matriculas;
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw as HorarioMatricula[];
+  if (typeof raw === "object") return [raw as HorarioMatricula];
+  return [];
+}
+
+function matriculaMatchesEspecialidadFilter(
+  matricula: MatriculaRow,
+  especialidadId: string,
+): boolean {
+  const targetId = selectId(especialidadId);
+  if (selectId(matricula.ESPECIALIDAD) === targetId) return true;
+  return matriculaHorariosRows(matricula).some(
+    (horario) => selectId(horario.ID_ESPECIALIDAD) === targetId,
+  );
+}
+
 function readMatriculaField(
   row: MatriculaRow | null | undefined,
   upperKey: string,
@@ -278,7 +503,7 @@ function matriculaFormStateFromRow(
     fechaBaja: toDateInputValue(initial?.FECHA_BAJA),
     idProfesor,
     horarioRows: initial
-      ? (initial.HORARIOS_MATRICULAS ?? []).map((horario) => horarioToEditRow(horario, initial))
+      ? matriculaHorariosRows(initial).map((horario) => horarioToEditRow(horario, initial))
       : [],
   };
 }
@@ -506,23 +731,124 @@ function MatriculaHorariosTable({
   matricula,
   especialidadById,
   onRowClick,
+  layout = "nested",
+  canWrite = false,
+  togglingHorarioId = null,
+  onToggleHorarioEstado,
 }: {
   matricula: MatriculaRow;
   especialidadById: Map<string, string>;
   onRowClick?: () => void;
+  layout?: "nested" | "parent-grid";
+  canWrite?: boolean;
+  togglingHorarioId?: string | null;
+  onToggleHorarioEstado?: (horarioId: string, currentEstado: string | null | undefined) => void;
 }) {
   const horarios = matricula.HORARIOS_MATRICULAS ?? [];
 
-  if (horarios.length === 0) {
+  const sortedHorarios = useMemo(
+    () => sortHorariosMatriculasChronologically(horarios),
+    [horarios],
+  );
+
+  if (sortedHorarios.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">Esta matrícula no tiene horarios registrados.</p>
+    );
+  }
+
+  if (layout === "parent-grid") {
+    return (
+      <>
+        {sortedHorarios.map((horario) => (
+          <TableRow
+            key={horario.ID_HORARIO}
+            className={cn(
+              "hidden bg-muted/10 hover:bg-muted/20 sm:table-row",
+              onRowClick && "cursor-pointer",
+            )}
+            onClick={onRowClick}
+          >
+            <TableCell className={MATRICULA_LIST_COL.alert}>
+              <MatriculaAlertSlot active={false} />
+            </TableCell>
+            <TableCell className={MATRICULA_LIST_COL.expand} />
+            <TableCell className={MATRICULA_LIST_COL.alumno} />
+            <TableCell className={MATRICULA_LIST_COL.especialidad}>
+              {resolveHorarioEspecialidad(horario, matricula, especialidadById)}
+            </TableCell>
+            <TableCell className={MATRICULA_LIST_COL.profesor}>
+              <span className="text-muted-foreground">
+                {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
+              </span>
+            </TableCell>
+            <TableCell
+              className={MATRICULA_LIST_COL.estado}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center">
+                <HorarioEstadoControl
+                  horarioId={horario.ID_HORARIO}
+                  estado={resolveHorarioEstado(horario)}
+                  canWrite={canWrite}
+                  loading={togglingHorarioId === horario.ID_HORARIO}
+                  disabled={togglingHorarioId !== null}
+                  onToggle={onToggleHorarioEstado}
+                />
+              </div>
+            </TableCell>
+            <TableCell className={MATRICULA_LIST_COL.fecha}>
+              {horario.SALDO != null ? horario.SALDO : "—"}
+            </TableCell>
+            <TableCell className={MATRICULA_LIST_COL.actions} />
+          </TableRow>
+        ))}
+        <TableRow className="bg-muted/10 hover:bg-muted/20 sm:hidden">
+          <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="border-t px-4 py-3">
+            <div className="space-y-2">
+              {sortedHorarios.map((horario) => (
+                <div
+                  key={horario.ID_HORARIO}
+                  className={cn(
+                    "rounded-md border bg-background p-3 text-sm",
+                    onRowClick && "cursor-pointer hover:bg-muted/50",
+                  )}
+                  onClick={onRowClick}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {resolveHorarioEspecialidad(horario, matricula, especialidadById)}
+                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <HorarioEstadoControl
+                        horarioId={horario.ID_HORARIO}
+                        estado={resolveHorarioEstado(horario)}
+                        canWrite={canWrite}
+                        loading={togglingHorarioId === horario.ID_HORARIO}
+                        disabled={togglingHorarioId !== null}
+                        onToggle={onToggleHorarioEstado}
+                      />
+                      <span className="text-muted-foreground">
+                        {horario.SALDO != null ? horario.SALDO : "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-muted-foreground">
+                    {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </TableCell>
+        </TableRow>
+      </>
     );
   }
 
   return (
     <>
       <div className="space-y-2 sm:hidden">
-        {horarios.map((horario) => (
+        {sortedHorarios.map((horario) => (
           <div
             key={horario.ID_HORARIO}
             className={cn(
@@ -535,9 +861,12 @@ function MatriculaHorariosTable({
               <span className="font-medium">
                 {resolveHorarioEspecialidad(horario, matricula, especialidadById)}
               </span>
-              <span className="text-muted-foreground">
-                {horario.SALDO != null ? horario.SALDO : "—"}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <MatriculaEstadoBadge estado={resolveHorarioEstado(horario)} />
+                <span className="text-muted-foreground">
+                  {horario.SALDO != null ? horario.SALDO : "—"}
+                </span>
+              </div>
             </div>
             <p className="mt-1 text-muted-foreground">
               {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
@@ -551,11 +880,12 @@ function MatriculaHorariosTable({
             <TableRow>
               <TableHead>Especialidad</TableHead>
               <TableHead>Horario</TableHead>
+              <TableHead className="w-[110px] min-w-[110px] text-center" aria-hidden="true" />
               <TableHead>Saldo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {horarios.map((horario) => (
+            {sortedHorarios.map((horario) => (
               <TableRow
                 key={horario.ID_HORARIO}
                 className={cn(onRowClick && "cursor-pointer hover:bg-muted/50")}
@@ -566,6 +896,9 @@ function MatriculaHorariosTable({
                 </TableCell>
                 <TableCell>
                   {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
+                </TableCell>
+                <TableCell className="w-[110px] min-w-[110px] text-center align-middle">
+                  <MatriculaEstadoBadge estado={resolveHorarioEstado(horario)} />
                 </TableCell>
                 <TableCell>{horario.SALDO != null ? horario.SALDO : "—"}</TableCell>
               </TableRow>
@@ -598,8 +931,11 @@ function horarioToEditRow(horario: HorarioMatricula, matricula: MatriculaRow): H
   return {
     clientKey: horario.ID_HORARIO,
     ID_HORARIO: horario.ID_HORARIO,
+    ID_GRUPO: horario.ID_GRUPO ?? null,
+    ID_GRUPO_HORARIO: horario.ID_GRUPO_HORARIO ?? null,
     idEspecialidad: selectId(horario.ID_ESPECIALIDAD ?? matricula.ESPECIALIDAD),
     idProfesor: selectId(horario.ID_PROFESOR),
+    idAula: selectId(horario.ID_AULA),
     dia: horario.DIA ?? "",
     horaInicio: horario.HORA_INICIO?.slice(0, 5) ?? "",
     horaFin: horario.HORA_FIN?.slice(0, 5) ?? "",
@@ -611,8 +947,11 @@ function createEmptyHorarioRow(defaultEspecialidad = ""): HorarioEditRow {
   return {
     clientKey: crypto.randomUUID(),
     ID_HORARIO: null,
+    ID_GRUPO: null,
+    ID_GRUPO_HORARIO: null,
     idEspecialidad: defaultEspecialidad,
     idProfesor: "",
+    idAula: "",
     dia: "",
     horaInicio: "",
     horaFin: "",
@@ -635,17 +974,26 @@ function parseSaldoInput(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatHorarioLimitLabel(current: number, max: number | null | undefined): string {
+  const maxLabel = max != null ? String(max) : "—";
+  return `Horarios asignados: ${current} / ${maxLabel}`;
+}
+
 function editRowsToHorarioInputs(rows: HorarioEditRow[]): HorarioMatriculaRowInput[] {
   return rows.map((row) => {
     const input: HorarioMatriculaRowInput = {
+      ID_ESPECIALIDAD: row.idEspecialidad?.trim() || null,
       ID_PROFESOR: row.idProfesor.trim() || null,
+      ID_AULA: row.idAula?.trim() || null,
       DIA: row.dia.trim() || null,
       HORA_INICIO: toTimeStr(row.horaInicio),
       HORA_FIN: toTimeStr(row.horaFin),
       SALDO: parseSaldoInput(row.saldo),
+      ID_GRUPO: row.ID_GRUPO,
+      ID_GRUPO_HORARIO: row.ID_GRUPO_HORARIO,
     };
     if (row.ID_HORARIO) {
-      input.ID_HORARIO = row.ID_HORARIO;
+      input.ID_HORARIO = row.ID_HORARIO.trim();
     }
     return input;
   });
@@ -670,21 +1018,98 @@ function buildHorariosSyncInput(
   };
 }
 
+/**
+ * Runs `fn_comprobar_solapamientos` for every schedule row that has a
+ * complete day/start/end triplet, aggregating EVERY conflict returned across
+ * ALL rows into a single flat array so the caller can dedupe and report them
+ * as one complete, coherent batch (never per-row).
+ */
+async function collectHorarioConflicts(
+  checkSolapamientos: (params: {
+    idAlumno: string | null;
+    idProfesor: string | null;
+    idAula: string | null;
+    dia: string;
+    horaInicio: string;
+    horaFin: string;
+    idHorarioExcluir?: string | null;
+    idGrupo?: string | null;
+    idGrupoHorario?: string | null;
+  }) => Promise<ScheduleConflict[]>,
+  idAlumno: string,
+  rows: HorarioMatriculaRowInput[],
+): Promise<ScheduleConflict[]> {
+  const conflicts: ScheduleConflict[] = [];
+
+  for (const row of rows) {
+    if (!row.DIA || !row.HORA_INICIO || !row.HORA_FIN) continue;
+
+    const rowConflicts = await checkSolapamientos({
+      idAlumno,
+      idProfesor: row.ID_PROFESOR,
+      idAula: row.ID_AULA?.trim() || null,
+      dia: row.DIA,
+      horaInicio: row.HORA_INICIO,
+      horaFin: row.HORA_FIN,
+      idHorarioExcluir: row.ID_HORARIO ? row.ID_HORARIO.trim() : null,
+      idGrupo: row.ID_GRUPO?.trim() || null,
+      idGrupoHorario: row.ID_GRUPO_HORARIO?.trim() || null,
+    });
+    conflicts.push(...rowConflicts);
+  }
+
+  return conflicts;
+}
+
+function formatScheduleConflict(conflict: ScheduleConflict): string {
+  if (conflict.nivel === "Recurrente") {
+    return `[Clase Fija - ${conflict.tipo}] ${conflict.motivo} (${conflict.dia ?? "—"}, ${conflict.inicio}-${conflict.fin})`;
+  }
+  return `[Evento Puntual - ${conflict.tipo}] Ocupado por: ${conflict.motivo} (Fecha: ${conflict.fecha ?? "—"}, ${conflict.inicio}-${conflict.fin})`;
+}
+
+/**
+ * Renders the FULL, already-aggregated batch of conflicts as a single
+ * scrollable, dismissible toast body: maps every conflict to its message,
+ * deduplicates the whole batch globally (a conflict pair often gets reported
+ * once per side, e.g. teacher + classroom, and would otherwise repeat), and
+ * renders the unique messages as a bounded-height list so a large batch of
+ * conflicts never overflows the screen.
+ */
+function renderScheduleConflictsToast(conflicts: ScheduleConflict[]): ReactNode {
+  const messages = Array.from(new Set(conflicts.map(formatScheduleConflict)));
+  return (
+    <ul className="max-h-[50vh] list-disc space-y-1 overflow-y-auto pl-4 pr-1 text-sm">
+      {messages.map((message) => (
+        <li key={message}>{message}</li>
+      ))}
+    </ul>
+  );
+}
+
 function MatriculaHorariosEditableTable({
   rows,
   onChange,
   onRemoveRow,
   especialidades,
   profesores,
+  aulas,
 }: {
   rows: HorarioEditRow[];
   onChange: (rows: HorarioEditRow[]) => void;
   onRemoveRow: (index: number) => void;
   especialidades: EspecialidadData[];
   profesores: ProfesorData[];
+  aulas: AulaData[];
 }) {
-  const updateRow = (index: number, partial: Partial<HorarioEditRow>) => {
-    onChange(rows.map((row, i) => (i === index ? { ...row, ...partial } : row)));
+  const sortedRows = useMemo(() => sortHorarioEditRowsChronologically(rows), [rows]);
+
+  const resolveSourceIndex = (clientKey: string) =>
+    rows.findIndex((row) => row.clientKey === clientKey);
+
+  const updateRow = (sourceIndex: number, partial: Partial<HorarioEditRow>) => {
+    if (sourceIndex < 0) return;
+    onChange(rows.map((row, i) => (i === sourceIndex ? { ...row, ...partial } : row)));
   };
 
   if (rows.length === 0) {
@@ -733,6 +1158,25 @@ function MatriculaHorariosEditableTable({
     </Select>
   );
 
+  const aulaField = (row: HorarioEditRow, index: number, className?: string) => (
+    <Select
+      value={row.idAula || NONE_VALUE}
+      onValueChange={(v) => updateRow(index, { idAula: v === NONE_VALUE ? "" : v })}
+    >
+      <SelectTrigger className={cn("h-9", className)}>
+        <SelectValue placeholder="Aula" />
+      </SelectTrigger>
+      <SelectContent className="max-h-[240px] overflow-y-auto">
+        <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
+        {aulas.map((aula) => (
+          <SelectItem key={aula.ID_AULA} value={String(aula.ID_AULA)}>
+            {aula.NOMBRE_AULA}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
   const saldoField = (row: HorarioEditRow, index: number, className?: string) => (
     <Input
       type="number"
@@ -748,19 +1192,23 @@ function MatriculaHorariosEditableTable({
   return (
     <>
       <div className="space-y-3 sm:hidden">
-        {rows.map((row, index) => (
+        {sortedRows.map((row) => {
+          const sourceIndex = resolveSourceIndex(row.clientKey);
+          if (sourceIndex < 0) return null;
+
+          return (
           <div key={row.clientKey} className="space-y-3 rounded-md border bg-background p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 space-y-1">
                 <Label className="text-xs text-muted-foreground">Especialidad</Label>
-                {especialidadField(row, index, "w-full")}
+                {especialidadField(row, sourceIndex, "w-full")}
               </div>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 className="mt-5 h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => onRemoveRow(index)}
+                onClick={() => onRemoveRow(sourceIndex)}
                 aria-label="Eliminar horario"
               >
                 <Trash2 className="h-4 w-4" />
@@ -771,7 +1219,7 @@ function MatriculaHorariosEditableTable({
                 <Label className="text-xs text-muted-foreground">Día</Label>
                 <Select
                   value={row.dia || NONE_VALUE}
-                  onValueChange={(v) => updateRow(index, { dia: v === NONE_VALUE ? "" : v })}
+                  onValueChange={(v) => updateRow(sourceIndex, { dia: v === NONE_VALUE ? "" : v })}
                 >
                   <SelectTrigger className="h-9 w-full">
                     <SelectValue placeholder="Día" />
@@ -791,7 +1239,7 @@ function MatriculaHorariosEditableTable({
                 <Input
                   type="time"
                   value={row.horaInicio}
-                  onChange={(e) => updateRow(index, { horaInicio: e.target.value })}
+                  onChange={(e) => updateRow(sourceIndex, { horaInicio: e.target.value })}
                   className="h-9 w-full"
                   aria-label="Hora inicio"
                 />
@@ -801,7 +1249,7 @@ function MatriculaHorariosEditableTable({
                 <Input
                   type="time"
                   value={row.horaFin}
-                  onChange={(e) => updateRow(index, { horaFin: e.target.value })}
+                  onChange={(e) => updateRow(sourceIndex, { horaFin: e.target.value })}
                   className="h-9 w-full"
                   aria-label="Hora fin"
                 />
@@ -810,15 +1258,20 @@ function MatriculaHorariosEditableTable({
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Profesor</Label>
-                {profesorField(row, index, "w-full")}
+                {profesorField(row, sourceIndex, "w-full")}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Saldo</Label>
-                {saldoField(row, index, "w-full")}
+                <Label className="text-xs text-muted-foreground">Aula</Label>
+                {aulaField(row, sourceIndex, "w-full")}
               </div>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Saldo</Label>
+              {saldoField(row, sourceIndex, "w-full")}
+            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="hidden overflow-x-auto sm:block">
         <Table>
@@ -827,21 +1280,28 @@ function MatriculaHorariosEditableTable({
               <TableHead>Especialidad</TableHead>
               <TableHead>Horario</TableHead>
               <TableHead>Profesor</TableHead>
+              <TableHead>Aula</TableHead>
               <TableHead className="w-[100px]">Saldo</TableHead>
               <TableHead className="w-[52px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row, index) => (
+            {sortedRows.map((row) => {
+              const sourceIndex = resolveSourceIndex(row.clientKey);
+              if (sourceIndex < 0) return null;
+
+              return (
               <TableRow key={row.clientKey}>
                 <TableCell className="align-top">
-                  {especialidadField(row, index, "w-full min-w-[140px]")}
+                  {especialidadField(row, sourceIndex, "w-full min-w-[140px]")}
                 </TableCell>
                 <TableCell className="align-top">
                   <div className="flex w-[140px] flex-col gap-2">
                     <Select
                       value={row.dia || NONE_VALUE}
-                      onValueChange={(v) => updateRow(index, { dia: v === NONE_VALUE ? "" : v })}
+                      onValueChange={(v) =>
+                        updateRow(sourceIndex, { dia: v === NONE_VALUE ? "" : v })
+                      }
                     >
                       <SelectTrigger className="h-9 w-full">
                         <SelectValue placeholder="Día" />
@@ -858,37 +1318,41 @@ function MatriculaHorariosEditableTable({
                     <Input
                       type="time"
                       value={row.horaInicio}
-                      onChange={(e) => updateRow(index, { horaInicio: e.target.value })}
+                      onChange={(e) => updateRow(sourceIndex, { horaInicio: e.target.value })}
                       className="h-9 w-full"
                       aria-label="Hora inicio"
                     />
                     <Input
                       type="time"
                       value={row.horaFin}
-                      onChange={(e) => updateRow(index, { horaFin: e.target.value })}
+                      onChange={(e) => updateRow(sourceIndex, { horaFin: e.target.value })}
                       className="h-9 w-full"
                       aria-label="Hora fin"
                     />
                   </div>
                 </TableCell>
                 <TableCell className="align-top">
-                  {profesorField(row, index, "w-full min-w-[120px]")}
+                  {profesorField(row, sourceIndex, "w-full min-w-[120px]")}
                 </TableCell>
-                <TableCell className="align-top">{saldoField(row, index, "w-full")}</TableCell>
+                <TableCell className="align-top">
+                  {aulaField(row, sourceIndex, "w-full min-w-[120px]")}
+                </TableCell>
+                <TableCell className="align-top">{saldoField(row, sourceIndex, "w-full")}</TableCell>
                 <TableCell className="align-top">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemoveRow(index)}
+                    onClick={() => onRemoveRow(sourceIndex)}
                     aria-label="Eliminar horario"
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -903,6 +1367,8 @@ function MatriculaHorariosEditablePanel({
   onRemoveRow,
   especialidades,
   profesores,
+  aulas,
+  maxHorarios,
 }: {
   rows: HorarioEditRow[];
   onChange: (rows: HorarioEditRow[]) => void;
@@ -910,23 +1376,49 @@ function MatriculaHorariosEditablePanel({
   onRemoveRow: (index: number) => void;
   especialidades: EspecialidadData[];
   profesores: ProfesorData[];
+  aulas: AulaData[];
+  maxHorarios?: number | null;
 }) {
+  const [isSchedulesOpen, setIsSchedulesOpen] = useState(true);
+
   return (
     <div className="border-t pt-4">
-      <h4 className="mb-3 text-sm font-semibold">Horarios de matrícula</h4>
-      <div className="rounded-md border bg-muted/10 p-2">
-        <MatriculaHorariosEditableTable
-          rows={rows}
-          onChange={onChange}
-          onRemoveRow={onRemoveRow}
-          especialidades={especialidades}
-          profesores={profesores}
-        />
+      <div className="mb-3 flex items-center gap-1">
+        <p className="text-xs text-muted-foreground">
+          {formatHorarioLimitLabel(rows.length, maxHorarios)}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 text-muted-foreground"
+          aria-expanded={isSchedulesOpen}
+          aria-label={isSchedulesOpen ? "Ocultar horarios" : "Ver horarios"}
+          onClick={() => setIsSchedulesOpen((open) => !open)}
+        >
+          <ChevronDown
+            className={cn("h-4 w-4 transition-transform", isSchedulesOpen && "rotate-180")}
+          />
+        </Button>
       </div>
-      <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onAddRow}>
-        <Plus className="mr-2 h-4 w-4" />
-        Añadir Horario
-      </Button>
+      {isSchedulesOpen && (
+        <>
+          <div className="rounded-md border bg-muted/10 p-2">
+            <MatriculaHorariosEditableTable
+              rows={rows}
+              onChange={onChange}
+              onRemoveRow={onRemoveRow}
+              especialidades={especialidades}
+              profesores={profesores}
+              aulas={aulas}
+            />
+          </div>
+          <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onAddRow}>
+            <Plus className="mr-2 h-4 w-4" />
+            Añadir Horario
+          </Button>
+        </>
+      )}
     </div>
   );
 }
@@ -934,7 +1426,7 @@ function MatriculaHorariosEditablePanel({
 function MatriculasPage() {
   const { matriculaId } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { rol } = useActiveTenant();
+  const { rol, tenantId } = useActiveTenant();
   const canWrite = canWriteUi(rol, "matriculas:write");
   const {
     centrosOrdenados,
@@ -943,7 +1435,7 @@ function MatriculasPage() {
     setSelectedCenterId,
     filterCenterId,
   } = useAdminCentroFilter();
-  const { list, create, update, syncHorarios, remove, invalidateList } =
+  const { list, create, update, syncHorarios, remove, invalidateList, checkSolapamientos } =
     useMatriculas(filterCenterId);
   const { list: tarifasList } = useTarifas();
 
@@ -954,11 +1446,19 @@ function MatriculasPage() {
 
   const [query, setQuery] = useState("");
   const [filtroCurso, setFiltroCurso] = useState("");
+  const [filtroEspecialidad, setFiltroEspecialidad] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
+  const [filterIncomplete, setFilterIncomplete] = useState(false);
   const [editing, setEditing] = useState<MatriculaRow | null>(null);
   const [viewing, setViewing] = useState<MatriculaRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<any | null>(null);
+  const [statusConfirming, setStatusConfirming] = useState<MatriculaRow | null>(null);
+  const [horarioStatusConfirming, setHorarioStatusConfirming] = useState<{
+    horarioId: string;
+    currentEstado: string | null | undefined;
+  } | null>(null);
+  const [togglingHorarioId, setTogglingHorarioId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
   const matriculas = useMemo(() => list.data?.rows ?? [], [list.data?.rows]);
@@ -988,13 +1488,39 @@ function MatriculasPage() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
   }, [matriculas]);
 
+  const especialidadFilterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of matriculas) {
+      if (m.ESPECIALIDAD) {
+        map.set(
+          selectId(m.ESPECIALIDAD),
+          m.ESPECIALIDADES?.ESPECIALIDAD ?? selectId(m.ESPECIALIDAD),
+        );
+      }
+      for (const horario of matriculaHorariosRows(m)) {
+        const slotId = selectId(horario.ID_ESPECIALIDAD);
+        if (!slotId) continue;
+        map.set(slotId, especialidadById.get(slotId) ?? slotId);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
+  }, [matriculas, especialidadById]);
+
   const filtered = useMemo(() => {
     let rows = matriculas;
     if (filtroCurso) {
       rows = rows.filter((m) => m.ID_CURSO === filtroCurso);
     }
+    if (filtroEspecialidad) {
+      rows = rows.filter((m) => matriculaMatchesEspecialidadFilter(m, filtroEspecialidad));
+    }
     if (filtroEstado) {
       rows = rows.filter((m) => normalizeMatriculaEstado(m.ESTADO) === filtroEstado);
+    }
+    if (filterIncomplete) {
+      rows = rows.filter((m) => m.ALERTA_SUBPROGRAMADO === true);
     }
     if (!query.trim()) return rows;
     const q = query.toLowerCase();
@@ -1006,7 +1532,71 @@ function MatriculasPage() {
         m.ESTADO?.toLowerCase().includes(q) ||
         m.ID_MATRICULA?.toLowerCase().includes(q),
     );
-  }, [matriculas, query, filtroCurso, filtroEstado]);
+  }, [matriculas, query, filtroCurso, filtroEspecialidad, filtroEstado, filterIncomplete]);
+
+  const hasActiveFilters =
+    Boolean(query.trim()) ||
+    Boolean(filtroCurso) ||
+    Boolean(filtroEspecialidad) ||
+    Boolean(filtroEstado) ||
+    filterIncomplete;
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusConfirming) return;
+    const matricula = statusConfirming;
+    const isDeactivating = isMatriculaActiva(matricula.ESTADO);
+    const nextEstado = toggleMatriculaEstado(matricula.ESTADO);
+    try {
+      await update.mutateAsync({
+        id: matricula.ID_MATRICULA,
+        patch: { ESTADO: nextEstado },
+      });
+      invalidateList();
+      toast.success(
+        isDeactivating
+          ? "Matrícula desactivada correctamente."
+          : "Matrícula activada correctamente.",
+      );
+      setStatusConfirming(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al cambiar el estado.");
+    }
+  };
+
+  const handleRequestHorarioEstadoToggle = (
+    horarioId: string,
+    currentEstado: string | null | undefined,
+  ) => {
+    if (togglingHorarioId) return;
+    setHorarioStatusConfirming({ horarioId, currentEstado });
+  };
+
+  const handleConfirmHorarioEstadoChange = async () => {
+    if (!horarioStatusConfirming || togglingHorarioId) return;
+    const { horarioId, currentEstado } = horarioStatusConfirming;
+    const nextEstado = toggleMatriculaEstado(currentEstado);
+    setTogglingHorarioId(horarioId);
+    try {
+      let query = supabase
+        .from("HORARIOS_MATRICULAS")
+        .update({ ESTADO: nextEstado })
+        .eq("ID_HORARIO", horarioId);
+      if (tenantId) query = query.eq("ID_CLIENTE", tenantId);
+      const { error } = await query;
+      if (error) throw error;
+      invalidateList();
+      toast.success(
+        nextEstado === "Activo"
+          ? "Horario activado correctamente."
+          : "Horario desactivado correctamente.",
+      );
+      setHorarioStatusConfirming(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al actualizar el estado del horario.");
+    } finally {
+      setTogglingHorarioId(null);
+    }
+  };
 
   const handleCloseViewing = () => {
     setViewing(null);
@@ -1035,8 +1625,8 @@ function MatriculasPage() {
       />
 
       <Card className="p-4">
-        <div className="mb-4 grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="relative sm:col-span-2 lg:col-span-1">
+        <div className="mb-4 grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="relative sm:col-span-2 lg:col-span-2 xl:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por alumno, especialidad, profesor o estado..."
@@ -1070,6 +1660,22 @@ function MatriculasPage() {
             </SelectContent>
           </Select>
           <Select
+            value={filtroEspecialidad || "__all__"}
+            onValueChange={(v) => setFiltroEspecialidad(v === "__all__" ? "" : v)}
+          >
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="Especialidad" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Especialidad</SelectItem>
+              {especialidadFilterOptions.map((especialidad) => (
+                <SelectItem key={especialidad.id} value={especialidad.id}>
+                  {especialidad.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
             value={filtroEstado || "__all__"}
             onValueChange={(v) => setFiltroEstado(v === "__all__" ? "" : v)}
           >
@@ -1085,6 +1691,20 @@ function MatriculasPage() {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex h-10 items-center gap-2.5 rounded-md border border-input bg-background px-3 shadow-sm">
+            <Switch
+              id="matriculas-filter-incomplete"
+              checked={filterIncomplete}
+              onCheckedChange={setFilterIncomplete}
+            />
+            <Label
+              htmlFor="matriculas-filter-incomplete"
+              className="flex cursor-pointer select-none items-center gap-1.5 text-sm font-medium leading-none text-foreground"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+              <span className="truncate">Ver horarios incompletos</span>
+            </Label>
+          </div>
         </div>
 
         {list.isError && (
@@ -1094,39 +1714,40 @@ function MatriculasPage() {
         )}
 
         <div className="w-full overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10" />
-                <TableHead>Alumno</TableHead>
-                <TableHead className="hidden sm:table-cell">Especialidad</TableHead>
-                <TableHead className="hidden md:table-cell">Profesor Asignado</TableHead>
-                <TableHead className="w-[110px] min-w-[110px] text-center">Estado</TableHead>
-                <TableHead className="hidden sm:table-cell">Fecha Alta</TableHead>
-                <TableHead className="w-12" />
+                <TableHead className={MATRICULA_LIST_HEAD.alert} aria-hidden="true" />
+                <TableHead className={MATRICULA_LIST_HEAD.expand} />
+                <TableHead className={MATRICULA_LIST_HEAD.alumno}>Alumno</TableHead>
+                <TableHead className={MATRICULA_LIST_HEAD.especialidad}>Especialidad</TableHead>
+                <TableHead className={MATRICULA_LIST_HEAD.profesor}>Profesor Asignado</TableHead>
+                <TableHead className={MATRICULA_LIST_HEAD.estado}>Estado</TableHead>
+                <TableHead className={MATRICULA_LIST_HEAD.fecha}>Fecha Alta</TableHead>
+                <TableHead className={MATRICULA_LIST_HEAD.actions} />
               </TableRow>
             </TableHeader>
             <TableBody>
               {list.isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={MATRICULA_TABLE_COL_COUNT}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                    {query
-                      ? "Sin resultados para tu búsqueda."
+                  <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="py-10 text-center text-muted-foreground">
+                    {hasActiveFilters
+                      ? "Sin resultados para los filtros aplicados."
                       : "No hay ninguna matrícula registrada."}
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((m) => {
                   const isExpanded = expandedIds.has(m.ID_MATRICULA);
-                  const horarios = m.HORARIOS_MATRICULAS ?? [];
+                  const horarios = matriculaHorariosRows(m);
 
                   return (
                     <Fragment key={m.ID_MATRICULA}>
@@ -1135,7 +1756,13 @@ function MatriculasPage() {
                         aria-expanded={isExpanded}
                         onClick={() => toggleExpanded(m.ID_MATRICULA)}
                       >
-                        <TableCell className="w-10 px-2">
+                        <TableCell
+                          className={MATRICULA_LIST_COL.alert}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MatriculaAlertSlot active={m.ALERTA_SUBPROGRAMADO === true} />
+                        </TableCell>
+                        <TableCell className={MATRICULA_LIST_COL.expand}>
                           <ChevronDown
                             className={cn(
                               "h-4 w-4 text-muted-foreground transition-transform",
@@ -1144,7 +1771,10 @@ function MatriculasPage() {
                             aria-hidden
                           />
                         </TableCell>
-                        <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                        <TableCell
+                          className={MATRICULA_LIST_COL.alumno}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {m.ALUMNOS?.NOMBRE_ALUMNO ? (
                             <EntityLink type="alumno" id={m.ID_ALUMNO}>
                               {m.ALUMNOS.NOMBRE_ALUMNO}
@@ -1155,14 +1785,17 @@ function MatriculasPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell">
+                        <TableCell className={MATRICULA_LIST_COL.especialidad}>
                           {m.ESPECIALIDADES?.ESPECIALIDAD ?? (
                             <span className="text-muted-foreground text-xs font-mono">
                               {m.ESPECIALIDAD || "—"}
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="hidden text-sm md:table-cell" onClick={(e) => e.stopPropagation()}>
+                        <TableCell
+                          className={MATRICULA_LIST_COL.profesor}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           {m.PROFESOR?.NOMBRE_PROFESOR ? (
                             <EntityLink type="profesor" id={m.ID_PROFESOR}>
                               {m.PROFESOR.NOMBRE_PROFESOR}
@@ -1172,39 +1805,30 @@ function MatriculasPage() {
                           )}
                         </TableCell>
                         <TableCell
-                          className="w-[110px] min-w-[110px] text-center align-middle"
+                          className={MATRICULA_LIST_COL.estado}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <button
-                            type="button"
-                            className="cursor-pointer focus:outline-none"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm("¿Seguro que desea eliminar...?")) {
-                                const newEstado =
-                                  normalizeMatriculaEstado(m.ESTADO) === "Activo"
-                                    ? "Inactivo"
-                                    : "Activo";
-                                update
-                                  .mutateAsync({ id: m.ID_MATRICULA, patch: { ESTADO: newEstado } })
-                                  .then(() => invalidateList())
-                                  .catch((err) =>
-                                    toast.error(
-                                      err instanceof Error ? err.message : "Error al actualizar estado",
-                                    ),
-                                  );
-                              }
-                            }}
-                          >
-                            <MatriculaEstadoBadge estado={m.ESTADO} />
-                          </button>
+                          <div className="flex justify-center">
+                            {canWrite ? (
+                              <MatriculaEstadoToggle
+                                estado={m.ESTADO}
+                                disabled={update.isPending}
+                                onClick={() => setStatusConfirming(m)}
+                              />
+                            ) : (
+                              <MatriculaEstadoBadge estado={m.ESTADO} />
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
+                        <TableCell className={MATRICULA_LIST_COL.fecha}>
                           <div className="flex items-center gap-1">
                             <Calendar className="h-3 w-3" /> {m.FECHA_ALTA ?? "—"}
                           </div>
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell
+                          className={MATRICULA_LIST_COL.actions}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -1236,25 +1860,24 @@ function MatriculasPage() {
                           </DropdownMenu>
                         </TableCell>
                       </TableRow>
-                      {isExpanded && (
-                        <TableRow className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={7} className="p-0">
-                            {horarios.length === 0 ? (
-                              <p className="px-6 py-4 text-sm text-muted-foreground">
-                                Esta matrícula no tiene horarios registrados.
-                              </p>
-                            ) : (
-                              <div className="border-t bg-muted/10 px-4 py-3">
-                                <MatriculaHorariosTable
-                                  matricula={m}
-                                  especialidadById={especialidadById}
-                                  onRowClick={() => setViewing(m)}
-                                />
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      )}
+                      {isExpanded &&
+                        (horarios.length === 0 ? (
+                          <TableRow className="bg-muted/20 hover:bg-muted/20">
+                            <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="px-6 py-4 text-sm text-muted-foreground">
+                              Esta matrícula no tiene horarios registrados.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          <MatriculaHorariosTable
+                            layout="parent-grid"
+                            matricula={m}
+                            especialidadById={especialidadById}
+                            onRowClick={() => setViewing(m)}
+                            canWrite={canWrite}
+                            togglingHorarioId={togglingHorarioId}
+                            onToggleHorarioEstado={handleRequestHorarioEstadoToggle}
+                          />
+                        ))}
                     </Fragment>
                   );
                 })
@@ -1290,6 +1913,23 @@ function MatriculasPage() {
           onSubmit={async (values) => {
             try {
               const { horariosSync, ...patch } = values;
+
+              if (horariosSync && horariosSync.rows.length > 0) {
+                const conflicts = await collectHorarioConflicts(
+                  checkSolapamientos,
+                  values.ID_ALUMNO,
+                  horariosSync.rows,
+                );
+                if (conflicts.length > 0) {
+                  toast.error("No se puede guardar: horario en conflicto", {
+                    description: renderScheduleConflictsToast(conflicts),
+                    duration: Infinity,
+                    closeButton: true,
+                  });
+                  return;
+                }
+              }
+
               const created = await create.mutateAsync(patch);
               const matriculaId = created?.ID_MATRICULA;
               if (!matriculaId) {
@@ -1324,6 +1964,23 @@ function MatriculasPage() {
           onSubmit={async (values) => {
             try {
               const { horariosSync, ...patch } = values;
+
+              if (horariosSync && horariosSync.rows.length > 0) {
+                const conflicts = await collectHorarioConflicts(
+                  checkSolapamientos,
+                  values.ID_ALUMNO,
+                  horariosSync.rows,
+                );
+                if (conflicts.length > 0) {
+                  toast.error("No se puede guardar: horario en conflicto", {
+                    description: renderScheduleConflictsToast(conflicts),
+                    duration: Infinity,
+                    closeButton: true,
+                  });
+                  return;
+                }
+              }
+
               await update.mutateAsync({ id: editing.ID_MATRICULA, patch });
               if (horariosSync) {
                 await syncHorarios.mutateAsync(horariosSync);
@@ -1337,6 +1994,94 @@ function MatriculasPage() {
           }}
         />
       ) : null}
+
+      <AlertDialog open={!!statusConfirming} onOpenChange={(o) => !o && setStatusConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {statusConfirming && isMatriculaActiva(statusConfirming.ESTADO)
+                ? "Desactivar matrícula"
+                : "Activar matrícula"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {statusConfirming && isMatriculaActiva(statusConfirming.ESTADO) ? (
+                <>
+                  ¿Seguro que quieres desactivar la matrícula de{" "}
+                  <b>{matriculaStatusLabel(statusConfirming)}</b>? La matrícula pasará a estado
+                  inactivo.
+                </>
+              ) : (
+                <>
+                  ¿Estás seguro de que quieres activar la matrícula de{" "}
+                  <b>{statusConfirming ? matriculaStatusLabel(statusConfirming) : ""}</b>? La
+                  matrícula volverá a estar activa.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={update.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmStatusChange();
+              }}
+              disabled={update.isPending}
+            >
+              {update.isPending
+                ? "Guardando..."
+                : statusConfirming && isMatriculaActiva(statusConfirming.ESTADO)
+                  ? "Desactivar"
+                  : "Activar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!horarioStatusConfirming}
+        onOpenChange={(o) => !o && !togglingHorarioId && setHorarioStatusConfirming(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {horarioStatusConfirming && isMatriculaActiva(horarioStatusConfirming.currentEstado)
+                ? "¿Desactivar este horario?"
+                : "¿Activar este horario?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {horarioStatusConfirming && isMatriculaActiva(horarioStatusConfirming.currentEstado) ? (
+                <>
+                  Atención: Esto dará de baja al alumno del grupo asociado (si lo hay) y eliminará de
+                  forma irreversible todas sus sesiones programadas en el calendario desde el día de
+                  hoy.
+                </>
+              ) : (
+                <>
+                  Esto dará de alta automáticamente al alumno en el grupo y regenerará todas sus
+                  sesiones semanales en el calendario para el resto del curso escolar.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!togglingHorarioId}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmHorarioEstadoChange();
+              }}
+              disabled={!!togglingHorarioId}
+            >
+              {togglingHorarioId
+                ? "Guardando..."
+                : horarioStatusConfirming && isMatriculaActiva(horarioStatusConfirming.currentEstado)
+                  ? "Desactivar"
+                  : "Activar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Modal */}
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>
@@ -1400,12 +2145,14 @@ function MatriculaFormDialog({
   const { list: alumnosList } = useAlumnos();
   const { list: especialidadesList } = useEspecialidades();
   const { list: profesoresList } = useProfesores();
+  const { list: aulasList } = useAulas();
   const { list: tarifasList } = useTarifas();
   const { list: centrosList } = useCentros();
 
   const alumnos = asArray<Alumno>(alumnosList.data);
   const especialidades = asArray<EspecialidadData>(especialidadesList.data);
   const profesores = resolveProfesoresList(profesoresList.data);
+  const aulas = asArray<AulaData>(aulasList.data);
   const tarifas = asArray<TarifaData>(tarifasList.data);
   const centros = asArray<CentroData>(centrosList.data);
 
@@ -1413,6 +2160,7 @@ function MatriculaFormDialog({
     (alumnosList.isLoading && !alumnosList.data) ||
     (especialidadesList.isLoading && !especialidadesList.data) ||
     (profesoresList.isLoading && !profesoresList.data) ||
+    (aulasList.isLoading && !aulasList.data) ||
     (tarifasList.isLoading && !tarifasList.data);
 
   const centrosLoading = centrosList.isLoading && !centrosList.data;
@@ -1434,6 +2182,10 @@ function MatriculaFormDialog({
   const [deletedHorarioIds, setDeletedHorarioIds] = useState<string[]>([]);
 
   const cursoOptions = useMemo(() => cursosForCentro(centros, idCentro), [centros, idCentro]);
+  const maxHorarios = useMemo(() => {
+    if (!idTarifa) return null;
+    return tarifas.find((tarifa) => tarifa.ID_TARIFA === idTarifa)?.SESIONES_SEMANALES ?? null;
+  }, [idTarifa, tarifas]);
 
   useEffect(() => {
     if (!open) {
@@ -1726,6 +2478,8 @@ function MatriculaFormDialog({
                 onRemoveRow={removeHorarioRow}
                 especialidades={especialidades}
                 profesores={profesores}
+                aulas={aulas}
+                maxHorarios={maxHorarios}
               />
             </>
           )}

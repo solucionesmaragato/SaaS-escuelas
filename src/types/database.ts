@@ -167,6 +167,7 @@ export interface Matricula {
   FECHA_ALTA: ISODate | null;
   FECHA_BAJA: ISODate | null;
   ID_PROFESOR: UUID | null;
+  ALERTA_SUBPROGRAMADO?: boolean | null;
 }
 
 export interface Tarifa {

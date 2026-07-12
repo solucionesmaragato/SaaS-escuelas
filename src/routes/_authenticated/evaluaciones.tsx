@@ -428,12 +428,17 @@ function SearchableEntitySelect({
             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-          <Command shouldFilter>
+        <PopoverContent
+          portalled={false}
+          className="w-[var(--radix-popover-trigger-width)] p-0"
+          align="start"
+          side="bottom"
+        >
+          <Command shouldFilter className="flex max-h-[min(280px,50vh)] flex-col overflow-hidden">
             <CommandInput placeholder="Buscar..." />
-            <CommandList className="max-h-[300px] overflow-y-auto">
+            <CommandList className="min-h-0 max-h-none flex-1 overflow-y-auto overscroll-contain">
               <CommandEmpty>Sin resultados.</CommandEmpty>
-              <CommandGroup className="max-h-[300px] overflow-y-auto">
+              <CommandGroup>
                 {options.map((opt) => (
                   <CommandItem
                     key={opt.id}
@@ -1624,8 +1629,8 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
@@ -1706,8 +1711,9 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
 
             props.onSubmit(payloads);
           }}
-          className="space-y-5"
+          className="flex min-h-0 flex-1 flex-col"
         >
+          <div className="shrink-0 space-y-5">
           <SearchableEntitySelect
             label="Alumno"
             placeholder="Buscar alumno..."
@@ -1755,7 +1761,9 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
               </Select>
             </div>
           </div>
+          </div>
 
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain py-5">
           {canFetchSpecialties && especialidadesLoading && (
             <div className="space-y-2">
               <Skeleton className="h-28 w-full" />
@@ -1856,8 +1864,9 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
               );
             })}
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
@@ -2118,7 +2127,7 @@ function RubricasTab() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         {canMutate && (
           <Button onClick={() => setRubricaCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nueva rúbrica
+            <Plus className="mr-2 h-4 w-4" /> Nuevo criterio
           </Button>
         )}
       </div>

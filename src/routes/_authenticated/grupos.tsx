@@ -17,6 +17,7 @@ import {
   isGrupoEstadoActivo,
   nextGrupoEstadoToggleValue,
   type GrupoData,
+  type AlumnoLookup,
 } from "@/hooks/useGrupos";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
@@ -262,6 +263,35 @@ function nullIfEmptySelectId(value: string): string | null {
   return value === "" ? null : value.trim() || null;
 }
 
+function isMatriculaEnrollmentActiva(estado: string | null | undefined): boolean {
+  return estado?.trim() === "Activo";
+}
+
+/** Students with no matrículas are eligible; otherwise at least one must be Activo. */
+function passesInactiveEnrollmentRule(matriculas: AlumnoLookup["MATRICULAS"]): boolean {
+  const mats = matriculas ?? [];
+  if (mats.length === 0) return true;
+  return mats.some((m) => isMatriculaEnrollmentActiva(m.ESTADO));
+}
+
+/** Block if the student is already in another group sharing the same tariff and specialty. */
+function isAlumnoInOtherGroupWithSameTarifaAndEspecialidad(
+  alumnoId: string,
+  currentGrupoId: string | undefined,
+  currentTarifaId: string | null | undefined,
+  currentEspecialidadId: string | null | undefined,
+  grupos: GrupoData[],
+): boolean {
+  if (!currentTarifaId || !currentEspecialidadId) return false;
+  return grupos.some(
+    (g) =>
+      g.ID_GRUPO !== currentGrupoId &&
+      g.ID_TARIFA === currentTarifaId &&
+      g.ID_ESPECIALIDAD === currentEspecialidadId &&
+      g.ID_ALUMNOS.includes(alumnoId),
+  );
+}
+
 function toDbTime(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -272,6 +302,19 @@ function toDbTime(value: string): string | null {
 
 function toTimeInputValue(hora: string | null | undefined): string {
   return hora?.slice(0, 5) ?? "";
+}
+
+type FlattenedGrupoRow = GrupoData & {
+  currentHorario: GrupoData["GRUPOS_HORARIOS"][number];
+};
+
+function sortFlattenedRows(rows: FlattenedGrupoRow[]): FlattenedGrupoRow[] {
+  return [...rows].sort((a, b) => {
+    const dayDiff =
+      getDaySortKey(a.currentHorario.DIA_SEMANA) - getDaySortKey(b.currentHorario.DIA_SEMANA);
+    if (dayDiff !== 0) return dayDiff;
+    return (a.currentHorario.HORA_INICIO ?? "").localeCompare(b.currentHorario.HORA_INICIO ?? "");
+  });
 }
 
 function sortCursosEscolares(cursos: CursoEscolarData[]): CursoEscolarData[] {
@@ -568,18 +611,54 @@ function GruposPage() {
   );
 
   const groupedByDay = useMemo(() => {
-    const sorted = sortGrupos(activeFiltered);
-    const map = new Map<string, GrupoData[]>();
-    for (const g of sorted) {
-      const key = g.DIA_SEMANA?.trim() || "Sin día asignado";
+    const flattened: FlattenedGrupoRow[] = activeFiltered.flatMap((g) =>
+      (g.GRUPOS_HORARIOS.length > 0 ? g.GRUPOS_HORARIOS : [null]).map((horario) => ({
+        ...g,
+        currentHorario:
+          horario ??
+          ({
+            ID_GRUPO_HORARIO: g.ID_GRUPO,
+            DIA_SEMANA: g.DIA_SEMANA,
+            HORA_INICIO: g.HORA_INICIO,
+            HORA_FIN: g.HORA_FIN,
+            ID_PROFESOR: null,
+            ID_AULA: null,
+            PROFESOR: null,
+            AULA: null,
+          } as GrupoData["GRUPOS_HORARIOS"][number]),
+      })),
+    );
+    const sorted = sortFlattenedRows(flattened);
+    const map = new Map<string, FlattenedGrupoRow[]>();
+    for (const row of sorted) {
+      const key = row.currentHorario.DIA_SEMANA?.trim() || "Sin día asignado";
       const list = map.get(key) ?? [];
-      list.push(g);
+      list.push(row);
       map.set(key, list);
     }
     return Array.from(map.entries()).sort(([a], [b]) => getDaySortKey(a) - getDaySortKey(b));
   }, [activeFiltered]);
 
-  const inactiveGruposSorted = useMemo(() => sortGrupos(inactiveFiltered), [inactiveFiltered]);
+  const inactiveGruposSorted = useMemo(() => {
+    const flattened: FlattenedGrupoRow[] = inactiveFiltered.flatMap((g) =>
+      (g.GRUPOS_HORARIOS.length > 0 ? g.GRUPOS_HORARIOS : [null]).map((horario) => ({
+        ...g,
+        currentHorario:
+          horario ??
+          ({
+            ID_GRUPO_HORARIO: g.ID_GRUPO,
+            DIA_SEMANA: g.DIA_SEMANA,
+            HORA_INICIO: g.HORA_INICIO,
+            HORA_FIN: g.HORA_FIN,
+            ID_PROFESOR: null,
+            ID_AULA: null,
+            PROFESOR: null,
+            AULA: null,
+          } as GrupoData["GRUPOS_HORARIOS"][number]),
+      })),
+    );
+    return sortFlattenedRows(flattened);
+  }, [inactiveFiltered]);
 
   const enrolledAlumnos = useMemo(() => {
     return localAlumnoIds
@@ -593,12 +672,30 @@ function GruposPage() {
 
   const availableAlumnos = useMemo(() => {
     const enrolled = new Set(localAlumnoIds);
+    const currentGrupoId = managing?.ID_GRUPO;
+    const currentTarifaId = managing?.ID_TARIFA ?? null;
+    const currentEspecialidadId = managing?.ID_ESPECIALIDAD ?? null;
 
     let pool = diccionarioAlumnos.filter((a) => {
       const notEnrolled = !enrolled.has(a.ID_ALUMNO);
       const hasCorrectTarifa = a.MATRICULAS?.some((m) => m.ID_TARIFA === managing?.ID_TARIFA);
       const matchesCentro = a.ID_CENTRO === managing?.ID_CENTRO;
-      return notEnrolled && (!managing?.ID_TARIFA || hasCorrectTarifa) && matchesCentro;
+      const passesInactiveRule = passesInactiveEnrollmentRule(a.MATRICULAS);
+      const blockedByTariffExclusivity = isAlumnoInOtherGroupWithSameTarifaAndEspecialidad(
+        a.ID_ALUMNO,
+        currentGrupoId,
+        currentTarifaId,
+        currentEspecialidadId,
+        grupos,
+      );
+
+      return (
+        notEnrolled &&
+        (!managing?.ID_TARIFA || hasCorrectTarifa) &&
+        matchesCentro &&
+        passesInactiveRule &&
+        !blockedByTariffExclusivity
+      );
     });
 
     if (addSearch.trim()) {
@@ -607,7 +704,16 @@ function GruposPage() {
     }
 
     return pool;
-  }, [diccionarioAlumnos, localAlumnoIds, addSearch, managing?.ID_TARIFA, managing?.ID_CENTRO]);
+  }, [
+    diccionarioAlumnos,
+    localAlumnoIds,
+    addSearch,
+    managing?.ID_TARIFA,
+    managing?.ID_ESPECIALIDAD,
+    managing?.ID_CENTRO,
+    managing?.ID_GRUPO,
+    grupos,
+  ]);
 
   const createAlumnosFiltered = useMemo(() => {
     if (!createForm.ID_CENTRO) return [];
@@ -875,138 +981,106 @@ function GruposPage() {
     }
   };
 
-  const renderGroupRow = (g: GrupoData) => (
-    <TableRow
-      key={g.ID_GRUPO}
-      className={canViewStudents ? "cursor-pointer hover:bg-muted/50 transition-colors" : undefined}
-      onClick={canViewStudents ? () => setManaging(g) : undefined}
-    >
-      {isMaster && (
-        <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-[100px]">
-          {g.ID_CLIENTE}
+  const renderGroupRow = (item: FlattenedGrupoRow) => {
+    const horario = item.currentHorario;
+    const g = item;
+    return (
+      <TableRow
+        key={`${item.ID_GRUPO}-${horario.ID_GRUPO_HORARIO}`}
+        className={
+          canViewStudents ? "cursor-pointer hover:bg-muted/50 transition-colors" : undefined
+        }
+        onClick={canViewStudents ? () => setManaging(g) : undefined}
+      >
+        {isMaster && (
+          <TableCell className="text-xs text-muted-foreground font-mono truncate max-w-[100px]">
+            {g.ID_CLIENTE}
+          </TableCell>
+        )}
+        <TableCell className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
+          <EntityLink type="grupo" id={g.ID_GRUPO}>
+            {g.NOMBRE_GRUPO}
+          </EntityLink>
         </TableCell>
-      )}
-      <TableCell className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
-        <EntityLink type="grupo" id={g.ID_GRUPO}>
-          {g.NOMBRE_GRUPO}
-        </EntityLink>
-      </TableCell>
-      <TableCell className="text-sm align-top">
-        {g.GRUPOS_HORARIOS.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            {g.GRUPOS_HORARIOS.map((horario) => (
-              <span key={horario.ID_GRUPO_HORARIO} className="tabular-nums leading-snug">
-                {formatHorarioSlotCell(horario)}
-              </span>
-            ))}
-          </div>
-        ) : (
-          "—"
-        )}
-      </TableCell>
-      <TableCell className="text-sm align-top">
-        {g.GRUPOS_HORARIOS.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            {g.GRUPOS_HORARIOS.map((horario) => (
-              <span
-                key={`${horario.ID_GRUPO_HORARIO}-prof`}
-                className="leading-snug"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {horario.PROFESOR?.NOMBRE_PROFESOR ? (
-                  <EntityLink type="profesor" id={horario.ID_PROFESOR}>
-                    {horario.PROFESOR.NOMBRE_PROFESOR}
-                  </EntityLink>
-                ) : (
-                  "—"
-                )}
-              </span>
-            ))}
-          </div>
-        ) : (
-          "—"
-        )}
-      </TableCell>
-      <TableCell className="text-sm align-top">
-        {g.GRUPOS_HORARIOS.length > 0 ? (
-          <div className="flex flex-col gap-1">
-            {g.GRUPOS_HORARIOS.map((horario) => (
-              <span
-                key={`${horario.ID_GRUPO_HORARIO}-aula`}
-                className="leading-snug"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {horario.AULA?.NOMBRE_AULA ? (
-                  <EntityLink type="aula" id={horario.ID_AULA}>
-                    {horario.AULA.NOMBRE_AULA}
-                  </EntityLink>
-                ) : (
-                  "—"
-                )}
-              </span>
-            ))}
-          </div>
-        ) : (
-          "—"
-        )}
-      </TableCell>
-      <TableCell className="text-sm break-words">{g.TEXTO_ESPECIALIDAD}</TableCell>
-      <TableCell className="whitespace-nowrap">
-        {occupancyBadge(g.ID_ALUMNOS.length, g.PLAZAS_MAXIMAS)}
-      </TableCell>
-      <TableCell className="w-[88px]" onClick={(e) => e.stopPropagation()}>
-        {canWrite ? (
-          <GrupoEstadoToggle
-            estado={g.ESTADO}
-            loading={togglingEstadoGrupoId === g.ID_GRUPO}
-            disabled={!!togglingEstadoGrupoId && togglingEstadoGrupoId !== g.ID_GRUPO}
-            onToggle={() => void handleToggleGrupoEstado(g)}
-          />
-        ) : (
-          <GrupoEstadoBadge estado={g.ESTADO} />
-        )}
-      </TableCell>
-      {canWrite && (
-        <TableCell onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing(g);
-                }}
-              >
-                <Settings2 className="mr-2 h-4 w-4" />
-                Editar Grupo
-              </DropdownMenuItem>
-              {canDelete && (
+        <TableCell className="text-sm">
+          <span className="tabular-nums leading-snug">{formatHorarioSlotCell(horario)}</span>
+        </TableCell>
+        <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+          {horario.PROFESOR?.NOMBRE_PROFESOR ? (
+            <EntityLink type="profesor" id={horario.ID_PROFESOR}>
+              {horario.PROFESOR.NOMBRE_PROFESOR}
+            </EntityLink>
+          ) : (
+            "—"
+          )}
+        </TableCell>
+        <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+          {horario.AULA?.NOMBRE_AULA ? (
+            <EntityLink type="aula" id={horario.ID_AULA}>
+              {horario.AULA.NOMBRE_AULA}
+            </EntityLink>
+          ) : (
+            "—"
+          )}
+        </TableCell>
+        <TableCell className="text-sm break-words">{g.TEXTO_ESPECIALIDAD}</TableCell>
+        <TableCell className="whitespace-nowrap">
+          {occupancyBadge(g.ID_ALUMNOS.length, g.PLAZAS_MAXIMAS)}
+        </TableCell>
+        <TableCell className="w-[88px]" onClick={(e) => e.stopPropagation()}>
+          {canWrite ? (
+            <GrupoEstadoToggle
+              estado={g.ESTADO}
+              loading={togglingEstadoGrupoId === g.ID_GRUPO}
+              disabled={!!togglingEstadoGrupoId && togglingEstadoGrupoId !== g.ID_GRUPO}
+              onToggle={() => void handleToggleGrupoEstado(g)}
+            />
+          ) : (
+            <GrupoEstadoBadge estado={g.ESTADO} />
+          )}
+        </TableCell>
+        {canWrite && (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                 <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setDeleting(g);
+                    setEditing(g);
                   }}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar grupo
+                  <Settings2 className="mr-2 h-4 w-4" />
+                  Editar Grupo
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </TableCell>
-      )}
-    </TableRow>
-  );
+                {canDelete && (
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleting(g);
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Eliminar grupo
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </TableCell>
+        )}
+      </TableRow>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">

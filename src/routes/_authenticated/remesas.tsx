@@ -437,12 +437,12 @@ function RemesasPage() {
     <div className="mx-auto max-w-7xl space-y-4">
       {/* Cabecera del panel */}
       <PageHeader
-        title="Gestión de Remesas Bancarias"
+        title="Gestión de Recibos Mensuales"
         description={`${list.data?.length ?? 0} remesas SEPA de cobros consolidadas en el sistema`}
         actions={
           canWrite && (
             <Button onClick={() => setCreating(true)}>
-              <Plus className="mr-2 h-4 w-4" /> Generar nueva remesa
+              <Plus className="mr-2 h-4 w-4" /> Generar nuevos recibos
             </Button>
           )
         }

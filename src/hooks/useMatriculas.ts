@@ -10,6 +10,7 @@ import {
 import type { HorarioMatricula, Matricula } from "@/types/database";
 
 const MATRICULAS_LIST_SELECT = `
+  ALERTA_SUBPROGRAMADO,
   *,
   ALUMNOS (
     NOMBRE_ALUMNO
@@ -18,6 +19,13 @@ const MATRICULAS_LIST_SELECT = `
     *
   )
 ` as const;
+
+function normalizeHorariosMatriculas(
+  value: HorarioMatricula | HorarioMatricula[] | null | undefined,
+): HorarioMatricula[] {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
 
 export type MatriculaRow = Matricula & {
   ID_CURSO?: string | null;
@@ -36,11 +44,16 @@ export type MatriculasListResult = {
 
 export type HorarioMatriculaRowInput = {
   ID_HORARIO?: string;
+  ID_ESPECIALIDAD: string | null;
   ID_PROFESOR: string | null;
+  ID_AULA: string | null;
   DIA: string | null;
   HORA_INICIO: string | null;
   HORA_FIN: string | null;
   SALDO: number | null;
+  /** Group membership inherited from the DB row, used only to exclude group-mates from collision checks. */
+  ID_GRUPO?: string | null;
+  ID_GRUPO_HORARIO?: string | null;
 };
 
 export type HorarioMatriculaSyncInput = {
@@ -56,7 +69,9 @@ export type HorarioMatriculaDbPayload = {
   ID_HORARIO: string;
   ID_MATRICULA: string;
   ID_CLIENTE: string;
+  ID_ESPECIALIDAD: string | null;
   ID_PROFESOR: string;
+  ID_AULA: string | null;
   ID_CENTRO: string;
   ID_CURSO: string;
   DIA: string;
@@ -65,11 +80,8 @@ export type HorarioMatriculaDbPayload = {
   SALDO: number | null;
 };
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isExistingHorarioId(id: string | null | undefined): id is string {
-  return typeof id === "string" && UUID_RE.test(id);
+export function isExistingHorarioId(id?: string | null): id is string {
+  return typeof id === "string" && id.trim().length > 0;
 }
 
 function normalizeHorarioTime(value: string | null | undefined): string {
@@ -96,14 +108,16 @@ function buildHorarioDbPayload(
   }
 
   const idHorario = isExistingHorarioId(row.ID_HORARIO)
-    ? row.ID_HORARIO
+    ? row.ID_HORARIO.trim()
     : crypto.randomUUID();
 
   return {
     ID_HORARIO: idHorario,
     ID_MATRICULA: ctx.matriculaId,
     ID_CLIENTE: ctx.tenantId,
+    ID_ESPECIALIDAD: row.ID_ESPECIALIDAD?.trim() || null,
     ID_PROFESOR: row.ID_PROFESOR?.trim() ?? "",
+    ID_AULA: row.ID_AULA?.trim() || null,
     ID_CENTRO: ctx.idCentro?.trim() ?? "",
     ID_CURSO: ctx.idCurso?.trim() ?? "",
     DIA: row.DIA?.trim() ?? "",
@@ -122,6 +136,29 @@ function hasHorarioRowContent(row: HorarioMatriculaRowInput): boolean {
       row.SALDO != null,
   );
 }
+
+/** Conflict shape returned by the `fn_comprobar_solapamientos` RPC. */
+export type ScheduleConflict = {
+  tipo: string;
+  nivel: "Recurrente" | "Puntual";
+  motivo: string;
+  dia?: string;
+  fecha?: string;
+  inicio: string;
+  fin: string;
+};
+
+export type CheckSolapamientosParams = {
+  idAlumno: string | null;
+  idProfesor: string | null;
+  idAula: string | null;
+  dia: string;
+  horaInicio: string;
+  horaFin: string;
+  idHorarioExcluir?: string | null;
+  idGrupo?: string | null;
+  idGrupoHorario?: string | null;
+};
 
 export function useMatriculas(filterCenterId?: string | null, alumnoId?: string | null) {
   const { tenantId, centerId, rol } = useActiveTenant();
@@ -182,7 +219,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
           return {
             ...m,
             ALUMNOS: m.ALUMNOS ?? null,
-            HORARIOS_MATRICULAS: m.HORARIOS_MATRICULAS ?? [],
+            HORARIOS_MATRICULAS: normalizeHorariosMatriculas(m.HORARIOS_MATRICULAS),
             CENTROS: centroNombre ? { NOMBRE_CENTRO: centroNombre } : null,
             CURSO_ESCOLAR: cursoNombre ? { NOMBRE_CURSO: cursoNombre } : null,
             ESPECIALIDADES: espFound ? { ESPECIALIDAD: espFound.ESPECIALIDAD } : null,
@@ -228,6 +265,37 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
 
   const invalidateList = () => qc.invalidateQueries({ queryKey });
 
+  /**
+   * Calls `fn_comprobar_solapamientos` to detect schedule collisions for a
+   * student, teacher, or classroom against both the recurring schedule
+   * (HORARIOS_MATRICULAS) and specific future calendar instances (SESIONES).
+   * Pass `idHorarioExcluir` with the row's own ID_HORARIO when editing an
+   * existing slot to avoid flagging it as a collision with itself. Pass
+   * `idGrupo`/`idGrupoHorario` (inherited from the DB row) so the backend
+   * can ignore fellow group-mates sharing the same slot.
+   */
+  const checkSolapamientos = async (
+    params: CheckSolapamientosParams,
+  ): Promise<ScheduleConflict[]> => {
+    if (!tenantId) return [];
+
+    const { data, error } = await supabase.rpc("fn_comprobar_solapamientos", {
+      p_id_cliente: tenantId,
+      p_id_alumno: params.idAlumno,
+      p_id_profesor: params.idProfesor,
+      p_id_aula: params.idAula,
+      p_dia: params.dia,
+      p_hora_inicio: params.horaInicio,
+      p_hora_fin: params.horaFin,
+      p_id_horario_excluir: params.idHorarioExcluir ?? null,
+      p_id_grupo: params.idGrupo ?? null,
+      p_id_grupo_horario: params.idGrupoHorario ?? null,
+    });
+
+    if (error) throw error;
+    return Array.isArray(data) ? (data as ScheduleConflict[]) : [];
+  };
+
   const syncHorarios = useMutation({
     mutationFn: async (input: HorarioMatriculaSyncInput) => {
       const { matriculaId, idCentro, idCurso, rows, deletedIds } = input;
@@ -262,7 +330,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
           const { error } = await supabase
             .from("HORARIOS_MATRICULAS")
             .update(payload)
-            .eq("ID_HORARIO", row.ID_HORARIO)
+            .eq("ID_HORARIO", row.ID_HORARIO.trim())
             .eq("ID_CLIENTE", tenantId);
           if (error) throw error;
           continue;
@@ -279,5 +347,5 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
     },
   });
 
-  return { list, create, update, syncHorarios, remove, invalidateList };
+  return { list, create, update, syncHorarios, remove, invalidateList, checkSolapamientos };
 }
