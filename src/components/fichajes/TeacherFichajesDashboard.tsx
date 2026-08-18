@@ -113,12 +113,22 @@ function deriveProfesorClockState(todayRecords: ProfesorFichajeRow[]): {
     return { state: "out", entradaAt: null };
   }
 
-  const sorted = [...clockRecords].sort((a, b) => b.FECHA_HORA_REAL.localeCompare(a.FECHA_HORA_REAL));
-  const last = normalizeMovimiento(sorted[0].TIPO_MOVIMIENTO);
+  const sortedAsc = [...clockRecords].sort((a, b) =>
+    a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL),
+  );
+  const last = normalizeMovimiento(sortedAsc[sortedAsc.length - 1].TIPO_MOVIMIENTO);
 
-  const entradaRecord = [...clockRecords]
-    .filter((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada")
-    .sort((a, b) => a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL))[0];
+  // Ancla del cronómetro: Entrada de la jornada abierta (tras la última Salida).
+  let lastSalidaIdx = -1;
+  for (let i = sortedAsc.length - 1; i >= 0; i--) {
+    if (normalizeMovimiento(sortedAsc[i].TIPO_MOVIMIENTO) === "Salida") {
+      lastSalidaIdx = i;
+      break;
+    }
+  }
+  const entradaRecord = sortedAsc
+    .slice(lastSalidaIdx + 1)
+    .find((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada");
   const entradaAt = entradaRecord ? parseServerDate(entradaRecord.FECHA_HORA_REAL) : null;
 
   if (last === "Salida") return { state: "out", entradaAt: null };
