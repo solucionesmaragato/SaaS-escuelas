@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Outlet, Navigate, createFileRoute, Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { PanelLeft, Home, CalendarDays, Clock, Users } from "lucide-react";
+import { PanelLeft, Home, CalendarDays, Clock } from "lucide-react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
@@ -64,10 +64,9 @@ function AuthenticatedAppShell() {
 }
 
 const BOTTOM_NAV_ITEMS = [
-  { to: "/fichajes", label: "Fichajes", icon: Clock, activeColor: "text-amber-500" },
-  { to: "/alumnos", label: "Alumnos", icon: Users, activeColor: "text-blue-500" },
-  { to: "/sesiones", label: "Sesiones", icon: CalendarDays, activeColor: "text-emerald-500" },
-  { to: "/dashboard", label: "Menu", icon: Home, activeColor: "text-zinc-700 dark:text-zinc-300" },
+  { to: "/app/fichajes", label: "Fichajes", icon: Clock, activeColor: "text-amber-500" },
+  { to: "/app/sesiones", label: "Sesiones", icon: CalendarDays, activeColor: "text-emerald-500" },
+  { to: "/app", label: "Menu", icon: Home, activeColor: "text-zinc-700 dark:text-zinc-300" },
 ] as const;
 
 function ProfesorBottomNav() {
@@ -78,11 +77,11 @@ function ProfesorBottomNav() {
       aria-label="Navegación principal"
       className="shrink-0 border-t bg-background/95 backdrop-blur safe-area-inset-bottom"
     >
-      <div className="grid grid-cols-4">
+      <div className="grid grid-cols-3">
         {BOTTOM_NAV_ITEMS.map(({ to, label, icon: Icon, activeColor }) => {
           const isActive =
-            to === "/dashboard"
-              ? currentPath === "/dashboard" || currentPath === "/"
+            to === "/app"
+              ? currentPath === "/app" || currentPath === "/"
               : currentPath === to || currentPath.startsWith(to + "/");
           return (
             <Link

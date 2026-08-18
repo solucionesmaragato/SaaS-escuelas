@@ -8,7 +8,7 @@ import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 // row). Selecting the wrong name throws a Postgres "column does not exist"
 // error and crashes this query.
 const HORARIO_SELECT_COLUMNS =
-  "ID_HORARIO, ID_CLIENTE, ID_MATRICULA, ID_ALUMNO, ID_ESPECIALIDAD, ID_GRUPO, ID_PROFESOR, TIPO_CLASE, ESTADO, DIA, HORA_INICIO, HORA_FIN, MATRICULAS(ID_ALUMNO, ALUMNOS(NOMBRE_ALUMNO))" as const;
+  "ID_HORARIO, ID_CLIENTE, ID_CURSO, ID_MATRICULA, ID_ALUMNO, ID_ESPECIALIDAD, ID_GRUPO, ID_PROFESOR, TIPO_CLASE, ESTADO, DIA, HORA_INICIO, HORA_FIN, MATRICULAS(ID_ALUMNO, ALUMNOS(NOMBRE_ALUMNO))" as const;
 
 type TeacherHorarioAlumnoEmbed = { NOMBRE_ALUMNO: string };
 
@@ -20,6 +20,7 @@ type TeacherHorarioMatriculaEmbed = {
 export interface TeacherHorarioRow {
   ID_HORARIO: string;
   ID_CLIENTE: string;
+  ID_CURSO: string | null;
   ID_MATRICULA: string;
   ID_ALUMNO: string;
   ID_ESPECIALIDAD: string | null;
@@ -109,7 +110,11 @@ function isIndividualHorario(row: TeacherHorarioRow): boolean {
 }
 
 function isGrupoHorario(row: TeacherHorarioRow): boolean {
-  return (row.TIPO_CLASE ?? "").trim().toLowerCase() === "grupo";
+  const tipo = (row.TIPO_CLASE ?? "").trim().toLowerCase();
+  if (tipo === "grupo") return true;
+  // HORARIOS_MATRICULAS stores group slots as "Colectiva"/"COLECTIVA", not "grupo".
+  if (tipo === "colectiva") return !!row.ID_GRUPO;
+  return false;
 }
 
 function studentKey(idAlumno: string, idEspecialidad: string): string {
@@ -218,21 +223,30 @@ export function buildTeacherRoster(
   return { individuales, grupos };
 }
 
-export function useTeacherHorarios(profesorId: string | null | undefined) {
+export function useTeacherHorarios(
+  profesorId: string | null | undefined,
+  options?: { idCurso?: string | null; soloActivos?: boolean },
+) {
   const { tenantId, rol } = useActiveTenant();
+  const idCurso = options?.idCurso?.trim() || null;
+  const soloActivos = options?.soloActivos === true;
   const queryKey = [
     ...tenantListKey("teacherHorarios", rol, tenantId),
     profesorId ?? "none",
+    idCurso ?? "all-cursos",
+    soloActivos ? "activos" : "todos",
   ] as const;
 
   const list = useQuery({
     queryKey,
-    enabled: !!profesorId,
+    enabled: !!profesorId && (!soloActivos || !!idCurso),
     queryFn: async (): Promise<TeacherHorarioRow[]> => {
       let query = supabase
         .from("HORARIOS_MATRICULAS")
         .select(HORARIO_SELECT_COLUMNS)
         .eq("ID_PROFESOR", profesorId!);
+      if (idCurso) query = query.eq("ID_CURSO", idCurso);
+      if (soloActivos) query = query.ilike("ESTADO", "activo");
       query = scopeTenantQuery(query, rol, tenantId);
 
       const { data, error } = await query.order("ID_ALUMNO", { ascending: true });

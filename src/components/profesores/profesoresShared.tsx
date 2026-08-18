@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Rol } from "@/types/database";
 import type { ProfesorData } from "@/hooks/useProfesores";
+import { isProfesorActivo } from "@/lib/profesorSelector";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -33,8 +34,8 @@ export function toDateInputValue(value: string | null | undefined): string {
 
 export function sortProfesoresByEstado(profesores: ProfesorData[]): ProfesorData[] {
   return [...profesores].sort((a, b) => {
-    const aActive = !a.FECHA_BAJA;
-    const bActive = !b.FECHA_BAJA;
+    const aActive = isProfesorActivo(a);
+    const bActive = isProfesorActivo(b);
     if (aActive !== bActive) return aActive ? -1 : 1;
     return (a.NOMBRE_PROFESOR ?? "").localeCompare(b.NOMBRE_PROFESOR ?? "", "es", sortLocale);
   });
@@ -77,7 +78,7 @@ export function TagBadges({ text }: { text: string }) {
 }
 
 export function EstadoProfesorBadge({ fechaBaja }: { fechaBaja: string | null }) {
-  const isActive = !fechaBaja;
+  const isActive = isProfesorActivo({ FECHA_BAJA: fechaBaja });
   return (
     <StatusBadge status={isActive ? "success" : "destructive"} className="text-xs font-normal">
       {isActive ? "Activo" : `Inactivo${fechaBaja ? ` · ${fechaBaja.slice(0, 10)}` : ""}`}
@@ -94,7 +95,7 @@ export function EstadoProfesorToggle({
   onClick: () => void;
   disabled?: boolean;
 }) {
-  const isActive = !fechaBaja;
+  const isActive = isProfesorActivo({ FECHA_BAJA: fechaBaja });
   return (
     <button
       type="button"

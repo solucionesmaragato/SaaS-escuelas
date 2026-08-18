@@ -332,7 +332,8 @@ export function useSesiones(dateRange: SesionesDateRange) {
         let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO");
         alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
         alumnosQuery = alumnosQuery.in("ID_ALUMNO", targetIds);
-        const { data } = await alumnosQuery;
+        const { data, error } = await alumnosQuery;
+        if (error) throw error;
         alumnos = (data ?? []).map((row) => ({
           ID_ALUMNO: row.ID_ALUMNO,
           NOMBRE_ALUMNO: row.NOMBRE_ALUMNO,
@@ -343,7 +344,8 @@ export function useSesiones(dateRange: SesionesDateRange) {
       } else {
         let alumnosQuery = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO");
         alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
-        const { data } = await alumnosQuery;
+        const { data, error } = await alumnosQuery;
+        if (error) throw error;
         alumnos = (data ?? []).map((row) => ({
           ID_ALUMNO: row.ID_ALUMNO,
           NOMBRE_ALUMNO: row.NOMBRE_ALUMNO,
@@ -353,15 +355,18 @@ export function useSesiones(dateRange: SesionesDateRange) {
 
       let profesoresQuery = supabase.from("PROFESOR").select("ID_PROFESOR, NOMBRE_PROFESOR");
       profesoresQuery = scopeTenantQuery(profesoresQuery, rol, tenantId);
-      const { data: profesores } = await profesoresQuery;
+      const { data: profesores, error: profesoresError } = await profesoresQuery;
+      if (profesoresError) throw profesoresError;
 
       let aulasQuery = supabase.from("AULA").select("ID_AULA, NOMBRE_AULA");
       aulasQuery = scopeTenantQuery(aulasQuery, rol, tenantId);
-      const { data: aulas } = await aulasQuery;
+      const { data: aulas, error: aulasError } = await aulasQuery;
+      if (aulasError) throw aulasError;
 
       let espQuery = supabase.from("ESPECIALIDADES").select("ID_ESPECIALIDAD, ESPECIALIDAD");
       espQuery = scopeTenantQuery(espQuery, rol, tenantId);
-      const { data: esp } = await espQuery;
+      const { data: esp, error: espError } = await espQuery;
+      if (espError) throw espError;
 
       const mapped = mapSesiones(
         sesiones,

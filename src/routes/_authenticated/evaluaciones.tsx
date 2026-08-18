@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -28,7 +28,6 @@ import {
 } from "@/hooks/useEvaluaciones";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { ALL_CENTROS_FILTER_VALUE } from "@/lib/centroFilter";
-import { TeacherEvaluationsDashboard } from "@/components/evaluaciones/TeacherEvaluationsDashboard";
 import {
   useRubricas,
   filterActiveRubricas,
@@ -481,10 +480,10 @@ function DetailField({
 }
 
 function EvaluacionesPage() {
-  const { rol: tenantRol, perfil } = useActiveTenant();
+  const { rol: tenantRol } = useActiveTenant();
   const rol = tenantRol as Rol | null | undefined;
   const showRubricasTab = canViewRubricasTab(rol);
-  const isTeacherView = isProfesorRole(rol);
+  const { alumnoId } = Route.useSearch();
 
   if (!canAccessEvaluacionesPage(rol)) {
     return (
@@ -494,15 +493,15 @@ function EvaluacionesPage() {
     );
   }
 
-  if (isTeacherView) {
+  if (isProfesorRole(rol)) {
     return (
-      <div className="mx-auto max-w-6xl space-y-4">
-        <PageHeader
-          title="Mis evaluaciones"
-          description="Evalúa a tus alumnos de clases individuales y grupos"
-        />
-        <TeacherEvaluationsDashboard profesorId={perfil.ID_PROFESOR} />
-      </div>
+      <Navigate
+        to="/app/evaluaciones"
+        search={{
+          ...(alumnoId ? { alumnoId } : {}),
+        }}
+        replace
+      />
     );
   }
 
@@ -1065,11 +1064,13 @@ function EvaluacionesTab() {
                       {row.ID_CURSO ? (cursoById.get(row.ID_CURSO) ?? "—") : "—"}
                     </TableCell>
                     <TableCell>{row.TRIMESTRE === "FINAL" ? "Final" : row.TRIMESTRE}</TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell>
                       {alumnoById.get(row.ID_ALUMNO) ? (
-                        <EntityLink type="alumno" id={row.ID_ALUMNO}>
-                          {alumnoById.get(row.ID_ALUMNO)}
-                        </EntityLink>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <EntityLink type="alumno" id={row.ID_ALUMNO}>
+                            {alumnoById.get(row.ID_ALUMNO)}
+                          </EntityLink>
+                        </span>
                       ) : (
                         "—"
                       )}
@@ -1078,11 +1079,13 @@ function EvaluacionesTab() {
                     <TableCell className="text-right font-medium">
                       {formatNotaMedia(row.NOTA_MEDIA)}
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell>
                       {row.ID_PROFESOR && profesorById.get(row.ID_PROFESOR) ? (
-                        <EntityLink type="profesor" id={row.ID_PROFESOR}>
-                          {profesorById.get(row.ID_PROFESOR)}
-                        </EntityLink>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <EntityLink type="profesor" id={row.ID_PROFESOR}>
+                            {profesorById.get(row.ID_PROFESOR)}
+                          </EntityLink>
+                        </span>
                       ) : (
                         "—"
                       )}

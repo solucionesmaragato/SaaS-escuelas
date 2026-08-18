@@ -42,7 +42,7 @@ interface NavItem {
   alumnosModuleAccess?: boolean;
   /** Hidden from PROFESOR navigation (e.g. Avisos). */
   hideForProfesor?: boolean;
-  /** Visible only to PROFESOR (e.g. Mis archivos). */
+  /** Visible only to PROFESOR. */
   profesorOnly?: boolean;
 }
 
@@ -86,7 +86,7 @@ const NAV: NavGroup[] = [
       { title: "Avisos", to: "/dashboard", icon: Bell, hideForProfesor: true },
       {
         title: "Mis datos personales",
-        to: "/profesores/mi-perfil",
+        to: "/app/datos-personales",
         icon: UserCircle,
         miPerfilAccess: true,
       },
@@ -151,12 +151,12 @@ const PROFESOR_NAV: NavGroup[] = [
   {
     label: "Académico",
     items: [
-      { title: "Sesiones", to: "/sesiones", icon: CalendarDays, perms: ["sesiones:read"] },
-      { title: "Grupos", to: "/grupos", icon: UsersRound, gruposAccess: true },
-      { title: "Evaluaciones", to: "/evaluaciones", icon: ClipboardCheck, perms: ["evaluaciones:read"] },
+      { title: "Sesiones", to: "/app/sesiones", icon: CalendarDays, perms: ["sesiones:read"] },
+      { title: "Grupos", to: "/app/grupos", icon: UsersRound, gruposAccess: true },
+      { title: "Evaluaciones", to: "/app/evaluaciones", icon: ClipboardCheck, perms: ["evaluaciones:read"] },
       {
         title: "Préstamos de material",
-        to: "/prestamosMaterial",
+        to: "/app/prestamos",
         icon: Package,
         perms: ["prestamos:read", "prestamos:write"],
       },
@@ -165,20 +165,20 @@ const PROFESOR_NAV: NavGroup[] = [
   {
     label: "Recursos humanos",
     items: [
-      { title: "Fichajes", to: "/fichajes", icon: Clock, perms: ["fichajes:read:all", "fichajes:write:own"] },
-      { title: "Permisos", to: "/ausencias", icon: CalendarOff, perms: ["ausencias:write", "ausencias:read"] },
-      { title: "Disponibilidad horaria", to: "/turnos", icon: CalendarClock, perms: ["turnos:read", "turnos:write"] },
-      { title: "Documentos legales", to: "/documentos", icon: FileText, perms: ["documentos:write", "documentos:read"] },
-      { title: "Mis archivos", to: "/mis-archivos", icon: HardDrive },
+      { title: "Fichajes", to: "/app/fichajes", icon: Clock, perms: ["fichajes:write:own"] },
+      { title: "Permisos", to: "/app/permisos", icon: CalendarOff, perms: ["ausencias:write", "ausencias:read"] },
+      { title: "Disponibilidad horaria", to: "/app/turnos", icon: CalendarClock, perms: ["turnos:read"] },
+      { title: "Documentos legales", to: "/app/documentos", icon: FileText, perms: ["documentos:read"] },
+      { title: "Mis archivos", to: "/app/archivos", icon: HardDrive },
     ],
   },
   {
     label: "Personas",
     items: [
-      { title: "Alumnos", to: "/alumnos", icon: Users, alumnosModuleAccess: true },
+      { title: "Alumnos", to: "/app/alumnos", icon: Users, perms: ["alumnos:read"] },
       {
         title: "Mis datos personales",
-        to: "/profesores/mi-perfil",
+        to: "/app/datos-personales",
         icon: UserCircle,
         miPerfilAccess: true,
       },
@@ -187,7 +187,7 @@ const PROFESOR_NAV: NavGroup[] = [
   {
     label: "Alertas",
     items: [
-      { title: "Incidencias", to: "/incidencias", icon: AlertTriangle, perms: ["incidencias:read"] },
+      { title: "Incidencias", to: "/app/incidencias", icon: AlertTriangle, perms: ["incidencias:read"] },
     ],
   },
 ];
@@ -228,7 +228,7 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
       if (i.miPerfilAccess) return canViewMiPerfilNav(rol, perfil.ID_PROFESOR);
       if (i.gruposAccess) return showGruposNav;
       if (i.alumnosModuleAccess) {
-        return canViewAlumnosModule(rol) || isProfesorRole(rol);
+        return canViewAlumnosModule(rol);
       }
       if (i.usuariosAccess || i.mensajesAccess) return canViewUsuariosYMensajes(rol);
       return !i.perms || hasAnyPermission(rol, i.perms);

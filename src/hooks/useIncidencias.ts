@@ -85,29 +85,88 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
         incidencias = (data ?? []) as IncidenciaRow[];
       }
 
-      // 2. Descargamos los diccionarios que ya tenemos creados para cruzar los nombres
-      let alumnosQuery = supabase.from("ALUMNOS").select("*");
-      alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
-      if (alumnoId) {
-        alumnosQuery = alumnosQuery.eq("ID_ALUMNO", alumnoId);
-      } else if (alumnoIds) {
-        alumnosQuery = alumnosQuery.in("ID_ALUMNO", alumnoIds);
+      if (isProfesorRole(rol)) {
+        alumnoIds = [
+          ...new Set(
+            incidencias
+              .map((inc) => inc.ID_ALUMNO?.trim())
+              .filter(Boolean) as string[],
+          ),
+        ];
       }
-      const { data: alumnos } = await alumnosQuery;
 
-      let profesoresQuery = supabase.from("PROFESOR").select("*");
-      profesoresQuery = scopeTenantQuery(profesoresQuery, rol, tenantId);
-      const { data: profesores } = await profesoresQuery;
+      const profesorIds = isProfesorRole(rol)
+        ? [
+            ...new Set(
+              incidencias
+                .map((inc) => inc.ID_PROFESOR?.trim())
+                .filter(Boolean) as string[],
+            ),
+          ]
+        : null;
 
-      let especialidadesQuery = supabase.from("ESPECIALIDADES").select("*");
-      especialidadesQuery = scopeTenantQuery(especialidadesQuery, rol, tenantId);
-      const { data: especialidades } = await especialidadesQuery;
+      const especialidadIds = isProfesorRole(rol)
+        ? [
+            ...new Set(
+              incidencias
+                .map((inc) => inc.ID_ESPECIALIDAD?.trim())
+                .filter(Boolean) as string[],
+            ),
+          ]
+        : null;
+
+      // 2. Descargamos los diccionarios que ya tenemos creados para cruzar los nombres
+      let alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string }[] = [];
+      const skipAlumnosQuery =
+        isProfesorRole(rol) && !alumnoId && (alumnoIds?.length ?? 0) === 0;
+
+      if (!skipAlumnosQuery) {
+        let alumnosQuery = supabase.from("ALUMNOS").select("*");
+        alumnosQuery = scopeTenantQuery(alumnosQuery, rol, tenantId);
+        if (alumnoId) {
+          alumnosQuery = alumnosQuery.eq("ID_ALUMNO", alumnoId);
+        } else if (alumnoIds) {
+          alumnosQuery = alumnosQuery.in("ID_ALUMNO", alumnoIds);
+        }
+        const { data, error: alumnosError } = await alumnosQuery;
+        if (alumnosError) throw alumnosError;
+        alumnos = data ?? [];
+      }
+
+      let profesores: { ID_PROFESOR: string; NOMBRE_PROFESOR: string }[] = [];
+      const skipProfesoresQuery = isProfesorRole(rol) && (profesorIds?.length ?? 0) === 0;
+
+      if (!skipProfesoresQuery) {
+        let profesoresQuery = supabase.from("PROFESOR").select("*");
+        profesoresQuery = scopeTenantQuery(profesoresQuery, rol, tenantId);
+        if (isProfesorRole(rol) && profesorIds) {
+          profesoresQuery = profesoresQuery.in("ID_PROFESOR", profesorIds);
+        }
+        const { data, error: profesoresError } = await profesoresQuery;
+        if (profesoresError) throw profesoresError;
+        profesores = data ?? [];
+      }
+
+      let especialidades: { ID_ESPECIALIDAD: string; ESPECIALIDAD: string }[] = [];
+      const skipEspecialidadesQuery =
+        isProfesorRole(rol) && (especialidadIds?.length ?? 0) === 0;
+
+      if (!skipEspecialidadesQuery) {
+        let especialidadesQuery = supabase.from("ESPECIALIDADES").select("*");
+        especialidadesQuery = scopeTenantQuery(especialidadesQuery, rol, tenantId);
+        if (isProfesorRole(rol) && especialidadIds) {
+          especialidadesQuery = especialidadesQuery.in("ID_ESPECIALIDAD", especialidadIds);
+        }
+        const { data, error: especialidadesError } = await especialidadesQuery;
+        if (especialidadesError) throw especialidadesError;
+        especialidades = data ?? [];
+      }
 
       // 3. Cruzamos los datos en memoria (Frontend Join)
       return incidencias.map((inc): IncidenciaData => {
-        const alumno = alumnos?.find((a) => a.ID_ALUMNO === inc.ID_ALUMNO);
-        const profesor = profesores?.find((p) => p.ID_PROFESOR === inc.ID_PROFESOR);
-        const especialidad = especialidades?.find((e) => e.ID_ESPECIALIDAD === inc.ID_ESPECIALIDAD);
+        const alumno = alumnos.find((a) => a.ID_ALUMNO === inc.ID_ALUMNO);
+        const profesor = profesores.find((p) => p.ID_PROFESOR === inc.ID_PROFESOR);
+        const especialidad = especialidades.find((e) => e.ID_ESPECIALIDAD === inc.ID_ESPECIALIDAD);
 
         return {
           ...inc,
@@ -124,6 +183,9 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
   const create = useMutation({
     mutationFn: async (input: any) => {
       const payload = { ...input, ID_CLIENTE: tenantId };
+      if (isProfesorRole(rol) && perfil?.ID_PROFESOR) {
+        payload.ID_PROFESOR = perfil.ID_PROFESOR;
+      }
       const { data, error } = await supabase.from("INCIDENCIAS").insert(payload).select().single();
       if (error) throw error;
       return data;
@@ -133,13 +195,15 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
 
   const update = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: IncidenciaUpdateInput }) => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("INCIDENCIAS")
         .update(patch)
         .eq("ID_INCIDENCIA", id)
-        .eq("ID_CLIENTE", tenantId)
-        .select("*")
-        .single();
+        .eq("ID_CLIENTE", tenantId);
+      if (isProfesorRole(rol) && perfil?.ID_PROFESOR) {
+        query = query.eq("ID_PROFESOR", perfil.ID_PROFESOR);
+      }
+      const { data, error } = await query.select("*").single();
       if (error) throw error;
       return data as IncidenciaRow;
     },
@@ -166,7 +230,11 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("INCIDENCIAS").delete().eq("ID_INCIDENCIA", id).eq("ID_CLIENTE", tenantId);
+      let query = supabase.from("INCIDENCIAS").delete().eq("ID_INCIDENCIA", id).eq("ID_CLIENTE", tenantId);
+      if (isProfesorRole(rol) && perfil?.ID_PROFESOR) {
+        query = query.eq("ID_PROFESOR", perfil.ID_PROFESOR);
+      }
+      const { error } = await query;
       if (error) throw error;
       return id;
     },

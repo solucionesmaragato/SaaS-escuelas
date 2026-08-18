@@ -54,19 +54,28 @@ export function evaluationLookupKey(
   trimestre: string,
   idAlumno: string,
   idEspecialidad: string,
+  idProfesor?: string | null,
 ): string {
-  return `${trimestre}::${idAlumno}::${idEspecialidad}`;
+  const base = `${trimestre}::${idAlumno}::${idEspecialidad}`;
+  const prof = idProfesor?.trim();
+  return prof ? `${base}::${prof}` : base;
 }
 
 export function buildEvaluationIndex(
   evaluaciones: EvaluacionData[],
   idCurso: string,
+  idProfesor?: string | null,
 ): Map<string, EvaluacionData> {
   const map = new Map<string, EvaluacionData>();
   for (const ev of evaluaciones) {
     if ((ev.ID_CURSO ?? "") !== idCurso) continue;
     map.set(
-      evaluationLookupKey(ev.TRIMESTRE, ev.ID_ALUMNO, ev.ID_ESPECIALIDAD),
+      evaluationLookupKey(
+        ev.TRIMESTRE,
+        ev.ID_ALUMNO,
+        ev.ID_ESPECIALIDAD,
+        idProfesor ?? ev.ID_PROFESOR,
+      ),
       ev,
     );
   }
@@ -360,7 +369,6 @@ export function useEvaluaciones(
   const create = useMutation({
     mutationFn: async (input: EvaluacionCreateInput) => {
       const payload = buildTeacherCreatePayload(input, tenantId);
-      console.log("PAYLOAD SENT TO SUPABASE (EVALUACION CREATE):", payload);
 
       const { data, error } = await supabase
         .from("EVALUACIONES")
@@ -386,7 +394,6 @@ export function useEvaluaciones(
       }
 
       const payloads = inputs.map((input) => buildEvaluacionUpsertPayload(input, tenantId));
-      console.log("PAYLOAD SENT TO SUPABASE (EVALUACIONES UPSERT):", payloads);
 
       const { data, error } = await supabase
         .from("EVALUACIONES")
@@ -413,7 +420,6 @@ export function useEvaluaciones(
       patch: EvaluacionUpdateInput;
     }) => {
       const finalPatch = buildUpdatePayload(patch);
-      console.log("PAYLOAD SENT TO SUPABASE (EVALUACION UPDATE):", finalPatch);
 
       let query = supabase
         .from("EVALUACIONES")

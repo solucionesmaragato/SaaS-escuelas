@@ -25,7 +25,11 @@ import type { HorarioMatricula } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
-import { useMatriculas } from "@/hooks/useMatriculas";
+import {
+  useMatriculas,
+  formatMatriculaEstadoError,
+  validateHorarioRowsForSync,
+} from "@/hooks/useMatriculas";
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useAulas, type AulaData } from "@/hooks/useAulas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
@@ -39,7 +43,7 @@ import {
 } from "@/hooks/useCentros";
 import { useActiveTenant } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
-import { canWriteUi } from "@/lib/rbac";
+import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
@@ -1435,8 +1439,16 @@ function MatriculasPage() {
     setSelectedCenterId,
     filterCenterId,
   } = useAdminCentroFilter();
-  const { list, create, update, syncHorarios, remove, invalidateList, checkSolapamientos } =
-    useMatriculas(filterCenterId);
+  const {
+    list,
+    create,
+    update,
+    bulkUpdateEstadoByCurso,
+    syncHorarios,
+    remove,
+    invalidateList,
+    checkSolapamientos,
+  } = useMatriculas(filterCenterId);
   const { list: tarifasList } = useTarifas();
 
   const tarifaById = useMemo(
@@ -1460,6 +1472,9 @@ function MatriculasPage() {
   } | null>(null);
   const [togglingHorarioId, setTogglingHorarioId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [bulkCursoId, setBulkCursoId] = useState("");
+  const [bulkNuevoEstado, setBulkNuevoEstado] = useState<MatriculaEstado>("Inactivo");
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
   const matriculas = useMemo(() => list.data?.rows ?? [], [list.data?.rows]);
   const especialidadById = useMemo(
@@ -1487,6 +1502,29 @@ function MatriculasPage() {
       .map(([id, nombre]) => ({ id, nombre }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
   }, [matriculas]);
+
+  const bulkCursoTarget = useMemo(
+    () => cursoFilterOptions.find((c) => c.id === bulkCursoId) ?? null,
+    [cursoFilterOptions, bulkCursoId],
+  );
+
+  const bulkAffectedCount = useMemo(() => {
+    if (!bulkCursoId) return 0;
+    return matriculas.filter(
+      (m) =>
+        m.ID_CURSO === bulkCursoId &&
+        normalizeMatriculaEstado(m.ESTADO) !== bulkNuevoEstado,
+    ).length;
+  }, [matriculas, bulkCursoId, bulkNuevoEstado]);
+
+  useEffect(() => {
+    if (cursoFilterOptions.length === 0) {
+      setBulkCursoId("");
+      return;
+    }
+    if (cursoFilterOptions.some((c) => c.id === bulkCursoId)) return;
+    setBulkCursoId(cursoFilterOptions[0]?.id ?? "");
+  }, [cursoFilterOptions, bulkCursoId]);
 
   const especialidadFilterOptions = useMemo(() => {
     const map = new Map<string, string>();
@@ -1559,7 +1597,7 @@ function MatriculasPage() {
       );
       setStatusConfirming(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al cambiar el estado.");
+      toast.error(formatMatriculaEstadoError(err));
     }
   };
 
@@ -1603,12 +1641,48 @@ function MatriculasPage() {
     navigate({ search: (prev) => ({ ...prev, matriculaId: undefined }), replace: true });
   };
 
+  const handleRequestBulkEstadoChange = () => {
+    if (!bulkCursoId) return;
+    if (bulkAffectedCount === 0) {
+      toast.info("No hay matrículas con un estado distinto al seleccionado.");
+      return;
+    }
+    setBulkConfirmOpen(true);
+  };
+
+  const handleConfirmBulkEstadoChange = async () => {
+    if (!bulkCursoId) return;
+    try {
+      const updatedCount = await bulkUpdateEstadoByCurso.mutateAsync({
+        idCurso: bulkCursoId,
+        estado: bulkNuevoEstado,
+      });
+      invalidateList();
+      toast.success(
+        updatedCount === 1
+          ? "1 matrícula actualizada correctamente."
+          : `${updatedCount} matrículas actualizadas correctamente.`,
+      );
+      setBulkConfirmOpen(false);
+    } catch (err) {
+      toast.error(formatMatriculaEstadoError(err));
+    }
+  };
+
   useEffect(() => {
     if (matriculaId && matriculas.length > 0) {
       const target = matriculas.find((m) => m.ID_MATRICULA === matriculaId);
       if (target) setViewing(target);
     }
   }, [matriculaId, matriculas]);
+
+  if (!hasPermission(rol, "matriculas:read")) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -1623,6 +1697,75 @@ function MatriculasPage() {
           )
         }
       />
+
+      {canWrite && (
+        <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Label htmlFor="matriculas-bulk-curso-select">Curso escolar</Label>
+            <Select
+              value={bulkCursoId || NONE_VALUE}
+              onValueChange={(v) => setBulkCursoId(v === NONE_VALUE ? "" : v)}
+              disabled={cursoFilterOptions.length === 0 || bulkUpdateEstadoByCurso.isPending}
+            >
+              <SelectTrigger id="matriculas-bulk-curso-select" className="h-10 w-full">
+                <SelectValue placeholder="Seleccionar curso escolar" />
+              </SelectTrigger>
+              <SelectContent>
+                {cursoFilterOptions.length === 0 ? (
+                  <SelectItem value={NONE_VALUE} disabled>
+                    No hay cursos con matrículas
+                  </SelectItem>
+                ) : (
+                  cursoFilterOptions.map((curso) => (
+                    <SelectItem key={curso.id} value={curso.id}>
+                      {curso.nombre}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0 flex-1 space-y-2">
+            <Label htmlFor="matriculas-bulk-estado-select">Nuevo estado</Label>
+            <Select
+              value={bulkNuevoEstado}
+              onValueChange={(v) => setBulkNuevoEstado(v as MatriculaEstado)}
+              disabled={bulkUpdateEstadoByCurso.isPending}
+            >
+              <SelectTrigger id="matriculas-bulk-estado-select" className="h-10 w-full">
+                <SelectValue placeholder="Seleccionar estado" />
+              </SelectTrigger>
+              <SelectContent>
+                {MATRICULA_ESTADO_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            className="shrink-0"
+            disabled={
+              !bulkCursoId ||
+              bulkAffectedCount === 0 ||
+              bulkUpdateEstadoByCurso.isPending ||
+              cursoFilterOptions.length === 0
+            }
+            onClick={handleRequestBulkEstadoChange}
+          >
+            {bulkUpdateEstadoByCurso.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Modificando...
+              </>
+            ) : (
+              "Modificar matrículas"
+            )}
+          </Button>
+        </div>
+      )}
 
       <Card className="p-4">
         <div className="mb-4 grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -1691,18 +1834,21 @@ function MatriculasPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="flex h-10 items-center gap-2.5 rounded-md border border-input bg-background px-3 shadow-sm">
+          <div className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-md border border-input bg-background px-3 py-2 shadow-sm sm:col-span-2 xl:col-span-2">
             <Switch
               id="matriculas-filter-incomplete"
               checked={filterIncomplete}
               onCheckedChange={setFilterIncomplete}
+              className="shrink-0"
             />
             <Label
               htmlFor="matriculas-filter-incomplete"
-              className="flex cursor-pointer select-none items-center gap-1.5 text-sm font-medium leading-none text-foreground"
+              className="min-w-0 flex-1 cursor-pointer select-none text-sm font-medium leading-snug text-foreground"
             >
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
-              <span className="truncate">Ver horarios incompletos</span>
+              <span className="inline-flex items-start gap-1.5">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                <span>Ver horarios incompletos</span>
+              </span>
             </Label>
           </div>
         </div>
@@ -1915,6 +2061,14 @@ function MatriculasPage() {
               const { horariosSync, ...patch } = values;
 
               if (horariosSync && horariosSync.rows.length > 0) {
+                const horarioValidationError = validateHorarioRowsForSync(
+                  horariosSync.rows,
+                );
+                if (horarioValidationError) {
+                  toast.error(horarioValidationError);
+                  return;
+                }
+
                 const conflicts = await collectHorarioConflicts(
                   checkSolapamientos,
                   values.ID_ALUMNO,
@@ -1966,6 +2120,14 @@ function MatriculasPage() {
               const { horariosSync, ...patch } = values;
 
               if (horariosSync && horariosSync.rows.length > 0) {
+                const horarioValidationError = validateHorarioRowsForSync(
+                  horariosSync.rows,
+                );
+                if (horarioValidationError) {
+                  toast.error(horarioValidationError);
+                  return;
+                }
+
                 const conflicts = await collectHorarioConflicts(
                   checkSolapamientos,
                   values.ID_ALUMNO,
@@ -1994,6 +2156,60 @@ function MatriculasPage() {
           }}
         />
       ) : null}
+
+      <AlertDialog
+        open={bulkConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !bulkUpdateEstadoByCurso.isPending) setBulkConfirmOpen(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Modificar matrículas de forma masiva</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se cambiará el estado de <strong>{bulkAffectedCount}</strong>{" "}
+              {bulkAffectedCount === 1 ? "matrícula" : "matrículas"} del curso{" "}
+              <strong>{bulkCursoTarget?.nombre ?? "seleccionado"}</strong> a{" "}
+              <strong>{bulkNuevoEstado}</strong>.
+              {showCentroFilter && selectedCenterId ? (
+                <>
+                  {" "}
+                  Solo se incluyen matrículas del centro filtrado actualmente.
+                </>
+              ) : null}{" "}
+              {bulkNuevoEstado === "Activo" ? (
+                <>
+                  El backend reactivará los horarios asociados, reincorporará alumnos en sus grupos
+                  y regenerará las sesiones del calendario para el resto del curso escolar.
+                </>
+              ) : (
+                <>Esta acción solo cambia el estado de la matrícula en el listado.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkUpdateEstadoByCurso.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!bulkCursoId || bulkUpdateEstadoByCurso.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmBulkEstadoChange();
+              }}
+            >
+              {bulkUpdateEstadoByCurso.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Modificando...
+                </>
+              ) : (
+                "Modificar matrículas"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!statusConfirming} onOpenChange={(o) => !o && setStatusConfirming(null)}>
         <AlertDialogContent>

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MoreVertical, Plus, Search, UserCircle } from "lucide-react";
 import {
@@ -20,6 +20,7 @@ import {
   isProfesorRole,
   isSecretariaRole,
 } from "@/lib/tenantQuery";
+import { isProfesorActivo } from "@/lib/profesorSelector";
 import { PageHeader } from "@/components/layout/PageHeader";
 import {
   ContactCompactCell,
@@ -368,9 +369,14 @@ function DireccionProfesoresPage({
 }
 
 function ProfesoresPage() {
+  const { rol, perfil } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app/datos-personales" replace />;
+  }
+
   const { tab: searchTab, profesorId } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { rol, perfil } = useActiveTenant();
   const { list, create, update } = useProfesores();
 
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
@@ -436,7 +442,7 @@ function ProfesoresPage() {
   const handleConfirmStatusChange = async () => {
     if (!statusConfirming) return;
     const profesor = statusConfirming;
-    const isDeactivating = !profesor.FECHA_BAJA;
+    const isDeactivating = isProfesorActivo(profesor);
     try {
       await update.mutateAsync({
         id: profesor.ID_PROFESOR,
@@ -682,12 +688,12 @@ function ProfesoresPage() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {statusConfirming && !statusConfirming.FECHA_BAJA
+                {statusConfirming && isProfesorActivo(statusConfirming)
                   ? "Dar de baja al profesor"
                   : "Reactivar profesor"}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {statusConfirming && !statusConfirming.FECHA_BAJA ? (
+                {statusConfirming && isProfesorActivo(statusConfirming) ? (
                   <>
                     ¿Seguro que quieres dar de baja a <b>{statusConfirming.NOMBRE_PROFESOR}</b>? Se
                     liberarán sus horarios futuros y se revocará su acceso.

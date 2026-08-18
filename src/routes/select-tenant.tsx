@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LogOut, Loader2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { homePathForRole } from "@/lib/homePath";
 import { WorkspaceOptionCard } from "@/components/workspace/WorkspaceOptionCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,12 +54,12 @@ function SelectTenantPage() {
     if (perfiles.length !== 1) return;
 
     if (activePerfil) {
-      navigate({ to: "/dashboard", replace: true });
+      navigate({ to: homePathForRole(activePerfil.ROL), replace: true });
       return;
     }
 
     activateWorkspace(perfiles[0].ID_PERFIL)
-      .then(() => navigate({ to: "/dashboard", replace: true }))
+      .then(() => navigate({ to: homePathForRole(perfiles[0].ROL), replace: true }))
       .catch((err) => {
         toast.error(err instanceof Error ? err.message : "No se pudo activar el workspace");
       });
@@ -94,7 +95,8 @@ function SelectTenantPage() {
     setActivatingId(perfilId);
     try {
       await activateWorkspace(perfilId);
-      navigate({ to: "/dashboard", replace: true });
+      const selected = perfiles.find((p) => p.ID_PERFIL === perfilId);
+      navigate({ to: homePathForRole(selected?.ROL), replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo activar el workspace");
     } finally {

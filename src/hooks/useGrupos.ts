@@ -548,12 +548,6 @@ export function useGrupos(
         gruposQuery = scopeGruposListQuery(gruposQuery, rol, tenantId, resolvedCenterId);
         if (alumnoId) gruposQuery = gruposQuery.contains("ID_ALUMNOS", [alumnoId]);
 
-        let aluQuery = supabase
-          .from("ALUMNOS")
-          .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)");
-        aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
-        aluQuery = appendCenterFilter(aluQuery, resolvedCenterId);
-
         let profQuery = supabase
           .from("PROFESOR")
           .select("ID_PROFESOR, NOMBRE_PROFESOR, FECHA_BAJA")
@@ -568,32 +562,50 @@ export function useGrupos(
 
         const [
           { data: grupos, error },
-          { data: alumnos, error: aluError },
           { data: profesores, error: profError },
           { data: aulas, error: aulaError },
           { data: especialidades, error: espError },
         ] = await Promise.all([
           gruposQuery,
-          aluQuery.order("NOMBRE_ALUMNO", { ascending: true }),
           profQuery,
           aulaQuery,
           espQuery,
         ]);
 
         if (error) throw error;
-        if (aluError) throw aluError;
         if (profError) throw profError;
         if (aulaError) throw aulaError;
         if (espError) throw espError;
 
-        const alumnosRows = (alumnos ?? []) as AlumnoLookup[];
+        const grupoRows = (grupos ?? []) as GrupoRow[];
+        const alumnoIds = [
+          ...new Set(grupoRows.flatMap((row) => parseAlumnoIds(row.ID_ALUMNOS))),
+        ];
+
+        let alumnosRows: AlumnoLookup[] = [];
+        if (alumnoIds.length > 0) {
+          let aluQuery = supabase
+            .from("ALUMNOS")
+            .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)");
+          aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
+          aluQuery = appendCenterFilter(aluQuery, resolvedCenterId);
+          aluQuery = aluQuery.in("ID_ALUMNO", alumnoIds);
+
+          const { data: alumnos, error: aluError } = await aluQuery.order(
+            "NOMBRE_ALUMNO",
+            { ascending: true },
+          );
+          if (aluError) throw aluError;
+          alumnosRows = (alumnos ?? []) as AlumnoLookup[];
+        }
+
         const profesoresRows = (profesores ?? []) as ProfesorLookup[];
         const aulasRows = (aulas ?? []) as AulaLookup[];
         const especialidadesRows = (especialidades ?? []) as EspecialidadLookup[];
 
         return {
           grupos: mapGrupos(
-            (grupos ?? []) as GrupoRow[],
+            grupoRows,
             profesoresRows,
             aulasRows,
             especialidadesRows,

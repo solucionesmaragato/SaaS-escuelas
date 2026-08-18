@@ -33,7 +33,7 @@ import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useCentros, type CursoEscolarData } from "@/hooks/useCentros";
 import { useActiveTenant } from "@/context/AppContext";
-import { canWriteUi } from "@/lib/rbac";
+import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -759,6 +759,14 @@ function FacturasPage() {
   const loadedCountLabel = list.hasNextPage
     ? `${filtered.length}+ facturas cargadas`
     : `${filtered.length} facturas consolidadas en el sistema`;
+
+  if (!hasPermission(rol, "recibos:read")) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">

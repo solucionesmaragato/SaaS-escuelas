@@ -12,7 +12,8 @@ import {
 import { useAlumnosMatriculas } from "@/hooks/useAlumnosMatriculas";
 import { useScrollChunk } from "@/hooks/useScrollChunk";
 import { useActiveTenant } from "@/context/AppContext";
-import { canWriteUi } from "@/lib/rbac";
+import { canWriteUi, hasPermission } from "@/lib/rbac";
+import { canViewAlumnosModule } from "@/lib/tenantQuery";
 import {
   formatPhoneForWhatsApp,
   isEstadoActivo,
@@ -189,6 +190,14 @@ function AlumnosMatriculasPage() {
       toast.error(err instanceof Error ? err.message : "Error al actualizar matrícula");
     }
   };
+
+  if (!hasPermission(rol, "matriculas:read") && !canViewAlumnosModule(rol)) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="-m-6 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">

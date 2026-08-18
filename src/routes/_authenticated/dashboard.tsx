@@ -1,9 +1,8 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Building2, GraduationCap, Users } from "lucide-react";
 import { toast } from "sonner";
 import { AvisosWidget } from "@/components/dashboard/AvisosWidget";
-import { ProfesorMobileMenuGrid } from "@/components/dashboard/ProfesorMobileMenuGrid";
 import { CalendarWidget } from "@/components/sesiones/CalendarWidget";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -14,12 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveTenant } from "@/context/AppContext";
-import { useProfesorMobileShell } from "@/hooks/useProfesorMobileShell";
 import {
   useDashboardLive,
   type DashboardLiveEntity,
 } from "@/hooks/useDashboardLive";
-import { isAdminRole, isMasterRole } from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -140,10 +138,9 @@ function TwoColumnLiveList({
   );
 }
 
-function DashboardPage() {
+function AdminLiveDashboard() {
   const navigate = useNavigate();
   const { rol } = useActiveTenant();
-  const showProfesorMobileMenu = useProfesorMobileShell();
   const { data: liveData, isLoading, isError } = useDashboardLive();
   const showCorrectionsPanel = isAdminRole(rol) || isMasterRole(rol);
 
@@ -156,14 +153,6 @@ function DashboardPage() {
       toast.error("Error al cargar el panel en vivo");
     }
   }, [isError]);
-
-  if (showProfesorMobileMenu) {
-    return (
-      <div className="mx-auto w-full max-w-2xl">
-        <ProfesorMobileMenuGrid />
-      </div>
-    );
-  }
 
   const profesoresTotal =
     (liveData?.profesores.lista_ocupados.length ?? 0) +
@@ -291,4 +280,14 @@ function DashboardPage() {
       </Dialog>
     </div>
   );
+}
+
+function DashboardPage() {
+  const { rol } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app" replace />;
+  }
+
+  return <AdminLiveDashboard />;
 }

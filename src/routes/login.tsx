@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Music4 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
+import { homePathForRole } from "@/lib/homePath";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -32,10 +33,21 @@ function MicrosoftIcon() {
 
 function LoginPage() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useApp();
+  const { loading, perfilesLoading, isAuthenticated, needsTenantSelection, activePerfil } =
+    useApp();
   const [submitting, setSubmitting] = useState(false);
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  if (loading || (isAuthenticated && perfilesLoading)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+  if (isAuthenticated && needsTenantSelection) {
+    return <Navigate to="/select-tenant" replace />;
+  }
+  if (isAuthenticated) return <Navigate to={homePathForRole(activePerfil?.ROL)} replace />;
 
   const handleGoogle = async () => {
     setSubmitting(true);
@@ -44,7 +56,6 @@ function LoginPage() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/dashboard`,
-          queryParams: { access_type: "offline", prompt: "consent" },
         },
       });
       if (error) throw error;
@@ -77,7 +88,7 @@ function LoginPage() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Music4 className="h-6 w-6" />
           </div>
-          <CardTitle className="text-2xl">Music School OS</CardTitle>
+          <CardTitle className="text-2xl">MySincoppa</CardTitle>
           <CardDescription>Accede a tu escuela con tu cuenta corporativa o personal</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

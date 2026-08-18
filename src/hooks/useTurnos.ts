@@ -148,8 +148,7 @@ function assertCanModify(rol: string | null | undefined) {
   if (
     isMasterRole(rol) ||
     isAdminRole(rol) ||
-    isDireccionRole(rol) ||
-    isProfesorRole(rol)
+    isDireccionRole(rol)
   ) {
     return;
   }

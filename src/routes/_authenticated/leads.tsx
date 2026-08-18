@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ChevronDown, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { getActiveCursoEscolar, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
@@ -14,7 +14,9 @@ import {
 } from "@/hooks/useLeads";
 import { useActiveTenant } from "@/context/AppContext";
 import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
-import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
@@ -128,6 +130,55 @@ function resolveLeadEstado(estado: string | null | undefined): string {
   if ((ESTADO_OPTIONS as readonly string[]).includes(trimmed)) return trimmed;
   if (trimmed === "Cerrado") return "Cerrado (No matriculado)";
   return trimmed;
+}
+
+type ProfesorSesionRow = {
+  ID_SESION: string;
+  HORA_INICIO: string | null;
+  HORA_FIN: string | null;
+  ESPECIALIDAD: string | null;
+  ESTADO: string | null;
+};
+
+const SESIONES_TIMELINE_EXCLUDED_ESTADOS = ["Cancelada", "Incidencia"] as const;
+
+function resolveEspecialidadLabel(
+  value: string | null | undefined,
+  especialidades: EspecialidadLookup[] | null | undefined,
+): string {
+  if (!value) return "—";
+  const list = Array.isArray(especialidades) ? especialidades : [];
+  const match = list.find((e) => e?.ID_ESPECIALIDAD === value);
+  if (match?.ESPECIALIDAD) return match.ESPECIALIDAD;
+  return value;
+}
+
+function formatHorarioRange(
+  horaInicio: string | null | undefined,
+  horaFin: string | null | undefined,
+): string | null {
+  const inicio = horaInicio?.trim().slice(0, 5);
+  const fin = horaFin?.trim().slice(0, 5);
+  if (inicio && fin) return `${inicio} a ${fin}`;
+  if (inicio) return inicio;
+  if (fin) return fin;
+  return null;
+}
+
+function dedupeSelectOptions<T>(
+  items: T[] | null | undefined,
+  idFn: (item: T) => string | null | undefined,
+): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items ?? []) {
+    if (!item) continue;
+    const id = idFn(item)?.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    result.push(item);
+  }
+  return result;
 }
 
 type LeadFormState = {
@@ -877,7 +928,7 @@ function LeadsPage() {
                 setCreating(true);
               }}
             >
-              <Plus className="mr-2 h-4 w-4" /> Nuevo lead
+              <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
             </Button>
           )
         }
@@ -1008,7 +1059,7 @@ function LeadsPage() {
           setCreateScheduleConflict(null);
           setCreating(false);
         }}
-        title="Nuevo Lead (Nuevo Alumno)"
+        title="Nuevo Alumno (Nuevo Alumno)"
         submitLabel="Crear"
         submitting={create.isPending}
         scheduleConflictMessage={createScheduleConflict}
@@ -1099,6 +1150,7 @@ function LeadFormDialog({
   especialidades: EspecialidadLookup[];
   onSubmit: (values: LeadFormValues) => void;
 }) {
+  const { rol, tenantId } = useActiveTenant();
   const isCreateForm = centros !== undefined;
   const showCentroSelector = isCreateForm && centros.length > 1;
   const isEditing = Boolean(initial?.ID_LEAD);
@@ -1172,6 +1224,39 @@ function LeadFormDialog({
     idAula,
     aulasOrdenadas.map((a) => ({ id: a.ID_AULA })),
   );
+
+  const leadProfesorSesionesQuery = useQuery({
+    queryKey: ["lead-form-profesor-timeline", idProfesor, dia],
+    enabled: open && !!idProfesor.trim() && !!dia,
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    queryFn: async () => {
+      let query = supabase
+        .from("SESIONES")
+        .select("ID_SESION, HORA_INICIO, HORA_FIN, ESPECIALIDAD, ESTADO")
+        .eq("ID_PROFESOR", idProfesor.trim())
+        .eq("FECHA_EXACTA", dia)
+        .order("HORA_INICIO", { ascending: true });
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as ProfesorSesionRow[];
+    },
+  });
+
+  const leadProfesorSesiones = useMemo(() => {
+    const activas = (leadProfesorSesionesQuery.data ?? []).filter(
+      (s) =>
+        !SESIONES_TIMELINE_EXCLUDED_ESTADOS.includes(
+          (s.ESTADO ?? "") as (typeof SESIONES_TIMELINE_EXCLUDED_ESTADOS)[number],
+        ),
+    );
+    return dedupeSelectOptions(
+      activas,
+      (s) => `${s.HORA_INICIO ?? ""}|${s.HORA_FIN ?? ""}|${s.ESPECIALIDAD ?? ""}`,
+    );
+  }, [leadProfesorSesionesQuery.data]);
 
   useEffect(() => {
     if (!open) {
@@ -1442,6 +1527,34 @@ function LeadFormDialog({
                 value={dia}
                 onChange={(e) => setDia(e.target.value)}
               />
+              {idProfesor.trim() && dia ? (
+                <div className="space-y-2">
+                  <Label>Disponibilidad del profesor ({dia})</Label>
+                  <div className="rounded-md border border-input bg-muted/40 p-3 text-sm">
+                    {leadProfesorSesionesQuery.isLoading ? (
+                      <p className="text-xs text-muted-foreground">Cargando agenda del profesor...</p>
+                    ) : leadProfesorSesiones.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sin sesiones registradas para este profesor en la fecha seleccionada.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {leadProfesorSesiones.map((s) => (
+                          <li key={s.ID_SESION} className="flex items-center gap-2 text-xs">
+                            <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span className="font-medium">
+                              {formatHorarioRange(s.HORA_INICIO, s.HORA_FIN) ?? "—"}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {resolveEspecialidadLabel(s.ESPECIALIDAD, especialidades)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-2">

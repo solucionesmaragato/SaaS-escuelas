@@ -14,7 +14,6 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminSandboxCalendarRouteImport } from './routes/admin/sandbox-calendar'
 import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AuthenticatedTurnosRouteImport } from './routes/_authenticated/turnos'
 import { Route as AuthenticatedTarifasRouteImport } from './routes/_authenticated/tarifas'
@@ -38,9 +37,23 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAusenciasRouteImport } from './routes/_authenticated/ausencias'
 import { Route as AuthenticatedAulasRouteImport } from './routes/_authenticated/aulas'
+import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedAlumnosMatriculasRouteImport } from './routes/_authenticated/alumnosMatriculas'
 import { Route as AuthenticatedAlumnosRouteImport } from './routes/_authenticated/alumnos'
+import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app/index'
 import { Route as AuthenticatedProfesoresMiPerfilRouteImport } from './routes/_authenticated/profesores.mi-perfil'
+import { Route as AuthenticatedAppTurnosRouteImport } from './routes/_authenticated/app/turnos'
+import { Route as AuthenticatedAppSesionesRouteImport } from './routes/_authenticated/app/sesiones'
+import { Route as AuthenticatedAppPrestamosRouteImport } from './routes/_authenticated/app/prestamos'
+import { Route as AuthenticatedAppPermisosRouteImport } from './routes/_authenticated/app/permisos'
+import { Route as AuthenticatedAppIncidenciasRouteImport } from './routes/_authenticated/app/incidencias'
+import { Route as AuthenticatedAppGruposRouteImport } from './routes/_authenticated/app/grupos'
+import { Route as AuthenticatedAppFichajesRouteImport } from './routes/_authenticated/app/fichajes'
+import { Route as AuthenticatedAppEvaluacionesRouteImport } from './routes/_authenticated/app/evaluaciones'
+import { Route as AuthenticatedAppDocumentosRouteImport } from './routes/_authenticated/app/documentos'
+import { Route as AuthenticatedAppDatosPersonalesRouteImport } from './routes/_authenticated/app/datos-personales'
+import { Route as AuthenticatedAppArchivosRouteImport } from './routes/_authenticated/app/archivos'
+import { Route as AuthenticatedAppAlumnosRouteImport } from './routes/_authenticated/app/alumnos'
 
 const SelectTenantRoute = SelectTenantRouteImport.update({
   id: '/select-tenant',
@@ -64,11 +77,6 @@ const AuthenticatedRoute = AuthenticatedRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminSandboxCalendarRoute = AdminSandboxCalendarRouteImport.update({
-  id: '/admin/sandbox-calendar',
-  path: '/admin/sandbox-calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
@@ -191,6 +199,11 @@ const AuthenticatedAulasRoute = AuthenticatedAulasRouteImport.update({
   path: '/aulas',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAlumnosMatriculasRoute =
   AuthenticatedAlumnosMatriculasRouteImport.update({
     id: '/alumnosMatriculas',
@@ -202,12 +215,86 @@ const AuthenticatedAlumnosRoute = AuthenticatedAlumnosRouteImport.update({
   path: '/alumnos',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 const AuthenticatedProfesoresMiPerfilRoute =
   AuthenticatedProfesoresMiPerfilRouteImport.update({
     id: '/mi-perfil',
     path: '/mi-perfil',
     getParentRoute: () => AuthenticatedProfesoresRoute,
   } as any)
+const AuthenticatedAppTurnosRoute = AuthenticatedAppTurnosRouteImport.update({
+  id: '/turnos',
+  path: '/turnos',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const AuthenticatedAppSesionesRoute =
+  AuthenticatedAppSesionesRouteImport.update({
+    id: '/sesiones',
+    path: '/sesiones',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppPrestamosRoute =
+  AuthenticatedAppPrestamosRouteImport.update({
+    id: '/prestamos',
+    path: '/prestamos',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppPermisosRoute =
+  AuthenticatedAppPermisosRouteImport.update({
+    id: '/permisos',
+    path: '/permisos',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppIncidenciasRoute =
+  AuthenticatedAppIncidenciasRouteImport.update({
+    id: '/incidencias',
+    path: '/incidencias',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppGruposRoute = AuthenticatedAppGruposRouteImport.update({
+  id: '/grupos',
+  path: '/grupos',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
+const AuthenticatedAppFichajesRoute =
+  AuthenticatedAppFichajesRouteImport.update({
+    id: '/fichajes',
+    path: '/fichajes',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppEvaluacionesRoute =
+  AuthenticatedAppEvaluacionesRouteImport.update({
+    id: '/evaluaciones',
+    path: '/evaluaciones',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppDocumentosRoute =
+  AuthenticatedAppDocumentosRouteImport.update({
+    id: '/documentos',
+    path: '/documentos',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppDatosPersonalesRoute =
+  AuthenticatedAppDatosPersonalesRouteImport.update({
+    id: '/datos-personales',
+    path: '/datos-personales',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppArchivosRoute =
+  AuthenticatedAppArchivosRouteImport.update({
+    id: '/archivos',
+    path: '/archivos',
+    getParentRoute: () => AuthenticatedAppRoute,
+  } as any)
+const AuthenticatedAppAlumnosRoute = AuthenticatedAppAlumnosRouteImport.update({
+  id: '/alumnos',
+  path: '/alumnos',
+  getParentRoute: () => AuthenticatedAppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -216,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
   '/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
+  '/app': typeof AuthenticatedAppRouteWithChildren
   '/aulas': typeof AuthenticatedAulasRoute
   '/ausencias': typeof AuthenticatedAusenciasRoute
   '/clientes': typeof AuthenticatedClientesRoute
@@ -239,8 +327,20 @@ export interface FileRoutesByFullPath {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
-  '/admin/sandbox-calendar': typeof AdminSandboxCalendarRoute
+  '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
+  '/app/archivos': typeof AuthenticatedAppArchivosRoute
+  '/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
+  '/app/documentos': typeof AuthenticatedAppDocumentosRoute
+  '/app/evaluaciones': typeof AuthenticatedAppEvaluacionesRoute
+  '/app/fichajes': typeof AuthenticatedAppFichajesRoute
+  '/app/grupos': typeof AuthenticatedAppGruposRoute
+  '/app/incidencias': typeof AuthenticatedAppIncidenciasRoute
+  '/app/permisos': typeof AuthenticatedAppPermisosRoute
+  '/app/prestamos': typeof AuthenticatedAppPrestamosRoute
+  '/app/sesiones': typeof AuthenticatedAppSesionesRoute
+  '/app/turnos': typeof AuthenticatedAppTurnosRoute
   '/profesores/mi-perfil': typeof AuthenticatedProfesoresMiPerfilRoute
+  '/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -272,8 +372,20 @@ export interface FileRoutesByTo {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
-  '/admin/sandbox-calendar': typeof AdminSandboxCalendarRoute
+  '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
+  '/app/archivos': typeof AuthenticatedAppArchivosRoute
+  '/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
+  '/app/documentos': typeof AuthenticatedAppDocumentosRoute
+  '/app/evaluaciones': typeof AuthenticatedAppEvaluacionesRoute
+  '/app/fichajes': typeof AuthenticatedAppFichajesRoute
+  '/app/grupos': typeof AuthenticatedAppGruposRoute
+  '/app/incidencias': typeof AuthenticatedAppIncidenciasRoute
+  '/app/permisos': typeof AuthenticatedAppPermisosRoute
+  '/app/prestamos': typeof AuthenticatedAppPrestamosRoute
+  '/app/sesiones': typeof AuthenticatedAppSesionesRoute
+  '/app/turnos': typeof AuthenticatedAppTurnosRoute
   '/profesores/mi-perfil': typeof AuthenticatedProfesoresMiPerfilRoute
+  '/app': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -284,6 +396,7 @@ export interface FileRoutesById {
   '/select-tenant': typeof SelectTenantRoute
   '/_authenticated/alumnos': typeof AuthenticatedAlumnosRoute
   '/_authenticated/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
+  '/_authenticated/app': typeof AuthenticatedAppRouteWithChildren
   '/_authenticated/aulas': typeof AuthenticatedAulasRoute
   '/_authenticated/ausencias': typeof AuthenticatedAusenciasRoute
   '/_authenticated/clientes': typeof AuthenticatedClientesRoute
@@ -307,8 +420,20 @@ export interface FileRoutesById {
   '/_authenticated/tarifas': typeof AuthenticatedTarifasRoute
   '/_authenticated/turnos': typeof AuthenticatedTurnosRoute
   '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
-  '/admin/sandbox-calendar': typeof AdminSandboxCalendarRoute
+  '/_authenticated/app/alumnos': typeof AuthenticatedAppAlumnosRoute
+  '/_authenticated/app/archivos': typeof AuthenticatedAppArchivosRoute
+  '/_authenticated/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
+  '/_authenticated/app/documentos': typeof AuthenticatedAppDocumentosRoute
+  '/_authenticated/app/evaluaciones': typeof AuthenticatedAppEvaluacionesRoute
+  '/_authenticated/app/fichajes': typeof AuthenticatedAppFichajesRoute
+  '/_authenticated/app/grupos': typeof AuthenticatedAppGruposRoute
+  '/_authenticated/app/incidencias': typeof AuthenticatedAppIncidenciasRoute
+  '/_authenticated/app/permisos': typeof AuthenticatedAppPermisosRoute
+  '/_authenticated/app/prestamos': typeof AuthenticatedAppPrestamosRoute
+  '/_authenticated/app/sesiones': typeof AuthenticatedAppSesionesRoute
+  '/_authenticated/app/turnos': typeof AuthenticatedAppTurnosRoute
   '/_authenticated/profesores/mi-perfil': typeof AuthenticatedProfesoresMiPerfilRoute
+  '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -319,6 +444,7 @@ export interface FileRouteTypes {
     | '/select-tenant'
     | '/alumnos'
     | '/alumnosMatriculas'
+    | '/app'
     | '/aulas'
     | '/ausencias'
     | '/clientes'
@@ -342,8 +468,20 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
-    | '/admin/sandbox-calendar'
+    | '/app/alumnos'
+    | '/app/archivos'
+    | '/app/datos-personales'
+    | '/app/documentos'
+    | '/app/evaluaciones'
+    | '/app/fichajes'
+    | '/app/grupos'
+    | '/app/incidencias'
+    | '/app/permisos'
+    | '/app/prestamos'
+    | '/app/sesiones'
+    | '/app/turnos'
     | '/profesores/mi-perfil'
+    | '/app/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -375,8 +513,20 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
-    | '/admin/sandbox-calendar'
+    | '/app/alumnos'
+    | '/app/archivos'
+    | '/app/datos-personales'
+    | '/app/documentos'
+    | '/app/evaluaciones'
+    | '/app/fichajes'
+    | '/app/grupos'
+    | '/app/incidencias'
+    | '/app/permisos'
+    | '/app/prestamos'
+    | '/app/sesiones'
+    | '/app/turnos'
     | '/profesores/mi-perfil'
+    | '/app'
   id:
     | '__root__'
     | '/'
@@ -386,6 +536,7 @@ export interface FileRouteTypes {
     | '/select-tenant'
     | '/_authenticated/alumnos'
     | '/_authenticated/alumnosMatriculas'
+    | '/_authenticated/app'
     | '/_authenticated/aulas'
     | '/_authenticated/ausencias'
     | '/_authenticated/clientes'
@@ -409,8 +560,20 @@ export interface FileRouteTypes {
     | '/_authenticated/tarifas'
     | '/_authenticated/turnos'
     | '/_authenticated/usuarios'
-    | '/admin/sandbox-calendar'
+    | '/_authenticated/app/alumnos'
+    | '/_authenticated/app/archivos'
+    | '/_authenticated/app/datos-personales'
+    | '/_authenticated/app/documentos'
+    | '/_authenticated/app/evaluaciones'
+    | '/_authenticated/app/fichajes'
+    | '/_authenticated/app/grupos'
+    | '/_authenticated/app/incidencias'
+    | '/_authenticated/app/permisos'
+    | '/_authenticated/app/prestamos'
+    | '/_authenticated/app/sesiones'
+    | '/_authenticated/app/turnos'
     | '/_authenticated/profesores/mi-perfil'
+    | '/_authenticated/app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -419,7 +582,6 @@ export interface RootRouteChildren {
   FirmarSepaRoute: typeof FirmarSepaRoute
   LoginRoute: typeof LoginRoute
   SelectTenantRoute: typeof SelectTenantRoute
-  AdminSandboxCalendarRoute: typeof AdminSandboxCalendarRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -457,13 +619,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/sandbox-calendar': {
-      id: '/admin/sandbox-calendar'
-      path: '/admin/sandbox-calendar'
-      fullPath: '/admin/sandbox-calendar'
-      preLoaderRoute: typeof AdminSandboxCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/usuarios': {
@@ -627,6 +782,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAulasRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/app': {
+      id: '/_authenticated/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AuthenticatedAppRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/alumnosMatriculas': {
       id: '/_authenticated/alumnosMatriculas'
       path: '/alumnosMatriculas'
@@ -641,6 +803,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAlumnosRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/app/': {
+      id: '/_authenticated/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
     '/_authenticated/profesores/mi-perfil': {
       id: '/_authenticated/profesores/mi-perfil'
       path: '/mi-perfil'
@@ -648,8 +817,127 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedProfesoresMiPerfilRouteImport
       parentRoute: typeof AuthenticatedProfesoresRoute
     }
+    '/_authenticated/app/turnos': {
+      id: '/_authenticated/app/turnos'
+      path: '/turnos'
+      fullPath: '/app/turnos'
+      preLoaderRoute: typeof AuthenticatedAppTurnosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/sesiones': {
+      id: '/_authenticated/app/sesiones'
+      path: '/sesiones'
+      fullPath: '/app/sesiones'
+      preLoaderRoute: typeof AuthenticatedAppSesionesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/prestamos': {
+      id: '/_authenticated/app/prestamos'
+      path: '/prestamos'
+      fullPath: '/app/prestamos'
+      preLoaderRoute: typeof AuthenticatedAppPrestamosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/permisos': {
+      id: '/_authenticated/app/permisos'
+      path: '/permisos'
+      fullPath: '/app/permisos'
+      preLoaderRoute: typeof AuthenticatedAppPermisosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/incidencias': {
+      id: '/_authenticated/app/incidencias'
+      path: '/incidencias'
+      fullPath: '/app/incidencias'
+      preLoaderRoute: typeof AuthenticatedAppIncidenciasRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/grupos': {
+      id: '/_authenticated/app/grupos'
+      path: '/grupos'
+      fullPath: '/app/grupos'
+      preLoaderRoute: typeof AuthenticatedAppGruposRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/fichajes': {
+      id: '/_authenticated/app/fichajes'
+      path: '/fichajes'
+      fullPath: '/app/fichajes'
+      preLoaderRoute: typeof AuthenticatedAppFichajesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/evaluaciones': {
+      id: '/_authenticated/app/evaluaciones'
+      path: '/evaluaciones'
+      fullPath: '/app/evaluaciones'
+      preLoaderRoute: typeof AuthenticatedAppEvaluacionesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/documentos': {
+      id: '/_authenticated/app/documentos'
+      path: '/documentos'
+      fullPath: '/app/documentos'
+      preLoaderRoute: typeof AuthenticatedAppDocumentosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/datos-personales': {
+      id: '/_authenticated/app/datos-personales'
+      path: '/datos-personales'
+      fullPath: '/app/datos-personales'
+      preLoaderRoute: typeof AuthenticatedAppDatosPersonalesRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/archivos': {
+      id: '/_authenticated/app/archivos'
+      path: '/archivos'
+      fullPath: '/app/archivos'
+      preLoaderRoute: typeof AuthenticatedAppArchivosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
+    '/_authenticated/app/alumnos': {
+      id: '/_authenticated/app/alumnos'
+      path: '/alumnos'
+      fullPath: '/app/alumnos'
+      preLoaderRoute: typeof AuthenticatedAppAlumnosRouteImport
+      parentRoute: typeof AuthenticatedAppRoute
+    }
   }
 }
+
+interface AuthenticatedAppRouteChildren {
+  AuthenticatedAppAlumnosRoute: typeof AuthenticatedAppAlumnosRoute
+  AuthenticatedAppArchivosRoute: typeof AuthenticatedAppArchivosRoute
+  AuthenticatedAppDatosPersonalesRoute: typeof AuthenticatedAppDatosPersonalesRoute
+  AuthenticatedAppDocumentosRoute: typeof AuthenticatedAppDocumentosRoute
+  AuthenticatedAppEvaluacionesRoute: typeof AuthenticatedAppEvaluacionesRoute
+  AuthenticatedAppFichajesRoute: typeof AuthenticatedAppFichajesRoute
+  AuthenticatedAppGruposRoute: typeof AuthenticatedAppGruposRoute
+  AuthenticatedAppIncidenciasRoute: typeof AuthenticatedAppIncidenciasRoute
+  AuthenticatedAppPermisosRoute: typeof AuthenticatedAppPermisosRoute
+  AuthenticatedAppPrestamosRoute: typeof AuthenticatedAppPrestamosRoute
+  AuthenticatedAppSesionesRoute: typeof AuthenticatedAppSesionesRoute
+  AuthenticatedAppTurnosRoute: typeof AuthenticatedAppTurnosRoute
+  AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+}
+
+const AuthenticatedAppRouteChildren: AuthenticatedAppRouteChildren = {
+  AuthenticatedAppAlumnosRoute: AuthenticatedAppAlumnosRoute,
+  AuthenticatedAppArchivosRoute: AuthenticatedAppArchivosRoute,
+  AuthenticatedAppDatosPersonalesRoute: AuthenticatedAppDatosPersonalesRoute,
+  AuthenticatedAppDocumentosRoute: AuthenticatedAppDocumentosRoute,
+  AuthenticatedAppEvaluacionesRoute: AuthenticatedAppEvaluacionesRoute,
+  AuthenticatedAppFichajesRoute: AuthenticatedAppFichajesRoute,
+  AuthenticatedAppGruposRoute: AuthenticatedAppGruposRoute,
+  AuthenticatedAppIncidenciasRoute: AuthenticatedAppIncidenciasRoute,
+  AuthenticatedAppPermisosRoute: AuthenticatedAppPermisosRoute,
+  AuthenticatedAppPrestamosRoute: AuthenticatedAppPrestamosRoute,
+  AuthenticatedAppSesionesRoute: AuthenticatedAppSesionesRoute,
+  AuthenticatedAppTurnosRoute: AuthenticatedAppTurnosRoute,
+  AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+}
+
+const AuthenticatedAppRouteWithChildren =
+  AuthenticatedAppRoute._addFileChildren(AuthenticatedAppRouteChildren)
 
 interface AuthenticatedProfesoresRouteChildren {
   AuthenticatedProfesoresMiPerfilRoute: typeof AuthenticatedProfesoresMiPerfilRoute
@@ -668,6 +956,7 @@ const AuthenticatedProfesoresRouteWithChildren =
 interface AuthenticatedRouteChildren {
   AuthenticatedAlumnosRoute: typeof AuthenticatedAlumnosRoute
   AuthenticatedAlumnosMatriculasRoute: typeof AuthenticatedAlumnosMatriculasRoute
+  AuthenticatedAppRoute: typeof AuthenticatedAppRouteWithChildren
   AuthenticatedAulasRoute: typeof AuthenticatedAulasRoute
   AuthenticatedAusenciasRoute: typeof AuthenticatedAusenciasRoute
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRoute
@@ -696,6 +985,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAlumnosRoute: AuthenticatedAlumnosRoute,
   AuthenticatedAlumnosMatriculasRoute: AuthenticatedAlumnosMatriculasRoute,
+  AuthenticatedAppRoute: AuthenticatedAppRouteWithChildren,
   AuthenticatedAulasRoute: AuthenticatedAulasRoute,
   AuthenticatedAusenciasRoute: AuthenticatedAusenciasRoute,
   AuthenticatedClientesRoute: AuthenticatedClientesRoute,
@@ -731,7 +1021,6 @@ const rootRouteChildren: RootRouteChildren = {
   FirmarSepaRoute: FirmarSepaRoute,
   LoginRoute: LoginRoute,
   SelectTenantRoute: SelectTenantRoute,
-  AdminSandboxCalendarRoute: AdminSandboxCalendarRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

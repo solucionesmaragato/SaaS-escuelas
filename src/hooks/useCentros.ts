@@ -204,6 +204,23 @@ export function useCentros() {
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
+  const closeCurso = useMutation({
+    mutationFn: async (idCurso: UUID) => {
+      assertCanManageCursoEscolar(rol);
+      const idCliente = await resolveActiveClientId(tenantId);
+
+      const { data, error } = await supabase
+        .from("CURSO_ESCOLAR")
+        .update({ ESTADO: "Inactivo" })
+        .eq("ID_CURSO", idCurso)
+        .eq("ID_CLIENTE", idCliente)
+        .select();
+      if (error) throw error;
+      return firstUpdatedRow(data, "el curso escolar") as CursoEscolarData;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
+  });
+
   const deleteCurso = useMutation({
     mutationFn: async (idCurso: UUID) => {
       assertCanManageCursoEscolar(rol);
@@ -217,5 +234,5 @@ export function useCentros() {
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
-  return { list, create, createCurso, updateCurso, deleteCurso };
+  return { list, create, createCurso, updateCurso, closeCurso, deleteCurso };
 }

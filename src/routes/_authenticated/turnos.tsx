@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, MoreHorizontal, Plus, Search, Trash2, Pencil, X } from "lucide-react";
@@ -85,13 +85,43 @@ const dayOrder: Record<string, number> = {
   Lunes: 1,
   Martes: 2,
   Miercoles: 3,
+  Miércoles: 3,
   Jueves: 4,
   Viernes: 5,
   Sabado: 6,
+  Sábado: 6,
   Domingo: 7,
 };
 
 const sortLocale = { sensitivity: "base" } as const;
+
+function normalizeDayKey(dia: string | null | undefined): string {
+  if (!dia) return "";
+  return dia.normalize("NFD").replace(/\p{M}/gu, "");
+}
+
+function resolveTurnoDiaSemana(dia: string | null | undefined): (typeof DIA_SEMANA_OPTIONS)[number] {
+  if (!dia?.trim()) return DIA_SEMANA_OPTIONS[0];
+  const trimmed = dia.trim();
+  if ((DIA_SEMANA_OPTIONS as readonly string[]).includes(trimmed)) {
+    return trimmed as (typeof DIA_SEMANA_OPTIONS)[number];
+  }
+  const normalized = normalizeDayKey(trimmed).toLowerCase();
+  const match = DIA_SEMANA_OPTIONS.find(
+    (opt) => normalizeDayKey(opt).toLowerCase() === normalized,
+  );
+  if (match) return match;
+  const alias = Object.keys(dayOrder).find(
+    (key) => normalizeDayKey(key).toLowerCase() === normalized,
+  );
+  if (alias) {
+    const canonical = DIA_SEMANA_OPTIONS.find(
+      (opt) => normalizeDayKey(opt).toLowerCase() === normalizeDayKey(alias).toLowerCase(),
+    );
+    if (canonical) return canonical;
+  }
+  return DIA_SEMANA_OPTIONS[0];
+}
 
 type DayScheduleFields = {
   abreManana: string;
@@ -112,6 +142,18 @@ function toTimeInputValue(value: string | null | undefined): string {
   if (!value) return "";
   const match = value.match(/^(\d{2}:\d{2})/);
   return match ? match[1] : value.slice(0, 5);
+}
+
+function turnoFormStateFromInitial(initial?: TurnoData | null) {
+  return {
+    idProfesor: initial?.ID_PROFESOR ? String(initial.ID_PROFESOR) : "",
+    diaSemana: resolveTurnoDiaSemana(initial?.DIA_SEMANA),
+    abreManana: toTimeInputValue(initial?.ABRE_MAÑANA),
+    cierraManana: toTimeInputValue(initial?.CIERRA_MAÑANA),
+    abreTarde: toTimeInputValue(initial?.ABRE_TARDE),
+    cierraTarde: toTimeInputValue(initial?.CIERRA_TARDE),
+    especialidadIds: initial?.ESPECIALIDAD ?? [],
+  };
 }
 
 function formatTimeBlock(abre: string | null, cierra: string | null): string | null {
@@ -284,6 +326,7 @@ function TurnoDetailOverlay({
               </Button>
             </header>
             <TurnoFormDialog
+              key={turno.ID_TURNO}
               open
               embedded
               title={readOnly ? "Ver disponibilidad" : "Editar disponibilidad"}
@@ -378,6 +421,11 @@ function TurnoDetailOverlay({
 
 function TurnosPage() {
   const { rol, perfil } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app/turnos" replace />;
+  }
+
   const canAccess = hasPermission(rol, "turnos:read") || hasPermission(rol, "turnos:write");
   const canCreate = isMasterRole(rol) || isAdminRole(rol);
   const canDelete = isMasterRole(rol) || isAdminRole(rol);
@@ -514,24 +562,21 @@ function TurnosPage() {
                       className="cursor-pointer transition-colors hover:bg-muted/50"
                       onClick={() => setOverlay({ id: t.ID_TURNO, mode: "detail" })}
                     >
-                      <TableCell
-                        className="py-2 font-medium text-sm"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <EntityLink type="profesor" id={t.ID_PROFESOR}>
-                          {t.NOMBRE_PROFESOR}
-                        </EntityLink>
+                      <TableCell className="py-2 font-medium text-sm">
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <EntityLink type="profesor" id={t.ID_PROFESOR}>
+                            {t.NOMBRE_PROFESOR}
+                          </EntityLink>
+                        </span>
                       </TableCell>
-                      <TableCell className="py-2 text-sm" onClick={(e) => e.stopPropagation()}>
-                        {t.DIA_SEMANA}
-                      </TableCell>
+                      <TableCell className="py-2 text-sm">{t.DIA_SEMANA}</TableCell>
                       <TableCell className="py-2 text-xs text-muted-foreground font-mono tabular-nums">
                         {manana ?? "—"}
                       </TableCell>
                       <TableCell className="py-2 text-xs text-muted-foreground font-mono tabular-nums">
                         {tarde ?? "—"}
                       </TableCell>
-                      <TableCell className="py-2 align-top" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="py-2 align-top">
                         <TagBadges text={t.TEXTO_ESPECIALIDADES} />
                       </TableCell>
                       {canDelete && (
@@ -747,15 +792,23 @@ function TurnoFormDialog({
   embedded?: boolean;
   onSubmit: (values: TurnoBulkCreateInput | TurnoCreateInput | TurnoUpdateInput) => void;
 }) {
-  const [idProfesor, setIdProfesor] = useState("");
-  const [diaSemana, setDiaSemana] = useState<string>(DIA_SEMANA_OPTIONS[0]);
+  const [idProfesor, setIdProfesor] = useState(() => turnoFormStateFromInitial(initial).idProfesor);
+  const [diaSemana, setDiaSemana] = useState(
+    () => turnoFormStateFromInitial(initial).diaSemana,
+  );
   const [diasSeleccionados, setDiasSeleccionados] = useState<string[]>([]);
   const [horariosPorDia, setHorariosPorDia] = useState<Record<string, DayScheduleFields>>({});
-  const [abreManana, setAbreManana] = useState("");
-  const [cierraManana, setCierraManana] = useState("");
-  const [abreTarde, setAbreTarde] = useState("");
-  const [cierraTarde, setCierraTarde] = useState("");
-  const [especialidadIds, setEspecialidadIds] = useState<string[]>([]);
+  const [abreManana, setAbreManana] = useState(() => turnoFormStateFromInitial(initial).abreManana);
+  const [cierraManana, setCierraManana] = useState(
+    () => turnoFormStateFromInitial(initial).cierraManana,
+  );
+  const [abreTarde, setAbreTarde] = useState(() => turnoFormStateFromInitial(initial).abreTarde);
+  const [cierraTarde, setCierraTarde] = useState(
+    () => turnoFormStateFromInitial(initial).cierraTarde,
+  );
+  const [especialidadIds, setEspecialidadIds] = useState<string[]>(
+    () => turnoFormStateFromInitial(initial).especialidadIds,
+  );
 
   const profesoresOrdenados = useMemo(
     () => profesorSelectorOptions(profesores, idProfesor),
@@ -772,20 +825,17 @@ function TurnoFormDialog({
 
   useEffect(() => {
     if (!open) return;
-    setIdProfesor(initial?.ID_PROFESOR || "");
-    setDiaSemana(
-      initial?.DIA_SEMANA && (DIA_SEMANA_OPTIONS as readonly string[]).includes(initial.DIA_SEMANA)
-        ? initial.DIA_SEMANA
-        : DIA_SEMANA_OPTIONS[0],
-    );
+    const next = turnoFormStateFromInitial(initial);
+    setIdProfesor(next.idProfesor);
+    setDiaSemana(next.diaSemana);
     setDiasSeleccionados([]);
     setHorariosPorDia({});
-    setAbreManana(toTimeInputValue(initial?.ABRE_MAÑANA));
-    setCierraManana(toTimeInputValue(initial?.CIERRA_MAÑANA));
-    setAbreTarde(toTimeInputValue(initial?.ABRE_TARDE));
-    setCierraTarde(toTimeInputValue(initial?.CIERRA_TARDE));
-    setEspecialidadIds(initial?.ESPECIALIDAD ?? []);
-  }, [open, initial]);
+    setAbreManana(next.abreManana);
+    setCierraManana(next.cierraManana);
+    setAbreTarde(next.abreTarde);
+    setCierraTarde(next.cierraTarde);
+    setEspecialidadIds(next.especialidadIds);
+  }, [open, initial?.ID_TURNO]);
 
   const formDisabled = !!readOnly;
   const assignmentFieldsLocked = !!readOnly || !!timesOnlyEdit;
@@ -877,7 +927,7 @@ function TurnoFormDialog({
         <div className="space-y-2">
           <Label htmlFor="turno-profesor">Profesor *</Label>
           <Select
-            value={idProfesor || undefined}
+            value={idProfesor}
             onValueChange={setIdProfesor}
             disabled={assignmentFieldsLocked}
           >

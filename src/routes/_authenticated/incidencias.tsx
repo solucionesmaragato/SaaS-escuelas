@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Calendar, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
@@ -6,9 +6,9 @@ import { useIncidencias, type IncidenciaData } from "@/hooks/useIncidencias";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
-import { canWriteUi } from "@/lib/rbac";
+import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { appendCenterFilter, appendIdInFilter, fetchAlumnoIdsForCenter } from "@/lib/centroFilter";
-import { scopeTenantQuery } from "@/lib/tenantQuery";
+import { isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -331,6 +331,11 @@ function IncidenciaDetailOverlay({
 
 function IncidenciasPage() {
   const { rol } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app/incidencias" replace />;
+  }
+
   const canWrite = canWriteUi(rol, "incidencias:write");
   const {
     centrosOrdenados,
@@ -425,6 +430,14 @@ function IncidenciasPage() {
   const faltasPageRows = paginate(faltasRows);
   const recuperacionesPageRows = paginate(recuperacionesRows);
   const consultasPageRows = paginate(consultasRows);
+
+  if (!hasPermission(rol, "incidencias:read")) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -1266,7 +1279,9 @@ function IncidenciaFormDialog({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     queryFn: async () => {
-      const { data, error } = await supabase.from("AULA").select("*");
+      let query = supabase.from("AULA").select("*");
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
       if (error) throw error;
       return normalizeAulas(data);
     },
@@ -1308,12 +1323,14 @@ function IncidenciaFormDialog({
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("SESIONES")
         .select("ID_SESION, HORA_INICIO, HORA_FIN, ESPECIALIDAD, ESTADO")
         .eq("ID_PROFESOR", idProfesor.trim())
         .eq("FECHA_EXACTA", fechaExacta)
         .order("HORA_INICIO", { ascending: true });
+      query = scopeTenantQuery(query, rol, tenantId);
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as ProfesorSesionRow[];
     },

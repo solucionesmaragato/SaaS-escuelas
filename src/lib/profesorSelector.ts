@@ -1,3 +1,5 @@
+import { format } from "date-fns";
+
 /** Minimal shape for teacher assignment dropdowns. */
 export type ProfesorSelectable = {
   ID_PROFESOR: string;
@@ -5,8 +7,21 @@ export type ProfesorSelectable = {
   FECHA_BAJA?: string | null;
 };
 
+function normalizeFechaBaja(fechaBaja: string): string {
+  return fechaBaja.slice(0, 10);
+}
+
+/** Equivalent to SQL: FECHA_BAJA IS NULL OR FECHA_BAJA::date >= CURRENT_DATE */
 export function isProfesorActivo(profesor: { FECHA_BAJA?: string | null }): boolean {
-  return profesor.FECHA_BAJA == null || profesor.FECHA_BAJA === "";
+  const { FECHA_BAJA } = profesor;
+  if (FECHA_BAJA == null || FECHA_BAJA === "") return true;
+  const fechaBaja = normalizeFechaBaja(FECHA_BAJA);
+  const hoy = format(new Date(), "yyyy-MM-dd");
+  return fechaBaja >= hoy;
+}
+
+export function isProfesorBajaEfectiva(fechaBaja: string | null | undefined): boolean {
+  return !isProfesorActivo({ FECHA_BAJA: fechaBaja });
 }
 
 export function filterProfesoresActivos<T extends { FECHA_BAJA?: string | null }>(

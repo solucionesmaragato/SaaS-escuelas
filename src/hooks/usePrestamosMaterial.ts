@@ -9,9 +9,11 @@ import {
 } from "@/lib/centroFilter";
 import {
   isMasterRole,
+  isProfesorRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
+import type { Perfil } from "@/types/database";
 
 const PRESTAMO_SELECT_COLUMNS =
   "ID_PRESTAMO, ID_CLIENTE, ID_CENTRO, ID_RECEPTOR, ELEMENTO, CATEGORIA, NUM_SERIE, FECHA_PRESTAMO, FECHA_FIN_PRESTAMO, FECHA_DEVOLUCION, ESTADO_DEVOLUCION, ESTADO_MATERIAL, NOTAS, CREADO_POR, RECOGIDO_POR, CREATED_AT, UPDATED_AT" as const;
@@ -212,12 +214,32 @@ function matchesCenterReceptor(
   return false;
 }
 
+function matchesProfesorPrestamo(row: PrestamoMaterialRow, perfil: Perfil | null): boolean {
+  const profesorId = perfil?.ID_PROFESOR?.trim();
+  if (!profesorId) return false;
+
+  const receptor = row.ID_RECEPTOR?.trim();
+  if (receptor === profesorId) return true;
+
+  const creadoPor = row.CREADO_POR?.trim();
+  if (!creadoPor) return false;
+  if (creadoPor === profesorId) return true;
+  if (perfil?.ID_PERFIL && creadoPor === perfil.ID_PERFIL.trim()) return true;
+  if (perfil?.ID && creadoPor === perfil.ID.trim()) return true;
+  if (perfil?.EMAIL && creadoPor.toLowerCase() === perfil.EMAIL.trim().toLowerCase()) {
+    return true;
+  }
+
+  return false;
+}
+
 export function usePrestamosMaterial(filterCenterId?: string | null) {
-  const { tenantId, rol } = useActiveTenant();
+  const { tenantId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("prestamosMaterial", rol, tenantId),
     centerFilterQueryKey(filterCenterId),
+    isProfesorRole(rol) ? (perfil?.ID_PROFESOR ?? "none") : "all",
   ] as const;
 
   const list = useQuery({
@@ -260,6 +282,11 @@ export function usePrestamosMaterial(filterCenterId?: string | null) {
         const alumnoIds = new Set(alumnoIdsList ?? []);
         const profesorIds = new Set(profesorIdsList ?? []);
         rows = rows.filter((row) => matchesCenterReceptor(row, alumnoIds, profesorIds));
+      }
+
+      if (isProfesorRole(rol)) {
+        if (!perfil?.ID_PROFESOR?.trim()) return [];
+        rows = rows.filter((row) => matchesProfesorPrestamo(row, perfil));
       }
 
       return rows;

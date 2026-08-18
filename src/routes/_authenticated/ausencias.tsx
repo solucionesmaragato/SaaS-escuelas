@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -572,6 +572,11 @@ function isManagementRoleGate(rol: string | null | undefined): boolean {
 
 function PermisosPage() {
   const { rol, perfil } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app/permisos" replace />;
+  }
+
   const isManagementRole = isManagementRoleGate(rol);
   const isMaster = isMasterRole(rol);
   const isAdmin = isAdminRole(rol);

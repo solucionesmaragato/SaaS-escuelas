@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router";
 import {
   Calendar,
   Clock,
-  Users,
   AlertTriangle,
   GraduationCap,
   School,
+  Users,
   Package,
   FileCheck,
   FolderLock,
@@ -16,6 +16,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { useActiveTenant } from "@/context/AppContext";
+import { canViewGruposNav, useGrupos } from "@/hooks/useGrupos";
 
 type ColorScheme = "green" | "yellow" | "blue" | "red";
 
@@ -47,24 +49,23 @@ const LABEL_CLASSES: Record<ColorScheme, string> = {
 // BLOCK 3: BLUE (Identity & Students)
 // BLOCK 4: RED (Critical Alerts)
 const MENU_ITEMS: MenuItem[] = [
-  { title: "Sesiones", icon: Calendar, colorScheme: "green", to: "/sesiones" },
-  { title: "Grupos", icon: School, colorScheme: "green", to: "/grupos" },
-  { title: "Evaluaciones", icon: GraduationCap, colorScheme: "green", to: "/evaluaciones" },
-  { title: "Préstamos de material", icon: Package, colorScheme: "green", to: "/prestamosMaterial" },
-  { title: "Fichajes", icon: Clock, colorScheme: "yellow", to: "/fichajes" },
-  { title: "Permisos", icon: FileCheck, colorScheme: "yellow", to: "/ausencias" },
-  { title: "Disponibilidad horaria", icon: Hourglass, colorScheme: "yellow", to: "/turnos" },
-  { title: "Documentos legales", icon: FolderLock, colorScheme: "yellow", to: "/documentos" },
-  { title: "Mis archivos", icon: HardDrive, colorScheme: "yellow", disabled: true },
-  { title: "Alumnos", icon: Users, colorScheme: "blue", to: "/alumnos" },
+  { title: "Sesiones", icon: Calendar, colorScheme: "green", to: "/app/sesiones" },
+  { title: "Grupos", icon: School, colorScheme: "green", to: "/app/grupos" },
+  { title: "Evaluaciones", icon: GraduationCap, colorScheme: "green", to: "/app/evaluaciones" },
+  { title: "Préstamos de material", icon: Package, colorScheme: "green", to: "/app/prestamos" },
+  { title: "Fichajes", icon: Clock, colorScheme: "yellow", to: "/app/fichajes" },
+  { title: "Permisos", icon: FileCheck, colorScheme: "yellow", to: "/app/permisos" },
+  { title: "Disponibilidad horaria", icon: Hourglass, colorScheme: "yellow", to: "/app/turnos" },
+  { title: "Documentos legales", icon: FolderLock, colorScheme: "yellow", to: "/app/documentos" },
+  { title: "Mis archivos", icon: HardDrive, colorScheme: "yellow", to: "/app/archivos" },
+  { title: "Alumnos", icon: Users, colorScheme: "blue", to: "/app/alumnos" },
   {
     title: "Mis datos personales",
     icon: UserCog,
     colorScheme: "blue",
-    to: "/profesores",
-    search: { tab: "personal" },
+    to: "/app/datos-personales",
   },
-  { title: "Incidencias", icon: AlertTriangle, colorScheme: "red", to: "/incidencias" },
+  { title: "Incidencias", icon: AlertTriangle, colorScheme: "red", to: "/app/incidencias" },
 ];
 
 function MenuCard({ item }: { item: MenuItem }) {
@@ -105,10 +106,18 @@ function MenuCard({ item }: { item: MenuItem }) {
 }
 
 export function ProfesorMobileMenuGrid() {
+  const { rol, perfil } = useActiveTenant();
+  const { list: gruposList } = useGrupos();
+  const grupos = gruposList.data?.grupos ?? [];
+  const showGruposNav = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
+  const visibleItems = MENU_ITEMS.filter(
+    (item) => item.to !== "/app/grupos" || showGruposNav,
+  );
+
   return (
     <div className="px-4 py-4">
       <div className="grid grid-cols-1 min-[350px]:grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-        {MENU_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <MenuCard key={item.title} item={item} />
         ))}
       </div>

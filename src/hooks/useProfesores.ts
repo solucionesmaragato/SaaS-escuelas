@@ -5,6 +5,7 @@ import {
   canViewMiPerfilNav,
   isAdminRole,
   isMasterRole,
+  isProfesorRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
@@ -277,7 +278,9 @@ function mapProfesores(
 export function useProfesores() {
   const { tenantId, centerId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
-  const queryKey = tenantListKey("profesores", rol, tenantId);
+  const queryKey = isProfesorRole(rol)
+    ? ([...tenantListKey("profesores", rol, tenantId), perfil?.ID_PROFESOR ?? "none"] as const)
+    : tenantListKey("profesores", rol, tenantId);
   const perfilesQueryKey = tenantListKey("perfiles", rol, tenantId);
 
   const list = useQuery({
@@ -286,6 +289,12 @@ export function useProfesores() {
       // PROFESOR rows are tenant-wide — never filter by ID_CENTRO on list fetch.
       let profQuery = supabase.from("PROFESOR").select("*");
       profQuery = scopeTenantQuery(profQuery, rol, tenantId);
+      if (isProfesorRole(rol)) {
+        const profesorId = perfil?.ID_PROFESOR?.trim();
+        if (profesorId) {
+          profQuery = profQuery.eq("ID_PROFESOR", profesorId);
+        }
+      }
 
       let espQuery = supabase
         .from("ESPECIALIDADES")
@@ -299,12 +308,18 @@ export function useProfesores() {
         .order("NOMBRE_AULA", { ascending: true });
       aulaQuery = scopeTenantQuery(aulaQuery, rol, tenantId);
 
+      const profesorId = perfil?.ID_PROFESOR?.trim();
+      const skipProfesorQuery = isProfesorRole(rol) && !profesorId;
+      const profQueryPromise = skipProfesorQuery
+        ? Promise.resolve({ data: [] as ProfesorRow[], error: null })
+        : profQuery.order("NOMBRE_PROFESOR", { ascending: true });
+
       const [
         { data: profs, error },
         { data: esp, error: espError },
         { data: aul, error: aulaError },
       ] = await Promise.all([
-        profQuery.order("NOMBRE_PROFESOR", { ascending: true }),
+        profQueryPromise,
         espQuery,
         aulaQuery,
       ]);

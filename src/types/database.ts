@@ -488,19 +488,6 @@ export interface AvisosInternos {
 }
 
 // ============================================================================
-// SANDBOX (isolated schedule builder prototype)
-// ============================================================================
-export interface SandboxCalendario {
-  ID_SANDBOX_CALENDARIO: UUID;
-  ID_CLIENTE: UUID;
-  NOMBRE_GRUPO: string;
-  /** FullCalendar day index: 1 = Monday … 6 = Saturday */
-  DIA: number | null;
-  HORA_INICIO: TimeStr | null;
-  HORA_FIN: TimeStr | null;
-}
-
-// ============================================================================
 // UNIFIED VIEWS (relational fetching)
 // ============================================================================
 export interface SesionWithRelations extends Sesion {

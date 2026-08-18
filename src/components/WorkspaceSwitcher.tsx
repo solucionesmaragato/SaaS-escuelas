@@ -3,6 +3,7 @@ import { useNavigate, useRouter } from "@tanstack/react-router";
 import { ChevronDown, MapPin, Loader2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { SchoolBrandAvatar } from "@/components/workspace/SchoolBrandAvatar";
+import { homePathForRole } from "@/lib/homePath";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { roleBadgeClass } from "@/lib/workspace";
 import { Badge } from "@/components/ui/badge";
@@ -39,9 +40,10 @@ export function WorkspaceSwitcher() {
     if (perfilId === activePerfil.ID_PERFIL || switching) return;
     setSwitching(true);
     try {
+      const next = workspaceOptions.find((o) => o.perfil.ID_PERFIL === perfilId);
       await activateWorkspace(perfilId);
       await router.invalidate();
-      navigate({ to: "/dashboard", replace: true });
+      navigate({ to: homePathForRole(next?.perfil.ROL), replace: true });
       toast.success("Workspace activado");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo cambiar de workspace");

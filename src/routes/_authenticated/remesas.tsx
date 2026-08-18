@@ -31,7 +31,7 @@ import {
 } from "@/hooks/useCentros";
 import { useActiveTenant, useApp } from "@/context/AppContext";
 import type { WorkspaceOption } from "@/lib/workspaceProfiles";
-import { canWriteUi } from "@/lib/rbac";
+import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { MESES_ANIO } from "@/lib/alumnosMatriculasUtils";
 import { isAdminRole, isMasterRole } from "@/lib/tenantQuery";
@@ -432,6 +432,14 @@ function RemesasPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  if (!hasPermission(rol, "remesas:write")) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">

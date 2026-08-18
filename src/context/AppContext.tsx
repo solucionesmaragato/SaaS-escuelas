@@ -79,6 +79,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       setPerfilesLoading(true);
       try {
+        await supabase.rpc("ensure_my_profiles_single_center");
         const options = await fetchUserWorkspaceProfiles(session.user.id);
         if (cancelled) return;
 

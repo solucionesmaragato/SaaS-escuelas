@@ -84,6 +84,37 @@ export function isExistingHorarioId(id?: string | null): id is string {
   return typeof id === "string" && id.trim().length > 0;
 }
 
+export type MatriculaEstado = "Activo" | "Inactivo";
+
+export function normalizeMatriculaEstado(
+  estado: string | null | undefined,
+): MatriculaEstado {
+  return estado?.trim().toLowerCase() === "inactivo" ? "Inactivo" : "Activo";
+}
+
+function isMatriculaEstadoBackendError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const message =
+    "message" in error && typeof error.message === "string" ? error.message : "";
+  const code = "code" in error && typeof error.code === "string" ? error.code : "";
+  return code === "42P01" || message.toLowerCase().includes("sesiones");
+}
+
+export function formatMatriculaEstadoError(
+  error: unknown,
+  partialCount = 0,
+): string {
+  if (isMatriculaEstadoBackendError(error)) {
+    const prefix =
+      partialCount > 0
+        ? `Se actualizaron ${partialCount} matrículas antes del error. `
+        : "";
+    return `${prefix}El backend falló al cambiar el estado. Revisa los triggers de MATRICULAS en Supabase.`;
+  }
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return "No se pudo cambiar el estado de la matrícula.";
+}
+
 function normalizeHorarioTime(value: string | null | undefined): string {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) return "";
@@ -92,32 +123,44 @@ function normalizeHorarioTime(value: string | null | undefined): string {
   return trimmed;
 }
 
-function buildHorarioDbPayload(
+function hasCompleteHorarioSchedule(row: HorarioMatriculaRowInput): boolean {
+  return Boolean(row.DIA?.trim() && row.HORA_INICIO && row.HORA_FIN);
+}
+
+/** Rejects rows with day/time but no professor before syncing to the DB. */
+export function validateHorarioRowsForSync(
+  rows: HorarioMatriculaRowInput[],
+): string | null {
+  for (const [index, row] of rows.entries()) {
+    if (!hasCompleteHorarioSchedule(row)) continue;
+    if (!row.ID_PROFESOR?.trim()) {
+      return `El horario ${index + 1} tiene día y hora pero no tiene profesor asignado.`;
+    }
+  }
+  return null;
+}
+
+type HorarioDbPayloadCtx = {
+  tenantId: string;
+  matriculaId: string;
+  idCentro: string | null;
+  idCurso: string | null;
+};
+
+function buildHorarioSharedFields(
   row: HorarioMatriculaRowInput,
-  ctx: {
-    tenantId: string;
-    matriculaId: string;
-    idCentro: string | null;
-    idCurso: string | null;
-  },
-): HorarioMatriculaDbPayload {
+  ctx: HorarioDbPayloadCtx,
+) {
   if (!ctx.tenantId || !ctx.matriculaId) {
     throw new Error(
       "Faltan ID_CLIENTE o ID_MATRICULA para sincronizar el horario.",
     );
   }
 
-  const idHorario = isExistingHorarioId(row.ID_HORARIO)
-    ? row.ID_HORARIO.trim()
-    : crypto.randomUUID();
-
   return {
-    ID_HORARIO: idHorario,
     ID_MATRICULA: ctx.matriculaId,
     ID_CLIENTE: ctx.tenantId,
     ID_ESPECIALIDAD: row.ID_ESPECIALIDAD?.trim() || null,
-    ID_PROFESOR: row.ID_PROFESOR?.trim() ?? "",
-    ID_AULA: row.ID_AULA?.trim() || null,
     ID_CENTRO: ctx.idCentro?.trim() ?? "",
     ID_CURSO: ctx.idCurso?.trim() ?? "",
     DIA: row.DIA?.trim() ?? "",
@@ -125,6 +168,53 @@ function buildHorarioDbPayload(
     HORA_FIN: normalizeHorarioTime(row.HORA_FIN),
     SALDO: row.SALDO,
   };
+}
+
+function buildHorarioDbPayload(
+  row: HorarioMatriculaRowInput,
+  ctx: HorarioDbPayloadCtx,
+): HorarioMatriculaDbPayload {
+  const idHorario = isExistingHorarioId(row.ID_HORARIO)
+    ? row.ID_HORARIO.trim()
+    : crypto.randomUUID();
+  const idProfesor = row.ID_PROFESOR?.trim() ?? "";
+
+  if (hasCompleteHorarioSchedule(row) && !idProfesor) {
+    throw new Error(
+      "Cada horario con día y hora debe tener un profesor asignado.",
+    );
+  }
+
+  return {
+    ID_HORARIO: idHorario,
+    ...buildHorarioSharedFields(row, ctx),
+    ID_PROFESOR: idProfesor,
+    ID_AULA: row.ID_AULA?.trim() || null,
+  };
+}
+
+/** PATCH payload: omit empty professor/room so partial saves do not wipe existing values. */
+function buildHorarioUpdatePayload(
+  row: HorarioMatriculaRowInput,
+  ctx: HorarioDbPayloadCtx,
+): Partial<HorarioMatriculaDbPayload> {
+  const idProfesor = row.ID_PROFESOR?.trim() ?? "";
+  const idAula = row.ID_AULA?.trim() ?? "";
+
+  if (hasCompleteHorarioSchedule(row) && !idProfesor) {
+    throw new Error(
+      "Cada horario con día y hora debe tener un profesor asignado.",
+    );
+  }
+
+  const payload: Partial<HorarioMatriculaDbPayload> = {
+    ...buildHorarioSharedFields(row, ctx),
+  };
+
+  if (idProfesor) payload.ID_PROFESOR = idProfesor;
+  if (idAula) payload.ID_AULA = idAula;
+
+  return payload;
 }
 
 function hasHorarioRowContent(row: HorarioMatriculaRowInput): boolean {
@@ -296,6 +386,59 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
     return Array.isArray(data) ? (data as ScheduleConflict[]) : [];
   };
 
+  const bulkUpdateEstadoByCurso = useMutation({
+    mutationFn: async ({
+      idCurso,
+      estado,
+    }: {
+      idCurso: string;
+      estado: MatriculaEstado;
+    }) => {
+      if (!tenantId) {
+        throw new Error("No se pudo determinar el ID_CLIENTE de la sesión activa.");
+      }
+
+      let selectQuery = supabase
+        .from("MATRICULAS")
+        .select("ID_MATRICULA, ESTADO")
+        .eq("ID_CURSO", idCurso)
+        .eq("ID_CLIENTE", tenantId);
+
+      if (resolvedCenterId) {
+        selectQuery = selectQuery.eq("ID_CENTRO", resolvedCenterId);
+      }
+
+      const { data: rows, error: selectError } = await selectQuery;
+      if (selectError) throw selectError;
+
+      const idsToUpdate = (rows ?? [])
+        .filter((row) => normalizeMatriculaEstado(row.ESTADO) !== estado)
+        .map((row) => row.ID_MATRICULA)
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+
+      if (idsToUpdate.length === 0) return 0;
+
+      let updatedCount = 0;
+      for (const id of idsToUpdate) {
+        const { error: updateError } = await supabase
+          .from("MATRICULAS")
+          .update({ ESTADO: estado })
+          .eq("ID_MATRICULA", id)
+          .eq("ID_CLIENTE", tenantId);
+
+        if (updateError) {
+          if (isMatriculaEstadoBackendError(updateError)) {
+            throw new Error(formatMatriculaEstadoError(updateError, updatedCount));
+          }
+          throw updateError;
+        }
+        updatedCount += 1;
+      }
+
+      return updatedCount;
+    },
+  });
+
   const syncHorarios = useMutation({
     mutationFn: async (input: HorarioMatriculaSyncInput) => {
       const { matriculaId, idCentro, idCurso, rows, deletedIds } = input;
@@ -326,7 +469,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
 
       for (const row of rows) {
         if (isExistingHorarioId(row.ID_HORARIO)) {
-          const payload = buildHorarioDbPayload(row, payloadCtx);
+          const payload = buildHorarioUpdatePayload(row, payloadCtx);
           const { error } = await supabase
             .from("HORARIOS_MATRICULAS")
             .update(payload)
@@ -347,5 +490,14 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
     },
   });
 
-  return { list, create, update, syncHorarios, remove, invalidateList, checkSolapamientos };
+  return {
+    list,
+    create,
+    update,
+    bulkUpdateEstadoByCurso,
+    syncHorarios,
+    remove,
+    invalidateList,
+    checkSolapamientos,
+  };
 }

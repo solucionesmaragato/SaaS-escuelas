@@ -27,7 +27,7 @@ export function ProfesorDocumentosTab({ profesorId }: { profesorId: string }) {
   const documentos = useMemo(() => list.data?.documentos ?? [], [list.data]);
 
   const handleOpenDocumento = (idDocumento: string) => {
-    void navigate({ to: "/documentos", search: { documentoId: idDocumento } });
+    void navigate({ to: "/app/documentos", search: { documentoId: idDocumento } });
   };
 
   if (list.isLoading) {

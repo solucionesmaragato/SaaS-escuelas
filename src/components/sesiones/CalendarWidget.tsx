@@ -60,6 +60,7 @@ export interface CalendarWidgetProps {
   pageDescription?: string;
   initialAlumnoId?: string;
   initialSesionId?: string;
+  initialHorarioId?: string;
   onSessionDetailClose?: () => void;
 }
 
@@ -74,9 +75,62 @@ function findGroupedSessionBySesionId(
   return sesiones.find((block) => block.ID_SESIONES.includes(normalized)) ?? null;
 }
 
+function findGroupedSessionByHorarioId(
+  sesiones: GroupedSession[],
+  horarioId: string,
+): GroupedSession | null {
+  const normalized = horarioId.trim();
+  if (!normalized) return null;
+  return (
+    sesiones.find((block) =>
+      block.ALUMNOS_GRUPO.some((alumno) => alumno.ID_HORARIO === normalized),
+    ) ?? null
+  );
+}
+
+function parseLocalCalendarDate(year: number, month: number, day: number): Date | null {
+  const local = new Date(year, month - 1, day);
+  if (
+    local.getFullYear() !== year ||
+    local.getMonth() !== month - 1 ||
+    local.getDate() !== day
+  ) {
+    return null;
+  }
+  return local;
+}
+
 function parseSesionDate(value: string | null | undefined): Date | null {
   if (!value) return null;
-  const parsed = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const calendarDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (calendarDateMatch) {
+    return parseLocalCalendarDate(
+      Number(calendarDateMatch[1]),
+      Number(calendarDateMatch[2]),
+      Number(calendarDateMatch[3]),
+    );
+  }
+
+  const calendarMidnightMatch =
+    /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?$/.exec(trimmed);
+  if (calendarMidnightMatch) {
+    return parseLocalCalendarDate(
+      Number(calendarMidnightMatch[1]),
+      Number(calendarMidnightMatch[2]),
+      Number(calendarMidnightMatch[3]),
+    );
+  }
+
+  if (/([+-]\d{2}:\d{2}|Z)$/i.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+
+  const parsed = new Date(trimmed);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
@@ -225,33 +279,65 @@ type FilterState = {
   FILTRO_HORA_FIN: string;
 };
 
+function alumnoVisibleByTypeToggle(
+  alumno: GroupedSession["ALUMNOS_GRUPO"][number],
+  f: Pick<FilterState, "verClasesNormales" | "verLeads" | "verIncidencias">,
+): boolean {
+  if (!f.verClasesNormales && alumno.ESTADO === "Matricula") return false;
+  if (!f.verLeads && alumno.ESTADO === "Lead") return false;
+  if (!f.verIncidencias && alumno.ESTADO === "Incidencia") return false;
+  return true;
+}
+
+function deriveBlockColorFromAlumnos(
+  alumnos: GroupedSession["ALUMNOS_GRUPO"],
+): GroupedSession["COLOR_INCIDENCIA"] {
+  if (alumnos.some((a) => a.COLOR_INCIDENCIA === "rojo")) return "rojo";
+  if (alumnos.some((a) => a.COLOR_INCIDENCIA === "verde")) return "verde";
+  return null;
+}
+
+function deriveBlockEstadoFromAlumnos(
+  alumnos: GroupedSession["ALUMNOS_GRUPO"],
+): string | null {
+  if (alumnos.some((a) => a.COLOR_INCIDENCIA === "rojo")) return "Incidencia";
+  if (alumnos.some((a) => a.ESTADO === "Incidencia")) return "Incidencia";
+  if (alumnos.some((a) => a.ESTADO === "Lead")) return "Lead";
+  if (alumnos.some((a) => a.ESTADO === "Matricula")) return "Matricula";
+  return alumnos[0]?.ESTADO ?? null;
+}
+
+function buildTituloBloqueFromAlumnos(
+  alumnos: GroupedSession["ALUMNOS_GRUPO"],
+  textoEspecialidad: string,
+): string {
+  if (alumnos.length === 1) {
+    return `${alumnos[0].TEXTO_ALUMNO} - ${textoEspecialidad}`;
+  }
+  return `${textoEspecialidad} (${alumnos.length} alumnos)`;
+}
+
+function applyTypeFiltersToBlock(
+  block: GroupedSession,
+  f: FilterState,
+): GroupedSession | null {
+  const alumnos = block.ALUMNOS_GRUPO.filter((a) => alumnoVisibleByTypeToggle(a, f));
+  if (alumnos.length === 0) return null;
+  if (alumnos.length === block.ALUMNOS_GRUPO.length) return block;
+  return {
+    ...block,
+    ALUMNOS_GRUPO: alumnos,
+    TITULO_BLOQUE: buildTituloBloqueFromAlumnos(alumnos, block.TEXTO_ESPECIALIDAD),
+    COLOR_INCIDENCIA: deriveBlockColorFromAlumnos(alumnos),
+    ESTADO: deriveBlockEstadoFromAlumnos(alumnos),
+  };
+}
+
 function passesFilters(
   block: GroupedSession,
   exclude: FilterExclude | null,
   f: FilterState,
 ): boolean {
-  if (
-    (exclude === null || exclude !== "matricula") &&
-    !f.verClasesNormales &&
-    block.ALUMNOS_GRUPO.every((a) => a.ESTADO === "Matricula")
-  ) {
-    return false;
-  }
-  if (
-    (exclude === null || exclude !== "lead") &&
-    !f.verLeads &&
-    block.ALUMNOS_GRUPO.every((a) => a.ESTADO === "Lead")
-  ) {
-    return false;
-  }
-  if (
-    (exclude === null || exclude !== "incidencia") &&
-    !f.verIncidencias &&
-    block.ALUMNOS_GRUPO.every((a) => a.ESTADO === "Incidencia")
-  ) {
-    return false;
-  }
-
   if (
     (exclude === null || exclude !== "aula") &&
     f.FILTRO_AULA &&
@@ -488,6 +574,7 @@ export function CalendarWidget({
   pageDescription,
   initialAlumnoId,
   initialSesionId,
+  initialHorarioId,
   onSessionDetailClose,
 }: CalendarWidgetProps) {
   const { rol, perfil, tenantId } = useActiveTenant();
@@ -627,6 +714,19 @@ export function CalendarWidget({
   }, [initialSesionId, sesiones]);
 
   useEffect(() => {
+    if (!initialHorarioId || initialSesionId) return;
+
+    const match = findGroupedSessionByHorarioId(sesiones, initialHorarioId);
+    if (!match) return;
+
+    const sessionDate = parseSesionDate(match.FECHA_EXACTA);
+    if (sessionDate) {
+      setCurrentDate(sessionDate);
+    }
+    setSelectedEvent(match);
+  }, [initialHorarioId, initialSesionId, sesiones]);
+
+  useEffect(() => {
     if (selectedGrupos.length === 0) return;
     const validIds = new Set(grupoOptions.map((grupo) => grupo.id));
     setSelectedGrupos((current) => {
@@ -687,15 +787,24 @@ export function CalendarWidget({
   );
 
   const eventosFiltrados = useMemo(
-    () => sesiones.filter((block) => passesFilters(block, null, filterState)),
+    () =>
+      sesiones
+        .filter((block) => passesFilters(block, null, filterState))
+        .map((block) => applyTypeFiltersToBlock(block, filterState))
+        .filter((block): block is GroupedSession => block !== null),
     [sesiones, filterState],
   );
 
   const cascadingOptions = useMemo(() => {
-    const poolAlumno = sesiones.filter((b) => passesFilters(b, "alumno", filterState));
-    const poolProfesor = sesiones.filter((b) => passesFilters(b, "profesor", filterState));
-    const poolAula = sesiones.filter((b) => passesFilters(b, "aula", filterState));
-    const poolEspecialidad = sesiones.filter((b) => passesFilters(b, "especialidad", filterState));
+    const typeFilteredBlocks = sesiones
+      .map((b) => applyTypeFiltersToBlock(b, filterState))
+      .filter((b): b is GroupedSession => b !== null);
+    const poolAlumno = typeFilteredBlocks.filter((b) => passesFilters(b, "alumno", filterState));
+    const poolProfesor = typeFilteredBlocks.filter((b) => passesFilters(b, "profesor", filterState));
+    const poolAula = typeFilteredBlocks.filter((b) => passesFilters(b, "aula", filterState));
+    const poolEspecialidad = typeFilteredBlocks.filter((b) =>
+      passesFilters(b, "especialidad", filterState),
+    );
 
     return {
       alumnos: sanitizeFilterOptions(
@@ -1025,35 +1134,88 @@ export function CalendarWidget({
 
   return (
     <>
-      <div className={cn(embedded && "flex h-full min-h-0 flex-col")}>
-        {lockVisibleTypes ? (
-          <div className="mb-4 flex shrink-0 flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div
+        className={cn(
+          embedded && "flex h-full min-h-0 flex-col gap-3",
+        )}
+      >
+      {lockVisibleTypes ? (
+          <div
+            className={cn(
+              "flex shrink-0 flex-col gap-4 md:flex-row md:items-center md:justify-between",
+              !embedded && "mb-4",
+            )}
+          >
             <CalendarColorLegend />
             {viewControls}
           </div>
         ) : (
-          <div
-            className={cn(
-              pageTitle
-                ? "flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
-                : "flex flex-col gap-4 md:flex-row md:items-center md:justify-end",
-            )}
-          >
+          <div className={cn("flex flex-col gap-3", embedded && "shrink-0")}>
             {pageTitle && <PageHeader title={pageTitle} description={pageDescription} />}
-            {viewControls}
+            <div className="flex flex-wrap items-center justify-between gap-4 w-full">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={verClasesNormales}
+                  className={
+                    verClasesNormales
+                      ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 shadow-sm ring-1 ring-blue-300/60 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 dark:ring-blue-800/60 dark:hover:bg-blue-900/40"
+                      : "border-blue-200 text-blue-800 hover:bg-blue-50 opacity-60 dark:border-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                  }
+                  onClick={() => setVerClasesNormales((v) => !v)}
+                >
+                  🟦 Ver Clases Matriculadas
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={verLeads}
+                  className={
+                    verLeads
+                      ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 dark:ring-amber-800/60 dark:hover:bg-amber-900/40"
+                      : "border-amber-200 text-amber-800 hover:bg-amber-50 opacity-60 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-900/20"
+                  }
+                  onClick={() => setVerLeads((v) => !v)}
+                >
+                  🟨 Ver Leads
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={verIncidencias}
+                  className={
+                    verIncidencias
+                      ? "bg-red-100 text-red-900 border-red-300 hover:bg-red-200 shadow-sm ring-1 ring-red-300/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:ring-red-800/60 dark:hover:bg-red-900/40"
+                      : "border-red-200 text-red-800 hover:bg-red-50 opacity-60 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
+                  }
+                  onClick={() => setVerIncidencias((v) => !v)}
+                >
+                  🟥/🟩 Ver Incidencias
+                </Button>
+              </div>
+              {viewControls}
+            </div>
           </div>
         )}
 
         <div
           className={cn(
-            "grid",
-            !embedded && "gap-4",
+            "grid gap-4",
             embedded && "min-h-0 flex-1",
             !hideFilters && "lg:grid-cols-4",
           )}
         >
         {!hideFilters && (
-          <Card className="p-4 space-y-4 h-fit lg:col-span-1 shadow-sm">
+          <Card
+            className={cn(
+              "space-y-4 p-4 lg:col-span-1 shadow-sm",
+              embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
+            )}
+          >
             <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
               <Filter className="h-4 w-4 text-muted-foreground" />
               Filtros
@@ -1169,63 +1331,13 @@ export function CalendarWidget({
         <div
           className={cn(
             !hideFilters && "lg:col-span-3",
-            embedded ? "flex min-h-0 flex-1 flex-col" : "space-y-3",
+            embedded ? "flex h-full min-h-0 flex-col" : "space-y-3",
           )}
         >
-          {!lockVisibleTypes && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-pressed={verClasesNormales}
-                className={
-                  verClasesNormales
-                    ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 shadow-sm ring-1 ring-blue-300/60 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 dark:ring-blue-800/60 dark:hover:bg-blue-900/40"
-                    : "border-blue-200 text-blue-800 hover:bg-blue-50 opacity-60 dark:border-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                }
-                onClick={() => setVerClasesNormales((v) => !v)}
-              >
-                🟦 Ver Clases Matriculadas
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-pressed={verLeads}
-                className={
-                  verLeads
-                    ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 dark:ring-amber-800/60 dark:hover:bg-amber-900/40"
-                    : "border-amber-200 text-amber-800 hover:bg-amber-50 opacity-60 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                }
-                onClick={() => setVerLeads((v) => !v)}
-              >
-                🟨 Ver Leads
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-pressed={verIncidencias}
-                className={
-                  verIncidencias
-                    ? "bg-red-100 text-red-900 border-red-300 hover:bg-red-200 shadow-sm ring-1 ring-red-300/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:ring-red-800/60 dark:hover:bg-red-900/40"
-                    : "border-red-200 text-red-800 hover:bg-red-50 opacity-60 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
-                }
-                onClick={() => setVerIncidencias((v) => !v)}
-              >
-                🟥/🟩 Ver Incidencias
-              </Button>
-              <span className="text-xs text-muted-foreground ml-auto">
-                {eventosFiltrados.length} bloques visibles
-              </span>
-            </div>
-          )}
-
           <Card
             className={cn(
               "flex flex-col shadow-sm",
-              embedded ? "min-h-0 flex-1 p-3" : "p-3",
+              embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
             )}
           >
             {calendarView !== "day" && (
@@ -1240,61 +1352,61 @@ export function CalendarWidget({
               </div>
             )}
 
-            {calendarView === "month" && (
-              <div
-                className={cn(
-                  "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60",
-                  embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
-                )}
-                style={
-                  embedded
-                    ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
-                    : { gridTemplateRows: `repeat(${monthWeekRows}, minmax(95px, 1fr))` }
-                }
-              >
-                {list.isLoading
-                  ? Array.from({ length: 35 }).map((_, i) => (
-                      <Skeleton
-                        key={i}
-                        className={cn(
-                          "h-full w-full rounded-none",
-                          !embedded && "min-h-[95px]",
-                        )}
-                      />
-                    ))
-                  : diasDelMes.map((dia, index) => {
-                      const dateKey = formatearFechaKey(dia.date);
-                      const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                      const isToday = dia.date.toDateString() === new Date().toDateString();
-
-                      return (
-                        <div
-                          key={index}
+              {calendarView === "month" && (
+                <div
+                  className={cn(
+                    "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60",
+                    embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
+                  )}
+                  style={
+                    embedded
+                      ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                      : { gridTemplateRows: `repeat(${monthWeekRows}, 130px)` }
+                  }
+                >
+                  {list.isLoading
+                    ? Array.from({ length: 35 }).map((_, i) => (
+                        <Skeleton
+                          key={i}
                           className={cn(
-                            "flex h-full w-full min-h-0 flex-col bg-background p-1.5",
-                            !embedded && "min-h-[95px]",
-                            !dia.isCurrentMonth && "bg-muted/30 opacity-40",
+                            "h-full w-full rounded-none",
+                            !embedded && "h-[130px]",
                           )}
-                        >
-                          <span
+                        />
+                      ))
+                    : diasDelMes.map((dia, index) => {
+                        const dateKey = formatearFechaKey(dia.date);
+                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                        const isToday = dia.date.toDateString() === new Date().toDateString();
+  
+                        return (
+                          <div
+                            key={index}
                             className={cn(
-                              "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
-                              isToday
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground",
+                              "flex h-full w-full min-h-0 flex-col bg-background p-1.5",
+                              !embedded && "h-[130px]",
+                              !dia.isCurrentMonth && "bg-muted/30 opacity-40",
                             )}
                           >
-                            {dia.date.getDate()}
-                          </span>
-
-                          <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
-                            {eventosDelDia.map((ev) => renderEventButton(ev))}
+                            <span
+                              className={cn(
+                                "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
+                                isToday
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {dia.date.getDate()}
+                            </span>
+  
+                            <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
+                              {eventosDelDia.map((ev) => renderEventButton(ev))}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-              </div>
-            )}
+                        );
+                      })}
+                </div>
+              )}
 
             {calendarView === "week" && (
               <div

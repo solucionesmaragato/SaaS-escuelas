@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
@@ -127,11 +127,37 @@ function getDaySortKey(dia: string | null | undefined): number {
   return dayOrder[normalized] ?? dayOrder[dia] ?? 99;
 }
 
-function sortGrupos(rows: GrupoData[]): GrupoData[] {
+type GrupoHorarioRow = GrupoData["GRUPOS_HORARIOS"][number];
+
+function sortedHorariosForGrupo(g: GrupoData): GrupoHorarioRow[] {
+  if (g.GRUPOS_HORARIOS.length > 0) {
+    return [...g.GRUPOS_HORARIOS].sort(
+      (a, b) =>
+        getDaySortKey(a.DIA_SEMANA) - getDaySortKey(b.DIA_SEMANA) ||
+        (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? ""),
+    );
+  }
+  return [
+    {
+      ID_GRUPO_HORARIO: g.ID_GRUPO,
+      DIA_SEMANA: g.DIA_SEMANA,
+      HORA_INICIO: g.HORA_INICIO,
+      HORA_FIN: g.HORA_FIN,
+      ID_PROFESOR: null,
+      ID_AULA: null,
+      PROFESOR: null,
+      AULA: null,
+    },
+  ];
+}
+
+function sortGruposForTable(rows: GrupoData[]): GrupoData[] {
   return [...rows].sort((a, b) => {
-    const dayDiff = getDaySortKey(a.DIA_SEMANA) - getDaySortKey(b.DIA_SEMANA);
+    const ah = sortedHorariosForGrupo(a)[0];
+    const bh = sortedHorariosForGrupo(b)[0];
+    const dayDiff = getDaySortKey(ah.DIA_SEMANA) - getDaySortKey(bh.DIA_SEMANA);
     if (dayDiff !== 0) return dayDiff;
-    return (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? "");
+    return (ah.HORA_INICIO ?? "").localeCompare(bh.HORA_INICIO ?? "");
   });
 }
 
@@ -304,19 +330,6 @@ function toTimeInputValue(hora: string | null | undefined): string {
   return hora?.slice(0, 5) ?? "";
 }
 
-type FlattenedGrupoRow = GrupoData & {
-  currentHorario: GrupoData["GRUPOS_HORARIOS"][number];
-};
-
-function sortFlattenedRows(rows: FlattenedGrupoRow[]): FlattenedGrupoRow[] {
-  return [...rows].sort((a, b) => {
-    const dayDiff =
-      getDaySortKey(a.currentHorario.DIA_SEMANA) - getDaySortKey(b.currentHorario.DIA_SEMANA);
-    if (dayDiff !== 0) return dayDiff;
-    return (a.currentHorario.HORA_INICIO ?? "").localeCompare(b.currentHorario.HORA_INICIO ?? "");
-  });
-}
-
 function sortCursosEscolares(cursos: CursoEscolarData[]): CursoEscolarData[] {
   return [...cursos].sort((a, b) =>
     (b.NOMBRE_CURSO ?? "").localeCompare(a.NOMBRE_CURSO ?? "", "es", {
@@ -472,8 +485,19 @@ function editFormFromGrupo(g: GrupoData): EditFormState {
 
 function GruposPage() {
   const { grupoId } = Route.useSearch();
-  const navigate = Route.useNavigate();
   const { rol, perfil, centerId } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return (
+      <Navigate
+        to="/app/grupos"
+        search={grupoId ? { grupoId } : {}}
+        replace
+      />
+    );
+  }
+
+  const navigate = Route.useNavigate();
   const canWrite = hasPermission(rol, "grupos:write");
   const canDelete = isMasterRole(rol) || isAdminRole(rol);
   const isMaster = isMasterRole(rol);
@@ -610,55 +634,15 @@ function GruposPage() {
     [filtered],
   );
 
-  const groupedByDay = useMemo(() => {
-    const flattened: FlattenedGrupoRow[] = activeFiltered.flatMap((g) =>
-      (g.GRUPOS_HORARIOS.length > 0 ? g.GRUPOS_HORARIOS : [null]).map((horario) => ({
-        ...g,
-        currentHorario:
-          horario ??
-          ({
-            ID_GRUPO_HORARIO: g.ID_GRUPO,
-            DIA_SEMANA: g.DIA_SEMANA,
-            HORA_INICIO: g.HORA_INICIO,
-            HORA_FIN: g.HORA_FIN,
-            ID_PROFESOR: null,
-            ID_AULA: null,
-            PROFESOR: null,
-            AULA: null,
-          } as GrupoData["GRUPOS_HORARIOS"][number]),
-      })),
-    );
-    const sorted = sortFlattenedRows(flattened);
-    const map = new Map<string, FlattenedGrupoRow[]>();
-    for (const row of sorted) {
-      const key = row.currentHorario.DIA_SEMANA?.trim() || "Sin día asignado";
-      const list = map.get(key) ?? [];
-      list.push(row);
-      map.set(key, list);
-    }
-    return Array.from(map.entries()).sort(([a], [b]) => getDaySortKey(a) - getDaySortKey(b));
-  }, [activeFiltered]);
+  const activeGruposSorted = useMemo(
+    () => sortGruposForTable(activeFiltered),
+    [activeFiltered],
+  );
 
-  const inactiveGruposSorted = useMemo(() => {
-    const flattened: FlattenedGrupoRow[] = inactiveFiltered.flatMap((g) =>
-      (g.GRUPOS_HORARIOS.length > 0 ? g.GRUPOS_HORARIOS : [null]).map((horario) => ({
-        ...g,
-        currentHorario:
-          horario ??
-          ({
-            ID_GRUPO_HORARIO: g.ID_GRUPO,
-            DIA_SEMANA: g.DIA_SEMANA,
-            HORA_INICIO: g.HORA_INICIO,
-            HORA_FIN: g.HORA_FIN,
-            ID_PROFESOR: null,
-            ID_AULA: null,
-            PROFESOR: null,
-            AULA: null,
-          } as GrupoData["GRUPOS_HORARIOS"][number]),
-      })),
-    );
-    return sortFlattenedRows(flattened);
-  }, [inactiveFiltered]);
+  const inactiveGruposSorted = useMemo(
+    () => sortGruposForTable(inactiveFiltered),
+    [inactiveFiltered],
+  );
 
   const enrolledAlumnos = useMemo(() => {
     return localAlumnoIds
@@ -981,12 +965,11 @@ function GruposPage() {
     }
   };
 
-  const renderGroupRow = (item: FlattenedGrupoRow) => {
-    const horario = item.currentHorario;
-    const g = item;
+  const renderGroupRow = (g: GrupoData) => {
+    const horarios = sortedHorariosForGrupo(g);
     return (
       <TableRow
-        key={`${item.ID_GRUPO}-${horario.ID_GRUPO_HORARIO}`}
+        key={g.ID_GRUPO}
         className={
           canViewStudents ? "cursor-pointer hover:bg-muted/50 transition-colors" : undefined
         }
@@ -1003,25 +986,46 @@ function GruposPage() {
           </EntityLink>
         </TableCell>
         <TableCell className="text-sm">
-          <span className="tabular-nums leading-snug">{formatHorarioSlotCell(horario)}</span>
+          <div className="flex flex-col gap-0.5">
+            {horarios.map((horario) => (
+              <span
+                key={horario.ID_GRUPO_HORARIO}
+                className="tabular-nums leading-snug"
+              >
+                {formatHorarioSlotCell(horario)}
+              </span>
+            ))}
+          </div>
         </TableCell>
         <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
-          {horario.PROFESOR?.NOMBRE_PROFESOR ? (
-            <EntityLink type="profesor" id={horario.ID_PROFESOR}>
-              {horario.PROFESOR.NOMBRE_PROFESOR}
-            </EntityLink>
-          ) : (
-            "—"
-          )}
+          <div className="flex flex-col gap-0.5">
+            {horarios.map((horario) => (
+              <span key={horario.ID_GRUPO_HORARIO} className="leading-snug">
+                {horario.PROFESOR?.NOMBRE_PROFESOR ? (
+                  <EntityLink type="profesor" id={horario.ID_PROFESOR}>
+                    {horario.PROFESOR.NOMBRE_PROFESOR}
+                  </EntityLink>
+                ) : (
+                  "—"
+                )}
+              </span>
+            ))}
+          </div>
         </TableCell>
         <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
-          {horario.AULA?.NOMBRE_AULA ? (
-            <EntityLink type="aula" id={horario.ID_AULA}>
-              {horario.AULA.NOMBRE_AULA}
-            </EntityLink>
-          ) : (
-            "—"
-          )}
+          <div className="flex flex-col gap-0.5">
+            {horarios.map((horario) => (
+              <span key={horario.ID_GRUPO_HORARIO} className="leading-snug">
+                {horario.AULA?.NOMBRE_AULA ? (
+                  <EntityLink type="aula" id={horario.ID_AULA}>
+                    {horario.AULA.NOMBRE_AULA}
+                  </EntityLink>
+                ) : (
+                  "—"
+                )}
+              </span>
+            ))}
+          </div>
         </TableCell>
         <TableCell className="text-sm break-words">{g.TEXTO_ESPECIALIDAD}</TableCell>
         <TableCell className="whitespace-nowrap">
@@ -1130,43 +1134,38 @@ function GruposPage() {
               <Skeleton key={i} className="h-32 w-full" />
             ))}
           </div>
-        ) : groupedByDay.length === 0 && inactiveGruposSorted.length === 0 ? (
+        ) : activeGruposSorted.length === 0 && inactiveGruposSorted.length === 0 ? (
           <p className="py-10 text-center text-muted-foreground">
             {query ? "Sin resultados." : "Aún no hay grupos registrados."}
           </p>
         ) : (
           <div className="space-y-8">
-            {groupedByDay.length === 0 ? (
+            {activeGruposSorted.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 {query ? "Sin grupos activos para esta búsqueda." : "No hay grupos activos."}
               </p>
             ) : (
-              groupedByDay.map(([dia, dayGrupos]) => (
-                <section key={dia}>
-                  <h2 className="text-lg font-bold capitalize mb-3 border-b pb-2">{dia}</h2>
-                  <div className="w-full overflow-x-auto">
-                    <Table className="w-full min-w-[800px] md:min-w-full table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
-                          <TableHead className="w-[18%]">Grupo</TableHead>
-                          <TableHead className="w-[12%]">Horario</TableHead>
-                          <TableHead className="w-[16%]">Profesor</TableHead>
-                          <TableHead className="w-[12%]">Aula</TableHead>
-                          <TableHead className="w-[16%]">Especialidad</TableHead>
-                          <TableHead className="w-[14%]">Ocupación</TableHead>
-                          <TableHead className="w-[88px]">
-                            <span className="hidden md:inline">Estado</span>
-                            <span className="md:sr-only">Estado</span>
-                          </TableHead>
-                          {canWrite && <TableHead className="w-12" />}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>{dayGrupos.map(renderGroupRow)}</TableBody>
-                    </Table>
-                  </div>
-                </section>
-              ))
+              <div className="w-full overflow-x-auto">
+                <Table className="w-full min-w-[800px] md:min-w-full table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
+                      <TableHead className="w-[18%]">Grupo</TableHead>
+                      <TableHead className="w-[12%]">Horario</TableHead>
+                      <TableHead className="w-[16%]">Profesor</TableHead>
+                      <TableHead className="w-[12%]">Aula</TableHead>
+                      <TableHead className="w-[16%]">Especialidad</TableHead>
+                      <TableHead className="w-[14%]">Ocupación</TableHead>
+                      <TableHead className="w-[88px]">
+                        <span className="hidden md:inline">Estado</span>
+                        <span className="md:sr-only">Estado</span>
+                      </TableHead>
+                      {canWrite && <TableHead className="w-12" />}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>{activeGruposSorted.map(renderGroupRow)}</TableBody>
+                </Table>
+              </div>
             )}
 
             {inactiveGruposSorted.length > 0 && (

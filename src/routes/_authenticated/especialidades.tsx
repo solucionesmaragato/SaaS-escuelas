@@ -10,6 +10,7 @@ import {
 } from "@/hooks/useEspecialidades";
 import { useClientes } from "@/hooks/useClientes";
 import { useActiveTenant } from "@/context/AppContext";
+import { hasPermission } from "@/lib/rbac";
 import { canManageUsuarios, isMasterRole } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -313,6 +314,14 @@ function EspecialidadesPage() {
   }, [especialidades, query, isMaster]);
 
   const colSpan = isMaster ? 4 : canMutate ? 2 : 1;
+
+  if (!hasPermission(rol, "especialidades:write")) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Acceso denegado. No tienes permiso para ver esta página.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">

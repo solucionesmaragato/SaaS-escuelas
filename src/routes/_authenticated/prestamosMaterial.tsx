@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -40,7 +40,7 @@ import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadg
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { canWriteUi, hasAnyPermission } from "@/lib/rbac";
 import type { Rol } from "@/types/database";
-import { isAdminRole, isMasterRole } from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -413,16 +413,14 @@ function formatText(value: string | null | undefined): string {
 }
 
 function todayDateKey(): string {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 function toDateInputValue(value: string | null | undefined): string {
-  const raw = value?.trim();
-  if (!raw) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  return "";
 }
 
 function normalizePrestamoCategoria(value: string | null | undefined): PrestamoCategoria | "" {
@@ -981,6 +979,11 @@ function PrestamoCreateOverlay({
 
 function PrestamosMaterialPage() {
   const { rol, centerId } = useActiveTenant();
+
+  if (isProfesorRole(rol)) {
+    return <Navigate to="/app/prestamos" replace />;
+  }
+
   const isMaster = isMasterRole(rol);
   const isAdmin = isAdminRole(rol);
   const showCentroSelector = isAdmin || isMaster;
@@ -1481,6 +1484,8 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
   const { tenantId } = useActiveTenant();
   const editInitial = "initial" in props && props.initial != null ? props.initial : undefined;
   const isEdit = editInitial != null;
+  const editingKey = editInitial?.ID_PRESTAMO ?? "create";
+  const formInitKeyRef = useRef<string | null>(null);
   const createProps = !isEdit ? (props as PrestamoFormDialogCreateProps) : null;
   const showCentroSelector = createProps?.showCentroSelector ?? false;
   const assignedCenterId = createProps?.assignedCenterId ?? null;
@@ -1645,16 +1650,16 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
     categoria === "ALUMNO" ? "Alumno *" : categoria === "PROFESOR" ? "Profesor *" : "Receptor *";
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      formInitKeyRef.current = null;
+      return;
+    }
+
+    if (formInitKeyRef.current === editingKey) return;
+    formInitKeyRef.current = editingKey;
+
     applyFormFields(buildFields(isEdit ? editInitial : undefined));
-  }, [
-    open,
-    isEdit,
-    editInitial?.ID_PRESTAMO,
-    editInitial,
-    buildFields,
-    applyFormFields,
-  ]);
+  }, [open, editingKey, isEdit, editInitial, buildFields, applyFormFields]);
 
   const handleCategoriaChange = (next: PrestamoCategoria) => {
     setCategoria(next);

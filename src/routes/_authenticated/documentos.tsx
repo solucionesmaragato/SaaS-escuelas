@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -510,6 +510,17 @@ function DocumentoDetailOverlay({
 function DocumentosPage() {
   const { rol, perfil } = useActiveTenant();
   const { documentoId } = Route.useSearch();
+
+  if (isProfesorRole(rol)) {
+    return (
+      <Navigate
+        to="/app/documentos"
+        search={documentoId ? { documentoId } : {}}
+        replace
+      />
+    );
+  }
+
   const navigate = Route.useNavigate();
   const isMaster = isMasterRole(rol);
   const canMutate = canManageUsuarios(rol);
