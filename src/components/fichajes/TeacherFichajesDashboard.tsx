@@ -9,6 +9,7 @@ import {
 } from "react";
 import jsQR from "jsqr";
 import { MapPin, Pause, Play, QrCode, Square } from "lucide-react";
+import { toast } from "sonner";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { collectFichajeComplianceMetadata } from "@/lib/fichajeCompliance";
 import { logFichajeRejection } from "@/lib/fichajeAudit";
@@ -100,49 +101,33 @@ function isRecordTodayProfesor(f: ProfesorFichajeRow): boolean {
 
 function deriveProfesorClockState(todayRecords: ProfesorFichajeRow[]): {
   state: ClockState;
-  resumeAt: Date | null;
-  pausedAt: Date | null;
+  entradaAt: Date | null;
 } {
-  const valid = todayRecords.filter(
+  const clockRecords = todayRecords.filter(
     (r) =>
       !isFichajeAnulado(r.ESTADO_LEGAL) &&
       CLOCK_MOVEMENT_TYPES.has(normalizeMovimiento(r.TIPO_MOVIMIENTO)),
   );
 
-  if (valid.length === 0) {
-    return { state: "out", resumeAt: null, pausedAt: null };
+  if (clockRecords.length === 0) {
+    return { state: "out", entradaAt: null };
   }
 
-  const sorted = [...valid].sort((a, b) => b.FECHA_HORA_REAL.localeCompare(a.FECHA_HORA_REAL));
+  const sorted = [...clockRecords].sort((a, b) => b.FECHA_HORA_REAL.localeCompare(a.FECHA_HORA_REAL));
   const last = normalizeMovimiento(sorted[0].TIPO_MOVIMIENTO);
 
-  if (last === "Salida") return { state: "out", resumeAt: null, pausedAt: null };
+  const entradaRecord = [...clockRecords]
+    .filter((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada")
+    .sort((a, b) => a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL))[0];
+  const entradaAt = entradaRecord ? parseServerDate(entradaRecord.FECHA_HORA_REAL) : null;
 
-  if (last === "Inicio Pausa") {
-    const pausedAt = parseServerDate(sorted[0].FECHA_HORA_REAL);
-    const resumeRecord = sorted.find((r) => {
-      const mov = normalizeMovimiento(r.TIPO_MOVIMIENTO);
-      return (
-        (mov === "Entrada" || mov === "Fin de Pausa") &&
-        r.FECHA_HORA_REAL <= sorted[0].FECHA_HORA_REAL
-      );
-    });
-    return {
-      state: "paused",
-      resumeAt: resumeRecord ? parseServerDate(resumeRecord.FECHA_HORA_REAL) : null,
-      pausedAt,
-    };
-  }
-
+  if (last === "Salida") return { state: "out", entradaAt: null };
+  if (last === "Inicio Pausa") return { state: "paused", entradaAt };
   if (last === "Entrada" || last === "Fin de Pausa") {
-    return {
-      state: "active",
-      resumeAt: parseServerDate(sorted[0].FECHA_HORA_REAL),
-      pausedAt: null,
-    };
+    return { state: "active", entradaAt };
   }
 
-  return { state: "out", resumeAt: null, pausedAt: null };
+  return { state: "out", entradaAt: null };
 }
 
 type ShiftBlock = {
@@ -163,9 +148,9 @@ function buildShiftBlocks(records: ProfesorFichajeRow[]): ShiftBlock[] {
 
   for (const record of clockRecords) {
     const mov = normalizeMovimiento(record.TIPO_MOVIMIENTO);
-    if (mov === "Entrada" || mov === "Fin de Pausa") {
+    if (mov === "Entrada") {
       openStart = record;
-    } else if ((mov === "Inicio Pausa" || mov === "Salida") && openStart) {
+    } else if (mov === "Salida" && openStart) {
       const finAt = parseServerDate(record.FECHA_HORA_REAL);
       const inicioAt = parseServerDate(openStart.FECHA_HORA_REAL);
       const ms = finAt && inicioAt ? finAt.getTime() - inicioAt.getTime() : 0;
@@ -521,7 +506,7 @@ function ProfesorFichajesView({
 
   const todayRecords = useMemo(() => fichajes.filter((f) => isRecordTodayProfesor(f)), [fichajes]);
 
-  const { state, resumeAt, pausedAt } = useMemo(
+  const { state, entradaAt } = useMemo(
     () => deriveProfesorClockState(todayRecords),
     [todayRecords],
   );
@@ -529,23 +514,13 @@ function ProfesorFichajesView({
   const shiftBlocks = useMemo(() => buildShiftBlocks(fichajes), [fichajes]);
 
   useEffect(() => {
-    if (state !== "active" || !resumeAt) return;
+    if (state === "out" || !entradaAt) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [state, resumeAt]);
+  }, [state, entradaAt]);
 
-  const elapsedMs = useMemo(() => {
-    if (!resumeAt) return 0;
-    if (state === "paused" && pausedAt) {
-      return pausedAt.getTime() - resumeAt.getTime();
-    }
-    if (state === "active") {
-      return now - resumeAt.getTime();
-    }
-    return 0;
-  }, [state, resumeAt, pausedAt, now]);
-
-  const elapsedLabel = formatElapsed(elapsedMs);
+  const elapsedLabel =
+    entradaAt && state !== "out" ? formatElapsed(now - entradaAt.getTime()) : "00:00:00";
 
   const insertMovement = async (
     tipo: string,
@@ -718,7 +693,7 @@ function ProfesorFichajesView({
               <>
                 <div className="w-full space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {state === "paused" ? "Tiempo en pausa" : "Tiempo transcurrido"}
+                    Tiempo transcurrido
                   </p>
                   <p className="font-mono text-5xl font-bold tabular-nums tracking-tight sm:text-6xl">
                     {elapsedLabel}

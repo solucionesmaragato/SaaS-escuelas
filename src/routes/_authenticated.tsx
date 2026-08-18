@@ -53,7 +53,7 @@ function AuthenticatedAppShell() {
     <SidebarProvider
       open={isSidebarOpen}
       onOpenChange={setIsSidebarOpen}
-      className="h-svh overflow-hidden"
+      className="min-h-dvh h-dvh overflow-hidden"
     >
       <AuthenticatedShellContent
         isSidebarOpen={isSidebarOpen}
@@ -75,7 +75,7 @@ function ProfesorBottomNav() {
   return (
     <nav
       aria-label="Navegación principal"
-      className="shrink-0 border-t bg-background/95 backdrop-blur safe-area-inset-bottom"
+      className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur safe-area-inset-bottom"
     >
       <div className="grid grid-cols-3">
         {BOTTOM_NAV_ITEMS.map(({ to, label, icon: Icon, activeColor }) => {
@@ -139,7 +139,7 @@ function AuthenticatedShellContent({
         <main
           className={cn(
             "min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6",
-            showMobileShell && "pb-safe",
+            showMobileShell && "pb-bottom-nav",
           )}
         >
           <Outlet />

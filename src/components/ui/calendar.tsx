@@ -15,9 +15,12 @@ function Calendar({
   buttonVariant = "ghost",
   formatters,
   components,
+  name: _name,
   ...props
 }: React.ComponentProps<typeof DayPicker> & {
   buttonVariant?: React.ComponentProps<typeof Button>["variant"];
+  /** Accepted for form field parity; not forwarded to DayPicker (use hidden inputs for submission). */
+  name?: string;
 }) {
   const defaultClassNames = getDefaultClassNames();
 
