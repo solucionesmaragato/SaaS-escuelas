@@ -126,10 +126,7 @@ function AlumnosSubTab({
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => onOpenAlumno(s.idAlumno)}
                   >
-                    <TableCell
-                      className="font-medium text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="font-medium text-sm">
                       <EntityLink type="alumno" id={s.idAlumno}>
                         {s.nombreAlumno}
                       </EntityLink>
@@ -168,10 +165,7 @@ function AlumnosSubTab({
                       className="cursor-pointer hover:bg-muted/50 transition-colors"
                       onClick={() => onOpenAlumno(s.idAlumno)}
                     >
-                      <TableCell
-                        className="font-medium text-sm"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                      <TableCell className="font-medium text-sm">
                         <EntityLink type="alumno" id={s.idAlumno}>
                           {s.nombreAlumno}
                         </EntityLink>
@@ -228,7 +222,7 @@ function GruposSubTab({
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => onOpenGrupo(g.ID_GRUPO)}
               >
-                <TableCell className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
+                <TableCell className="font-medium truncate">
                   <EntityLink type="grupo" id={g.ID_GRUPO}>
                     {g.NOMBRE_GRUPO}
                   </EntityLink>

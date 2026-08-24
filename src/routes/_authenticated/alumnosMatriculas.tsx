@@ -396,7 +396,7 @@ function AlumnosMatriculasPage() {
                           )}
                           onClick={() => openEnrollmentEditor(mat)}
                         >
-                          <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                          <TableCell className="font-medium">
                             <EntityLink type="alumno" id={mat.ID_ALUMNO}>
                               {mat.TEXTO_ALUMNO}
                             </EntityLink>
@@ -523,10 +523,7 @@ function StudentCard({
       <PersonAvatar name={alumno.NOMBRE_ALUMNO} photoUrl={alumno.FOTO} className="h-12 w-12" />
 
       <div className="min-w-0 flex-1">
-        <p
-          className="truncate text-lg font-semibold leading-tight"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <p className="truncate text-lg font-semibold leading-tight">
           <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
             {alumno.NOMBRE_ALUMNO}
           </EntityLink>

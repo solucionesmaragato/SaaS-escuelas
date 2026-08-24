@@ -64,14 +64,36 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
+import { useMatriculas } from "@/hooks/useMatriculas";
+import { useGruposHorarios } from "@/hooks/useGruposHorarios";
+import {
+  buildScheduleAssignmentContext,
+  validateScheduleAssignmentHard,
+  type ScheduleAssignmentContext,
+  type SesionOccupancyRow,
+} from "@/components/alumnos/AlumnoFormDialog";
+
+type IncidenciasSearch = {
+  incidenciaId?: string;
+};
 
 export const Route = createFileRoute("/_authenticated/incidencias")({
+  validateSearch: (search: Record<string, unknown>): IncidenciasSearch => {
+    const incidenciaId = search.incidenciaId;
+    return typeof incidenciaId === "string" && incidenciaId ? { incidenciaId } : {};
+  },
   component: IncidenciasPage,
 });
 
 const PAGE_SIZE = 10;
 const ESTADO_CONSULTA_OPTIONS = ["Pendiente", "Resuelto", "Justificada"] as const;
 type IncidenciaTab = "faltas" | "recuperaciones" | "consultas";
+
+function incidenciaTabForTipo(tipo: string | null | undefined): IncidenciaTab {
+  if (tipo === "Recuperación") return "recuperaciones";
+  if (tipo === "Consulta") return "consultas";
+  return "faltas";
+}
 
 function formatFechaCreacion(value: string | null | undefined): string {
   if (!value?.trim()) return "—";
@@ -345,6 +367,8 @@ function IncidenciasPage() {
     filterCenterId,
   } = useAdminCentroFilter();
   const { list, create, update, remove } = useIncidencias(filterCenterId);
+  const { incidenciaId } = Route.useSearch();
+  const navigate = Route.useNavigate();
 
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<IncidenciaTab>("faltas");
@@ -359,7 +383,10 @@ function IncidenciasPage() {
     [list.data, overlay?.id],
   );
 
-  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleCloseOverlay = useCallback(() => {
+    setOverlay(null);
+    navigate({ search: (prev) => ({ ...prev, incidenciaId: undefined }), replace: true });
+  }, [navigate]);
   const handleEditOverlay = useCallback(() => {
     setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
   }, []);
@@ -430,6 +457,15 @@ function IncidenciasPage() {
   const faltasPageRows = paginate(faltasRows);
   const recuperacionesPageRows = paginate(recuperacionesRows);
   const consultasPageRows = paginate(consultasRows);
+
+  useEffect(() => {
+    if (!incidenciaId || !list.data?.length) return;
+    const target = list.data.find((inc) => inc.ID_INCIDENCIA === incidenciaId);
+    if (target) {
+      setActiveTab(incidenciaTabForTipo(target.TIPO_INCIDENCIA));
+      setOverlay({ id: incidenciaId, mode: "detail" });
+    }
+  }, [incidenciaId, list.data]);
 
   if (!hasPermission(rol, "incidencias:read")) {
     return (
@@ -556,7 +592,7 @@ function IncidenciasPage() {
                         <TableCell className="text-sm">
                           {formatFechaCreacion(inc.FECHA_CREACION)}
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell>
                           {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
                             <EntityLink type="alumno" id={inc.ID_ALUMNO}>
                               {inc.ALUMNOS.NOMBRE_ALUMNO}
@@ -567,7 +603,7 @@ function IncidenciasPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TableCell>
                           {inc.PROFESOR?.NOMBRE_PROFESOR ? (
                             <EntityLink type="profesor" id={inc.ID_PROFESOR}>
                               {inc.PROFESOR.NOMBRE_PROFESOR}
@@ -821,6 +857,13 @@ function toTimeInputValue(value: string | null | undefined): string {
   return value.slice(0, 5);
 }
 
+function weekdayLabelFromIsoDate(fecha: string): string {
+  const dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"] as const;
+  const parsed = new Date(`${fecha.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return dias[parsed.getDay()] ?? "";
+}
+
 function resolveEspecialidadId(
   value: string | null | undefined,
   especialidades: EspecialidadLookup[] | null | undefined,
@@ -970,7 +1013,7 @@ function IncidenciaScheduleTable({
                 <TableCell className="text-sm">
                   <IncidenciaFechaHorarioCell inc={inc} />
                 </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
+                <TableCell>
                   {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
                     <EntityLink type="alumno" id={inc.ID_ALUMNO}>
                       {inc.ALUMNOS.NOMBRE_ALUMNO}
@@ -979,7 +1022,7 @@ function IncidenciaScheduleTable({
                     <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>
                   )}
                 </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
+                <TableCell>
                   {inc.PROFESOR?.NOMBRE_PROFESOR ? (
                     <EntityLink type="profesor" id={inc.ID_PROFESOR}>
                       {inc.PROFESOR.NOMBRE_PROFESOR}
@@ -1357,6 +1400,45 @@ function IncidenciaFormDialog({
       return (data ?? []) as AlumnoSaldoEligibleRow[];
     },
   });
+
+  const allMatriculasQuery = useMatriculas(null);
+  const { list: grupoHorariosList } = useGruposHorarios();
+  const occupancyMetaQuery = useQuery({
+    queryKey: ["schedule-assignment-meta", tenantId],
+    enabled: open && Boolean(tenantId) && isRecuperacion,
+    queryFn: async () => {
+      const [sesionesRes, aulasRes] = await Promise.all([
+        supabase
+          .from("SESIONES")
+          .select(
+            "ID_SESION,ID_ALUMNO,ID_AULA,ID_PROFESOR,ID_HORARIO,ID_GRUPO_HORARIO,FECHA_EXACTA,HORA_INICIO,HORA_FIN,ESTADO",
+          )
+          .eq("ID_CLIENTE", tenantId!),
+        supabase.from("AULA").select("ID_AULA,CAPACIDAD").eq("ID_CLIENTE", tenantId!),
+      ]);
+      if (sesionesRes.error) throw sesionesRes.error;
+      if (aulasRes.error) throw aulasRes.error;
+      return {
+        sesiones: (sesionesRes.data ?? []) as SesionOccupancyRow[],
+        aulaCapacidadById: new Map(
+          (aulasRes.data ?? []).map((aula) => [aula.ID_AULA, aula.CAPACIDAD as number | null]),
+        ),
+      };
+    },
+  });
+
+  const scheduleAssignmentContext = useMemo((): ScheduleAssignmentContext | null => {
+    if (!occupancyMetaQuery.data) return null;
+    const tenantHorarios = (allMatriculasQuery.list.data?.rows ?? []).flatMap(
+      (mat) => mat.HORARIOS_MATRICULAS ?? [],
+    );
+    return buildScheduleAssignmentContext(
+      grupoHorariosList.data ?? [],
+      tenantHorarios,
+      occupancyMetaQuery.data.sesiones,
+      occupancyMetaQuery.data.aulaCapacidadById,
+    );
+  }, [allMatriculasQuery.list.data, grupoHorariosList.data, occupancyMetaQuery.data]);
 
   const lookupsQuery = useQuery({
     queryKey: ["incidencia-form-lookups", tenantId, filterCenterId ?? ""],
@@ -1859,6 +1941,29 @@ function IncidenciaFormDialog({
           payload.HORA_INICIO = horaInicio || null;
           payload.HORA_FIN = horaFin || null;
           payload.ID_AULA = idAula || null;
+
+          if (!scheduleAssignmentContext) {
+            toast.error("Cargando datos de ocupación. Inténtalo de nuevo.");
+            return;
+          }
+          const fechaSuceso = fechaExacta.trim().slice(0, 10);
+          const hard = validateScheduleAssignmentHard(scheduleAssignmentContext, {
+            idAlumno: idAlumno.trim(),
+            idProfesor: idProfesor.trim() || null,
+            idAula: idAula.trim() || null,
+            dia: weekdayLabelFromIsoDate(fechaSuceso),
+            horaInicio: horaInicio.trim().slice(0, 5),
+            horaFin: horaFin.trim().slice(0, 5),
+            fechaExacta: fechaSuceso,
+            idSesionExcluir: isEditing
+              ? initial?.ID_SESION?.trim() || idSesion.trim() || null
+              : null,
+            extraAlumnoIds: [idAlumno.trim()],
+          });
+          if (hard) {
+            toast.error(hard);
+            return;
+          }
         }
 
         setPendingPayload(payload);

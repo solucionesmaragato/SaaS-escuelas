@@ -63,9 +63,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant, useApp } from "@/context/AppContext";
 import {
   isAdminRole,
-  isDireccionRole,
   isMasterRole,
   isProfesorRole,
+  isSecretariaRole,
   tenantListKey,
 } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
@@ -314,23 +314,37 @@ function deriveClockState(todayRecords: FichajeData[]): {
   state: FicharClockState;
   entradaAt: Date | null;
 } {
-  const clockRecords = todayRecords.filter((r) =>
-    CLOCK_MOVEMENT_TYPES.has(normalizeMovimiento(r.TIPO_MOVIMIENTO)),
+  const clockRecords = todayRecords.filter(
+    (r) =>
+      !isFichajeAnulado(r.ESTADO_LEGAL) &&
+      CLOCK_MOVEMENT_TYPES.has(normalizeMovimiento(r.TIPO_MOVIMIENTO)),
   );
 
   if (clockRecords.length === 0) {
     return { state: "out", entradaAt: null };
   }
 
-  const sorted = [...clockRecords].sort((a, b) =>
-    fichajeRealTimestamp(b).localeCompare(fichajeRealTimestamp(a)),
+  const sortedAsc = [...clockRecords].sort((a, b) =>
+    fichajeRealTimestamp(a).localeCompare(fichajeRealTimestamp(b)),
   );
-  const last = normalizeMovimiento(sorted[0].TIPO_MOVIMIENTO);
+  const last = normalizeMovimiento(
+    sortedAsc[sortedAsc.length - 1].TIPO_MOVIMIENTO,
+  );
 
-  const entradaRecord = [...clockRecords]
-    .filter((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada")
-    .sort((a, b) => fichajeRealTimestamp(a).localeCompare(fichajeRealTimestamp(b)))[0];
-  const entradaAt = entradaRecord ? parseServerDate(fichajeRealTimestamp(entradaRecord)) : null;
+  // Ancla del cronómetro: Entrada de la jornada abierta (tras la última Salida).
+  let lastSalidaIdx = -1;
+  for (let i = sortedAsc.length - 1; i >= 0; i--) {
+    if (normalizeMovimiento(sortedAsc[i].TIPO_MOVIMIENTO) === "Salida") {
+      lastSalidaIdx = i;
+      break;
+    }
+  }
+  const entradaRecord = sortedAsc
+    .slice(lastSalidaIdx + 1)
+    .find((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada");
+  const entradaAt = entradaRecord
+    ? parseServerDate(fichajeRealTimestamp(entradaRecord))
+    : null;
 
   if (last === "Salida") return { state: "out", entradaAt: null };
   if (last === "Inicio Pausa") return { state: "paused", entradaAt };
@@ -1262,6 +1276,7 @@ function FicharView({
         TIPO_MOVIMIENTO: tipo,
         METODO: metodo,
         MODALIDAD: modalidad,
+        ID_CENTRO: centerId,
         IP_FICHAJE: compliance.IP_FICHAJE,
         USER_AGENT: compliance.USER_AGENT,
         LATITUD_LONGITUD: compliance.LATITUD_LONGITUD,
@@ -1484,11 +1499,13 @@ function FicharView({
 function ControlHorarioView({
   canManual,
   canGenerateQrPoster,
+  canGenerateAuditoria,
   tenantId,
   initialProfesorId,
 }: {
   canManual: boolean;
   canGenerateQrPoster: boolean;
+  canGenerateAuditoria: boolean;
   tenantId: string;
   initialProfesorId?: string | null;
 }) {
@@ -1760,7 +1777,7 @@ function ControlHorarioView({
         <p className="text-sm text-muted-foreground">
           {jornadas.length} jornada{jornadas.length === 1 ? "" : "s"} del {fromDate} al {toDate}
         </p>
-        {(canGenerateQrPoster || canManual) && (
+        {(canGenerateQrPoster || canGenerateAuditoria || canManual) && (
           <div className="flex flex-wrap gap-2">
             {canGenerateQrPoster && (
               <Button type="button" variant="outline" onClick={() => setQrPosterOpen(true)}>
@@ -1768,7 +1785,7 @@ function ControlHorarioView({
                 Generar Cartel QR
               </Button>
             )}
-            {canGenerateQrPoster && (
+            {canGenerateAuditoria && (
               <Button
                 type="button"
                 variant="outline"
@@ -1901,10 +1918,7 @@ function ControlHorarioView({
                     className={`cursor-pointer transition-colors hover:bg-muted/50 ${anuladoRowClass(jornada.anulado)}`}
                     onClick={() => void handleJornadaRowClick(jornada)}
                   >
-                    <TableCell
-                      className="py-2 text-sm font-semibold"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-sm font-semibold">
                       <EntityLink type="profesor" id={jornada.idProfesor}>
                         {jornada.nombreProfesor}
                       </EntityLink>
@@ -1914,35 +1928,23 @@ function ControlHorarioView({
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell
-                      className="py-2 text-sm font-medium"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-sm font-medium">
                       {formatFechaCorta(jornada.entrada.FECHA_HORA_REAL)}
                     </TableCell>
-                    <TableCell
-                      className="py-2 text-sm font-medium"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-sm font-medium">
                       {formatConciliacionHoraReal(jornada.entrada.FECHA_HORA_REAL)}
                     </TableCell>
-                    <TableCell
-                      className="py-2 text-sm font-medium"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-sm font-medium">
                       {jornada.salida ? (
                         formatConciliacionHoraReal(jornada.salida.FECHA_HORA_REAL)
                       ) : (
                         <span className="text-muted-foreground italic">En curso</span>
                       )}
                     </TableCell>
-                    <TableCell
-                      className="py-2 text-right font-mono text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-right font-mono text-sm">
                       {formatHorasBlock(jornada.totalHoras)}
                     </TableCell>
-                    <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="py-2">
                       <ToleranciaBadge estado={jornada.estadoTolerancia} />
                     </TableCell>
                     {canManual && (
@@ -2434,9 +2436,10 @@ function FichajesAdminPage() {
   const fichajes = useMemo(() => list.data?.fichajes ?? [], [list.data?.fichajes]);
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
 
-  const showControlTab = isMasterRole(rol) || isAdminRole(rol) || isDireccionRole(rol);
-  const canManualFichaje = isMasterRole(rol) || isAdminRole(rol);
-  const canGenerateQrPoster = isAdminRole(rol);
+  const showControlTab = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+  const canManualFichaje = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+  const canGenerateQrPoster = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+  const canGenerateAuditoria = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
 
   const auditRejectedFichaje = (input: FichajeSealedCreateInput, err: unknown) => {
     void logFichajeRejection({
@@ -2535,6 +2538,7 @@ function FichajesAdminPage() {
             <ControlHorarioView
               canManual={canManualFichaje}
               canGenerateQrPoster={canGenerateQrPoster}
+              canGenerateAuditoria={canGenerateAuditoria}
               tenantId={tenantId}
               initialProfesorId={deepLinkProfesorId}
             />

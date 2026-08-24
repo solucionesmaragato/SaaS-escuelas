@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
@@ -13,7 +14,14 @@ import {
 import type { AlumnoTree, MatriculaTree } from "@/hooks/useAlumnosTree";
 import type { HorarioCreateInput, HorarioUpdateInput } from "@/hooks/useAlumnosTree";
 import { useAlumnoMatriculas } from "@/hooks/useAlumnoMatriculas";
+import { useMatriculas } from "@/hooks/useMatriculas";
+import { useCargosExtra, calcCargoExtraTotal, calcCargoExtraRowTotal, cargoExtraEstadoStatus, formatCargoExtraFecha, canEditCargoExtraRole, type CargoExtraRow } from "@/hooks/useCargosExtra";
+import { CargoExtraDetailDialog } from "@/components/alumnos/CargoExtraDetailDialog";
+import { useActiveTenant } from "@/context/AppContext";
+import { formatCurrency } from "@/lib/format";
+import type { CentroData } from "@/hooks/useCentros";
 import type { Matricula } from "@/types/database";
+import { cursosForCentro, formatCursoNombre, getActiveCursoIdsForCentro, resolveCursoIdForCentro } from "@/lib/matriculaCursoUtils";
 import { countGrupoAlumnos, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
 import { Button } from "@/components/ui/button";
@@ -24,10 +32,21 @@ import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Form,
@@ -45,6 +64,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Accordion,
@@ -53,6 +81,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   METODOS_PAGO_OPCIONES,
@@ -66,10 +95,20 @@ import {
 function resolveMetodoPagoSelectValue(value: string | null | undefined): string {
   const normalized = normalizeMetodoPago(value);
   if (!normalized) return "__unset__";
-  if ((METODOS_PAGO_OPCIONES as readonly string[]).includes(normalized)) {
-    return normalized;
-  }
   return normalized;
+}
+
+function canAddCargoExtraRole(rol: string | null | undefined): boolean {
+  return canEditCargoExtraRole(rol);
+}
+
+function formatCentroNombre(
+  idCentro: string | null | undefined,
+  centroNombreById: Map<string, string>,
+): string {
+  const id = idCentro?.trim();
+  if (!id) return "—";
+  return centroNombreById.get(id) ?? id;
 }
 
 function buildAlumnoFormResetValues(alumno: AlumnoTree): AlumnoFormValues {
@@ -344,18 +383,37 @@ function isHorarioScheduleActivo(estado: string | null | undefined): boolean {
   return normalized === "activo" || normalized === "activa";
 }
 
+type HorarioScheduleEstadoSource = {
+  ESTADO?: string | null;
+  ESTADO_MATRICULA?: string | null;
+};
+
+function resolveHorarioScheduleEstado(
+  horario: HorarioScheduleEstadoSource,
+): string | null | undefined {
+  return horario.ESTADO ?? horario.ESTADO_MATRICULA;
+}
+
 function hasStudentScheduleOverlap(
   dia: string,
   horaInicio: string,
   horaFin: string,
   studentHorarios: MatriculaTree["HORARIOS_MATRICULAS"],
   excludeHorarioId?: string | null,
+  options?: {
+    idGrupoHorario?: string | null;
+    idSesionExcluir?: string | null;
+    alumnoId?: string | null;
+    sesiones?: SesionOccupancyRow[];
+    fechaExacta?: string | null;
+  },
 ): boolean {
   if (!dia.trim() || !horaInicio || !horaFin) return false;
 
   for (const horario of studentHorarios) {
     if (excludeHorarioId && horario.ID_HORARIO === excludeHorarioId) continue;
-    if (!isHorarioScheduleActivo(horario.ESTADO_MATRICULA)) continue;
+    if (isSameGrupoHorarioPeer(horario, options?.idGrupoHorario)) continue;
+    if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
     if (
       schedulesTimeOverlap(
         dia,
@@ -365,6 +423,26 @@ function hasStudentScheduleOverlap(
         horario.HORA_INICIO ?? "",
         horario.HORA_FIN ?? "",
       )
+    ) {
+      return true;
+    }
+  }
+
+  const alumnoId = options?.alumnoId?.trim();
+  if (!alumnoId || !options?.fechaExacta?.trim()) return false;
+
+  for (const sesion of options?.sesiones ?? []) {
+    if (options.idSesionExcluir && sesion.ID_SESION === options.idSesionExcluir) continue;
+    if (sesion.ID_ALUMNO?.trim() !== alumnoId) continue;
+    if (isSameGrupoHorarioSesionPeer(sesion, options.idGrupoHorario)) continue;
+    if (!isSesionOccupancyActiva(sesion.ESTADO)) continue;
+    if (
+      sesionMatchesCheck(sesion, {
+        dia,
+        horaInicio,
+        horaFin,
+        fechaExacta: options.fechaExacta,
+      })
     ) {
       return true;
     }
@@ -394,6 +472,44 @@ function hasScheduleResourceConflict(
   }
 
   return false;
+}
+
+function isIndividualHorarioForOccupancy(horario: MatriculaHorario): boolean {
+  if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) return false;
+  if (horario.ID_GRUPO_HORARIO?.trim()) return false;
+  return normalizeTipoClase(horario.TIPO_CLASE) === "Individual";
+}
+
+function buildIndividualScheduleOccupancySlots(
+  grupoSlots: GrupoHorarioSlot[],
+  individualHorarios: MatriculaHorario[],
+  excludeHorarioId?: string | null,
+): ScheduleOccupancySlot[] {
+  const slots: ScheduleOccupancySlot[] = [];
+
+  for (const grupoSlot of grupoSlots) {
+    slots.push({
+      dia: grupoSlot.DIA_SEMANA ?? "",
+      horaInicio: grupoSlot.HORA_INICIO ?? "",
+      horaFin: grupoSlot.HORA_FIN ?? "",
+      idProfesor: grupoSlot.ID_PROFESOR ?? null,
+      idAula: grupoSlot.ID_AULA ?? null,
+    });
+  }
+
+  for (const horario of individualHorarios) {
+    if (excludeHorarioId && horario.ID_HORARIO === excludeHorarioId) continue;
+    if (!isIndividualHorarioForOccupancy(horario)) continue;
+    slots.push({
+      dia: horario.DIA ?? "",
+      horaInicio: horario.HORA_INICIO ?? "",
+      horaFin: horario.HORA_FIN ?? "",
+      idProfesor: horario.ID_PROFESOR ?? null,
+      idAula: horario.ID_AULA ?? null,
+    });
+  }
+
+  return slots;
 }
 
 function buildScheduleOccupancySlots(
@@ -429,24 +545,632 @@ function buildProfesorOcupacionShort(
   idProfesor: string,
   dia: string,
   grupoSlots: GrupoHorarioSlot[],
+  individualHorarios: MatriculaHorario[] = [],
 ): string | null {
   if (!idProfesor || !dia.trim()) return null;
   const diaNorm = dia.trim().toLowerCase();
-  const slots = grupoSlots
-    .filter(
-      (s) => s.ID_PROFESOR === idProfesor && (s.DIA_SEMANA ?? "").trim().toLowerCase() === diaNorm,
+  const intervals: Array<{ start: string; end: string }> = [];
+
+  for (const slot of grupoSlots) {
+    if (slot.ID_PROFESOR !== idProfesor) continue;
+    if ((slot.DIA_SEMANA ?? "").trim().toLowerCase() !== diaNorm) continue;
+    intervals.push({
+      start: slot.HORA_INICIO?.slice(0, 5) ?? "?",
+      end: slot.HORA_FIN?.slice(0, 5) ?? "?",
+    });
+  }
+
+  for (const horario of individualHorarios) {
+    if (!isIndividualHorarioForOccupancy(horario)) continue;
+    if (horario.ID_PROFESOR !== idProfesor) continue;
+    if ((horario.DIA ?? "").trim().toLowerCase() !== diaNorm) continue;
+    intervals.push({
+      start: horario.HORA_INICIO?.slice(0, 5) ?? "?",
+      end: horario.HORA_FIN?.slice(0, 5) ?? "?",
+    });
+  }
+
+  if (intervals.length === 0) return "Profesor libre este día";
+
+  intervals.sort((a, b) => a.start.localeCompare(b.start));
+  return `Ocupado hoy: ${intervals.map((i) => `${i.start}-${i.end}`).join(", ")}`;
+}
+
+export const AULA_LLENA_MESSAGE = "AULA LLENA, BUSQUE OTRO HORARIO";
+
+export const GRUPO_COMPLETO_PROMPT =
+  "El grupo está completo, ¿asignar alumno de todos modos? Te recomendamos buscar otro grupo.";
+
+const SESIONES_EXCLUDED_ESTADOS = new Set(["cancelada", "incidencia"]);
+
+export type SesionOccupancyRow = {
+  ID_SESION: string;
+  ID_ALUMNO: string | null;
+  ID_AULA: string | null;
+  ID_PROFESOR: string | null;
+  ID_HORARIO?: string | null;
+  ID_GRUPO_HORARIO?: string | null;
+  FECHA_EXACTA: string;
+  HORA_INICIO: string;
+  HORA_FIN: string;
+  ESTADO: string | null;
+};
+
+export type GrupoOccupancyMeta = {
+  ID_GRUPO: string;
+  ID_ALUMNOS: string[];
+  PLAZAS_MAXIMAS: number | null;
+};
+
+export type ScheduleAssignmentContext = {
+  grupoSlots: GrupoHorarioSlot[];
+  horarios: MatriculaHorario[];
+  sesiones: SesionOccupancyRow[];
+  aulaCapacidadById: Map<string, number | null>;
+  grupos: GrupoOccupancyMeta[];
+};
+
+export type ScheduleAssignmentCheck = {
+  idAlumno?: string | null;
+  idProfesor?: string | null;
+  idAula?: string | null;
+  dia: string;
+  horaInicio: string;
+  horaFin: string;
+  idHorarioExcluir?: string | null;
+  idGrupo?: string | null;
+  idGrupoHorario?: string | null;
+  idSesionExcluir?: string | null;
+  isIndividual?: boolean;
+  extraAlumnoIds?: string[];
+  fechaExacta?: string | null;
+};
+
+function weekdayLabelFromIsoDate(fecha: string): string {
+  const dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"] as const;
+  const parsed = new Date(`${fecha.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return dias[parsed.getDay()] ?? "";
+}
+
+function isSesionOccupancyActiva(estado: string | null | undefined): boolean {
+  const normalized = estado?.trim().toLowerCase() ?? "";
+  return normalized.length > 0 && !SESIONES_EXCLUDED_ESTADOS.has(normalized);
+}
+
+function horarioTimeValue(value: string | null | undefined): string {
+  return value?.slice(0, 5) ?? "";
+}
+
+function sesionMatchesCheck(
+  sesion: SesionOccupancyRow,
+  check: Pick<ScheduleAssignmentCheck, "dia" | "horaInicio" | "horaFin" | "fechaExacta">,
+): boolean {
+  const checkFecha = check.fechaExacta?.trim().slice(0, 10);
+  if (!checkFecha) return false;
+
+  const sesionFecha = sesion.FECHA_EXACTA?.trim().slice(0, 10);
+  if (!sesionFecha || sesionFecha !== checkFecha) return false;
+
+  const sesionDia = weekdayLabelFromIsoDate(sesion.FECHA_EXACTA);
+  if (!sesionDia) return false;
+
+  return schedulesTimeOverlap(
+    check.dia,
+    check.horaInicio,
+    check.horaFin,
+    sesionDia,
+    sesion.HORA_INICIO,
+    sesion.HORA_FIN,
+  );
+}
+
+function isSameGrupoHorarioPeer(
+  horario: MatriculaHorario,
+  idGrupoHorario?: string | null,
+): boolean {
+  const peerId = idGrupoHorario?.trim();
+  if (!peerId) return false;
+  return horario.ID_GRUPO_HORARIO?.trim() === peerId;
+}
+
+function isSameGrupoHorarioSesionPeer(
+  sesion: Pick<SesionOccupancyRow, "ID_GRUPO_HORARIO">,
+  idGrupoHorario?: string | null,
+): boolean {
+  const peerId = idGrupoHorario?.trim();
+  if (!peerId) return false;
+  return sesion.ID_GRUPO_HORARIO?.trim() === peerId;
+}
+
+type GrupoSlotExclusion = Pick<
+  ScheduleAssignmentCheck,
+  | "idGrupoHorario"
+  | "idGrupo"
+  | "idProfesor"
+  | "idAula"
+  | "dia"
+  | "horaInicio"
+  | "horaFin"
+  | "fechaExacta"
+>;
+
+function isExcludedGrupoSlot(slot: GrupoHorarioSlot, exclude: GrupoSlotExclusion): boolean {
+  const excludeGrupoHorarioId = exclude.idGrupoHorario?.trim();
+  if (excludeGrupoHorarioId && slot.ID_GRUPO_HORARIO?.trim() === excludeGrupoHorarioId) {
+    return true;
+  }
+
+  const grupoId = exclude.idGrupo?.trim();
+  const profId = exclude.idProfesor?.trim();
+  const aulaId = exclude.idAula?.trim();
+  const dia = exclude.dia?.trim();
+  if (!grupoId || !profId || !aulaId || !dia || !exclude.horaInicio || !exclude.horaFin) {
+    return false;
+  }
+
+  if (slot.ID_GRUPO !== grupoId) return false;
+  if (slot.ID_PROFESOR?.trim() !== profId) return false;
+  if (slot.ID_AULA?.trim() !== aulaId) return false;
+  return schedulesTimeOverlap(
+    dia,
+    exclude.horaInicio,
+    exclude.horaFin,
+    slot.DIA_SEMANA ?? "",
+    slot.HORA_INICIO ?? "",
+    slot.HORA_FIN ?? "",
+  );
+}
+
+function isExcludedSesionForGrupoSlot(
+  sesion: SesionOccupancyRow,
+  exclude: GrupoSlotExclusion,
+): boolean {
+  const excludeGrupoHorarioId = exclude.idGrupoHorario?.trim();
+  const grupoId = exclude.idGrupo?.trim();
+  if (!excludeGrupoHorarioId && !grupoId) return false;
+
+  const profId = exclude.idProfesor?.trim();
+  const aulaId = exclude.idAula?.trim();
+  const dia = exclude.dia?.trim();
+  if (!profId || !aulaId || !dia || !exclude.horaInicio || !exclude.horaFin) return false;
+
+  if (sesion.ID_PROFESOR?.trim() !== profId) return false;
+  if (sesion.ID_AULA?.trim() !== aulaId) return false;
+
+  const sesionDia = weekdayLabelFromIsoDate(sesion.FECHA_EXACTA);
+  if (sesionDia.trim().toLowerCase() !== dia.trim().toLowerCase()) return false;
+
+  return schedulesTimeOverlap(
+    dia,
+    exclude.horaInicio,
+    exclude.horaFin,
+    sesionDia,
+    sesion.HORA_INICIO,
+    sesion.HORA_FIN,
+  );
+}
+
+function collectAlumnosInAulaWindow(
+  ctx: ScheduleAssignmentContext,
+  dia: string,
+  horaInicio: string,
+  horaFin: string,
+  idAula: string,
+  exclude: {
+    idHorario?: string | null;
+    idSesion?: string | null;
+  },
+  fechaExacta?: string | null,
+  extraAlumnoIds: string[] = [],
+): Set<string> {
+  const ids = new Set<string>();
+
+  for (const horario of ctx.horarios) {
+    if (exclude.idHorario && horario.ID_HORARIO === exclude.idHorario) continue;
+    if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
+    if (horario.ID_AULA?.trim() !== idAula) continue;
+    if (
+      !schedulesTimeOverlap(
+        dia,
+        horaInicio,
+        horaFin,
+        horario.DIA ?? "",
+        horario.HORA_INICIO ?? "",
+        horario.HORA_FIN ?? "",
+      )
+    ) {
+      continue;
+    }
+    const alumnoId = horario.ID_ALUMNO?.trim();
+    if (alumnoId) ids.add(alumnoId);
+  }
+
+  if (fechaExacta?.trim()) {
+    const sesionCheck = { dia, horaInicio, horaFin, fechaExacta };
+    for (const sesion of ctx.sesiones) {
+      if (exclude.idSesion && sesion.ID_SESION === exclude.idSesion) continue;
+      if (!isSesionOccupancyActiva(sesion.ESTADO)) continue;
+      if (sesion.ID_AULA?.trim() !== idAula) continue;
+      if (!sesionMatchesCheck(sesion, sesionCheck)) continue;
+      const alumnoId = sesion.ID_ALUMNO?.trim();
+      if (alumnoId) ids.add(alumnoId);
+    }
+  }
+
+  for (const slot of ctx.grupoSlots) {
+    if (slot.ID_AULA?.trim() !== idAula) continue;
+    if (
+      !schedulesTimeOverlap(
+        dia,
+        horaInicio,
+        horaFin,
+        slot.DIA_SEMANA ?? "",
+        slot.HORA_INICIO ?? "",
+        slot.HORA_FIN ?? "",
+      )
+    ) {
+      continue;
+    }
+    const grupo = ctx.grupos.find((g) => g.ID_GRUPO === slot.ID_GRUPO);
+    for (const alumnoId of grupo?.ID_ALUMNOS ?? []) {
+      if (alumnoId?.trim()) ids.add(alumnoId.trim());
+    }
+  }
+
+  for (const alumnoId of extraAlumnoIds) {
+    if (alumnoId?.trim()) ids.add(alumnoId.trim());
+  }
+
+  return ids;
+}
+
+function buildAssignmentResourceSlots(
+  ctx: ScheduleAssignmentContext,
+  exclude: Pick<ScheduleAssignmentCheck, "idHorarioExcluir" | "idGrupoHorario"> &
+    GrupoSlotExclusion,
+): ScheduleOccupancySlot[] {
+  const slots: ScheduleOccupancySlot[] = [];
+
+  for (const slot of ctx.grupoSlots) {
+    if (isExcludedGrupoSlot(slot, exclude)) continue;
+    slots.push({
+      dia: slot.DIA_SEMANA ?? "",
+      horaInicio: slot.HORA_INICIO ?? "",
+      horaFin: slot.HORA_FIN ?? "",
+      idProfesor: slot.ID_PROFESOR ?? null,
+      idAula: slot.ID_AULA ?? null,
+    });
+  }
+
+  for (const horario of ctx.horarios) {
+    if (exclude.idHorarioExcluir && horario.ID_HORARIO === exclude.idHorarioExcluir) continue;
+    if (isSameGrupoHorarioPeer(horario, exclude.idGrupoHorario)) continue;
+    if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
+    slots.push({
+      dia: horario.DIA ?? "",
+      horaInicio: horario.HORA_INICIO ?? "",
+      horaFin: horario.HORA_FIN ?? "",
+      idProfesor: horario.ID_PROFESOR ?? null,
+      idAula: horario.ID_AULA ?? null,
+    });
+  }
+
+  for (const sesion of ctx.sesiones) {
+    if (!exclude.fechaExacta?.trim()) continue;
+    if (!isSesionOccupancyActiva(sesion.ESTADO)) continue;
+    if (isExcludedSesionForGrupoSlot(sesion, exclude)) continue;
+    if (!sesionMatchesCheck(sesion, exclude)) continue;
+    const dia = weekdayLabelFromIsoDate(sesion.FECHA_EXACTA);
+    if (!dia) continue;
+    slots.push({
+      dia,
+      horaInicio: sesion.HORA_INICIO,
+      horaFin: sesion.HORA_FIN,
+      idProfesor: sesion.ID_PROFESOR ?? null,
+      idAula: sesion.ID_AULA ?? null,
+    });
+  }
+
+  return slots;
+}
+
+function buildProfAulaOccupancySlots(
+  grupoSlots: GrupoHorarioSlot[],
+  horarios: MatriculaHorario[],
+  sesiones: SesionOccupancyRow[],
+  excludeHorarioId?: string | null,
+): ScheduleOccupancySlot[] {
+  const slots: ScheduleOccupancySlot[] = [];
+
+  for (const slot of grupoSlots) {
+    slots.push({
+      dia: slot.DIA_SEMANA ?? "",
+      horaInicio: slot.HORA_INICIO ?? "",
+      horaFin: slot.HORA_FIN ?? "",
+      idProfesor: slot.ID_PROFESOR ?? null,
+      idAula: slot.ID_AULA ?? null,
+    });
+  }
+
+  for (const horario of horarios) {
+    if (excludeHorarioId && horario.ID_HORARIO === excludeHorarioId) continue;
+    if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
+    slots.push({
+      dia: horario.DIA ?? "",
+      horaInicio: horario.HORA_INICIO ?? "",
+      horaFin: horario.HORA_FIN ?? "",
+      idProfesor: horario.ID_PROFESOR ?? null,
+      idAula: horario.ID_AULA ?? null,
+    });
+  }
+
+  return slots;
+}
+
+function hasBlockingIndividualClass(
+  ctx: ScheduleAssignmentContext,
+  check: ScheduleAssignmentCheck,
+): boolean {
+  if (check.isIndividual) return false;
+
+  const aulaId = check.idAula?.trim();
+  if (!aulaId || !check.dia.trim() || !check.horaInicio || !check.horaFin) return false;
+
+  for (const horario of ctx.horarios) {
+    if (check.idHorarioExcluir && horario.ID_HORARIO === check.idHorarioExcluir) continue;
+    if (!isIndividualHorarioForOccupancy(horario)) continue;
+    if (
+      !schedulesTimeOverlap(
+        check.dia,
+        check.horaInicio,
+        check.horaFin,
+        horario.DIA ?? "",
+        horario.HORA_INICIO ?? "",
+        horario.HORA_FIN ?? "",
+      )
+    ) {
+      continue;
+    }
+    const horarioAula = horario.ID_AULA?.trim();
+    if (horarioAula !== aulaId) continue;
+    return true;
+  }
+
+  for (const sesion of ctx.sesiones) {
+    if (check.idSesionExcluir && sesion.ID_SESION === check.idSesionExcluir) continue;
+    if (!isSesionOccupancyActiva(sesion.ESTADO)) continue;
+    if (!sesionMatchesCheck(sesion, check)) continue;
+    if (sesion.ID_GRUPO_HORARIO?.trim()) continue;
+
+    const horarioId = sesion.ID_HORARIO?.trim();
+    if (horarioId) {
+      const linked = ctx.horarios.find((h) => h.ID_HORARIO === horarioId);
+      if (linked && !isIndividualHorarioForOccupancy(linked)) continue;
+    } else if (sesionMatchesGrupoSlot(sesion, ctx)) {
+      continue;
+    }
+
+    const sesionAula = sesion.ID_AULA?.trim();
+    if (sesionAula !== aulaId) continue;
+
+    return true;
+  }
+
+  return false;
+}
+
+function sesionMatchesGrupoSlot(
+  sesion: SesionOccupancyRow,
+  ctx: ScheduleAssignmentContext,
+): boolean {
+  const sesionDia = weekdayLabelFromIsoDate(sesion.FECHA_EXACTA);
+  if (!sesionDia) return false;
+  const sesionAula = sesion.ID_AULA?.trim();
+  if (!sesionAula) return false;
+
+  for (const slot of ctx.grupoSlots) {
+    if (slot.ID_AULA?.trim() !== sesionAula) continue;
+    if (
+      schedulesTimeOverlap(
+        sesionDia,
+        sesion.HORA_INICIO,
+        sesion.HORA_FIN,
+        slot.DIA_SEMANA ?? "",
+        slot.HORA_INICIO ?? "",
+        slot.HORA_FIN ?? "",
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasDuplicateGrupoSlotConflict(
+  ctx: ScheduleAssignmentContext,
+  check: ScheduleAssignmentCheck,
+): boolean {
+  const grupoId = check.idGrupo?.trim();
+  const profId = check.idProfesor?.trim();
+  const aulaId = check.idAula?.trim();
+  if (!profId || !aulaId || !check.dia.trim()) return false;
+
+  for (const slot of ctx.grupoSlots) {
+    if (grupoId && slot.ID_GRUPO === grupoId) continue;
+    if (slot.ID_PROFESOR?.trim() !== profId) continue;
+    if (slot.ID_AULA?.trim() !== aulaId) continue;
+    if (
+      !schedulesTimeOverlap(
+        check.dia,
+        check.horaInicio,
+        check.horaFin,
+        slot.DIA_SEMANA ?? "",
+        slot.HORA_INICIO ?? "",
+        slot.HORA_FIN ?? "",
+      )
+    ) {
+      continue;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function hasAlumnoAssignmentOverlap(
+  ctx: ScheduleAssignmentContext,
+  check: ScheduleAssignmentCheck,
+): boolean {
+  const alumnoId = check.idAlumno?.trim();
+  if (!alumnoId || !check.dia.trim() || !check.horaInicio || !check.horaFin) return false;
+
+  for (const horario of ctx.horarios) {
+    if (check.idHorarioExcluir && horario.ID_HORARIO === check.idHorarioExcluir) continue;
+    if (horario.ID_ALUMNO?.trim() !== alumnoId) continue;
+    if (isSameGrupoHorarioPeer(horario, check.idGrupoHorario)) continue;
+    if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
+    if (
+      schedulesTimeOverlap(
+        check.dia,
+        check.horaInicio,
+        check.horaFin,
+        horario.DIA ?? "",
+        horario.HORA_INICIO ?? "",
+        horario.HORA_FIN ?? "",
+      )
+    ) {
+      return true;
+    }
+  }
+
+  for (const sesion of ctx.sesiones) {
+    if (check.idSesionExcluir && sesion.ID_SESION === check.idSesionExcluir) continue;
+    if (sesion.ID_ALUMNO?.trim() !== alumnoId) continue;
+    if (isSameGrupoHorarioSesionPeer(sesion, check.idGrupoHorario)) continue;
+    if (!isSesionOccupancyActiva(sesion.ESTADO)) continue;
+    if (sesionMatchesCheck(sesion, check)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function validateScheduleAssignmentHard(
+  ctx: ScheduleAssignmentContext,
+  check: ScheduleAssignmentCheck,
+): string | null {
+  if (!check.dia.trim() || !check.horaInicio || !check.horaFin) return null;
+
+  const aulaId = check.idAula?.trim();
+  if (aulaId) {
+    const capacidad = ctx.aulaCapacidadById.get(aulaId);
+    if (capacidad != null && capacidad > 0) {
+      const occupants = collectAlumnosInAulaWindow(
+        ctx,
+        check.dia,
+        check.horaInicio,
+        check.horaFin,
+        aulaId,
+        {
+          idHorario: check.idHorarioExcluir,
+          idSesion: check.idSesionExcluir,
+        },
+        check.fechaExacta,
+        check.extraAlumnoIds ?? [],
+      );
+      if (occupants.size > capacidad) {
+        return AULA_LLENA_MESSAGE;
+      }
+    }
+  }
+
+  if (hasBlockingIndividualClass(ctx, check)) {
+    return "Este horario ya tiene una clase individual asignada.";
+  }
+
+  const resourceSlots = buildAssignmentResourceSlots(ctx, check);
+  if (
+    hasScheduleResourceConflict(
+      check.dia,
+      check.horaInicio,
+      check.horaFin,
+      check.idProfesor ?? "",
+      check.idAula ?? "",
+      resourceSlots,
     )
-    .sort((a, b) => (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? ""));
+  ) {
+    return "El profesor y/o el aula seleccionada ya están ocupados en este horario";
+  }
 
-  if (slots.length === 0) return "Profesor libre este día";
+  if (hasAlumnoAssignmentOverlap(ctx, check)) {
+    return "El alumno ya tiene otra clase asignada en este horario";
+  }
 
-  const parts = slots.map((s) => {
-    const ini = s.HORA_INICIO?.slice(0, 5) ?? "?";
-    const fin = s.HORA_FIN?.slice(0, 5) ?? "?";
-    return `${ini}-${fin}`;
-  });
+  if (hasDuplicateGrupoSlotConflict(ctx, check)) {
+    return "Ya existe otro grupo en este horario, aula y profesor.";
+  }
 
-  return `Ocupado hoy: ${parts.join(", ")}`;
+  return null;
+}
+
+export function checkGrupoPlazasWarning(
+  ctx: ScheduleAssignmentContext,
+  idGrupo: string,
+  alumnoIdsToAdd: string[],
+): boolean {
+  const grupo = ctx.grupos.find((g) => g.ID_GRUPO === idGrupo);
+  if (!grupo || grupo.PLAZAS_MAXIMAS == null) return false;
+  const current = new Set(grupo.ID_ALUMNOS);
+  for (const id of alumnoIdsToAdd) {
+    if (id?.trim()) current.add(id.trim());
+  }
+  return current.size > grupo.PLAZAS_MAXIMAS;
+}
+
+export function buildScheduleAssignmentContext(
+  grupoSlots: GrupoHorarioSlot[],
+  horarios: MatriculaHorario[],
+  sesiones: SesionOccupancyRow[],
+  aulaCapacidadById: Map<string, number | null>,
+): ScheduleAssignmentContext {
+  const gruposMap = new Map<string, GrupoOccupancyMeta>();
+  for (const slot of grupoSlots) {
+    const grupo = slot.GRUPOS;
+    if (!grupo) continue;
+    gruposMap.set(slot.ID_GRUPO, {
+      ID_GRUPO: slot.ID_GRUPO,
+      ID_ALUMNOS: [...(grupo.ID_ALUMNOS ?? [])],
+      PLAZAS_MAXIMAS: grupo.PLAZAS_MAXIMAS,
+    });
+  }
+
+  return {
+    grupoSlots,
+    horarios,
+    sesiones,
+    aulaCapacidadById,
+    grupos: Array.from(gruposMap.values()),
+  };
+}
+
+export function assignmentCheckFromGrupoSlot(
+  slot: GrupoHorarioSlot,
+  overrides: Partial<ScheduleAssignmentCheck> = {},
+): ScheduleAssignmentCheck {
+  return {
+    idProfesor: slot.ID_PROFESOR,
+    idAula: slot.ID_AULA,
+    dia: slot.DIA_SEMANA ?? "",
+    horaInicio: horarioTimeValue(slot.HORA_INICIO),
+    horaFin: horarioTimeValue(slot.HORA_FIN),
+    idGrupo: slot.ID_GRUPO,
+    idGrupoHorario: slot.ID_GRUPO_HORARIO,
+    isIndividual: false,
+    ...overrides,
+  };
 }
 
 function getGrupoCapacityMeta(
@@ -468,8 +1192,7 @@ function getSelectedGrupoIdTarifa(
 ): string | null | undefined {
   if (!idGrupo) return undefined;
   const slot = grupoSlots.find((s) => s.ID_GRUPO === idGrupo);
-  const grupo = slot?.GRUPOS as { ID_TARIFA?: string | null } | null | undefined;
-  return grupo?.ID_TARIFA;
+  return slot?.GRUPOS?.ID_TARIFA;
 }
 
 function isTariffFreeGrupo(idGrupo: string, grupoSlots: GrupoHorarioSlot[]): boolean {
@@ -554,6 +1277,10 @@ function MatriculaEnrollmentFields({
   grupoSlots,
   saving,
   defaultProfesorId,
+  alumnoCenterId,
+  matriculaTarifaId,
+  matriculaCursoId,
+  centros = [],
 }: {
   form: HorarioFormState;
   setForm: Dispatch<SetStateAction<HorarioFormState>>;
@@ -561,26 +1288,48 @@ function MatriculaEnrollmentFields({
   grupoSlots: GrupoHorarioSlot[];
   saving: boolean;
   defaultProfesorId?: string | null;
+  alumnoCenterId?: string | null;
+  matriculaTarifaId?: string | null;
+  matriculaCursoId?: string | null;
+  centros?: CentroData[];
 }) {
   const hasEspecialidad = !!form.idEspecialidad;
   const isColectiva = form.tipoClase === "Colectiva";
   const cascadeDisabled = saving || !hasEspecialidad;
 
   const grupoOptions = useMemo(() => {
-    if (!form.idEspecialidad) return [];
+    const centerId = alumnoCenterId?.trim();
+    if (!form.idEspecialidad || !centerId) return [];
+    const tarifaId = matriculaTarifaId?.trim() || null;
+    const matriculaCurso = matriculaCursoId?.trim() || null;
+    const activeCursoIds = getActiveCursoIdsForCentro(centros, centerId);
     const seen = new Set<string>();
     const options: { id: string; label: string }[] = [];
     for (const slot of grupoSlots) {
-      if (slot.GRUPOS?.ID_ESPECIALIDAD !== form.idEspecialidad) continue;
+      const grupo = slot.GRUPOS;
+      if (!grupo) continue;
+      if (grupo.ID_ESPECIALIDAD !== form.idEspecialidad) continue;
+      if (grupo.ID_CENTRO !== centerId) continue;
+      if (tarifaId && grupo.ID_TARIFA !== tarifaId) continue;
+      const grupoCursoId = grupo.ID_CURSO?.trim();
+      if (!grupoCursoId || !activeCursoIds.has(grupoCursoId)) continue;
+      if (matriculaCurso && grupoCursoId !== matriculaCurso) continue;
       if (seen.has(slot.ID_GRUPO)) continue;
       seen.add(slot.ID_GRUPO);
       options.push({
         id: slot.ID_GRUPO,
-        label: slot.GRUPOS?.NOMBRE_GRUPO ?? slot.ID_GRUPO,
+        label: grupo.NOMBRE_GRUPO ?? slot.ID_GRUPO,
       });
     }
     return options.sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [grupoSlots, form.idEspecialidad]);
+  }, [
+    grupoSlots,
+    form.idEspecialidad,
+    alumnoCenterId,
+    matriculaTarifaId,
+    matriculaCursoId,
+    centros,
+  ]);
 
   const grupoCapacity = useMemo(
     () => (form.idGrupo ? getGrupoCapacityMeta(form.idGrupo, grupoSlots) : null),
@@ -744,7 +1493,13 @@ function MatriculaEnrollmentFields({
             </p>
           )}
           {form.idEspecialidad && grupoOptions.length === 0 && (
-            <p className="text-xs text-muted-foreground">Sin grupos para esta especialidad.</p>
+            <p className="text-xs text-muted-foreground">
+              {matriculaTarifaId?.trim() && matriculaCursoId?.trim()
+                ? "Sin grupos para esta tarifa, especialidad y curso en este centro."
+                : matriculaTarifaId?.trim()
+                  ? "Sin grupos para esta tarifa y especialidad en este centro."
+                  : "Sin grupos para esta especialidad."}
+            </p>
           )}
         </div>
       )}
@@ -822,8 +1577,18 @@ function HorarioSubForm({
   blockIndex,
   tariffSessionLimit,
   appendMode = false,
+  assignedGrupoHorarioIds,
+  tenantIndividualHorarios,
+  tenantOccupancyHorarios,
+  occupancySesiones,
+  scheduleAssignmentContext,
+  alumnoId,
   conflictCheckHorarios,
   studentConflictHorarios,
+  alumnoCenterId,
+  matriculaTarifaId,
+  matriculaCursoId,
+  centros = [],
   saving,
   onSave,
   onDelete,
@@ -840,8 +1605,18 @@ function HorarioSubForm({
   blockIndex?: number;
   tariffSessionLimit?: number | null;
   appendMode?: boolean;
+  assignedGrupoHorarioIds?: ReadonlySet<string>;
+  tenantIndividualHorarios?: MatriculaHorario[];
+  tenantOccupancyHorarios?: MatriculaHorario[];
+  occupancySesiones?: SesionOccupancyRow[];
+  scheduleAssignmentContext?: ScheduleAssignmentContext | null;
+  alumnoId?: string | null;
   conflictCheckHorarios?: MatriculaTree["HORARIOS_MATRICULAS"];
   studentConflictHorarios?: MatriculaTree["HORARIOS_MATRICULAS"];
+  alumnoCenterId?: string | null;
+  matriculaTarifaId?: string | null;
+  matriculaCursoId?: string | null;
+  centros?: CentroData[];
   saving: boolean;
   onSave: (patch: HorarioUpdateInput | HorarioUpdateInput[]) => Promise<void>;
   onDelete?: () => Promise<void>;
@@ -859,10 +1634,15 @@ function HorarioSubForm({
         }),
   );
 
+  const [grupoCompletoConfirmOpen, setGrupoCompletoConfirmOpen] = useState(false);
+  const grupoCompletoProceedRef = useRef<(() => Promise<void>) | null>(null);
+
   const horarioId = horario?.ID_HORARIO ?? null;
   const enrollmentForm = appendMode ? form : (sharedForm ?? form);
   const hasEspecialidad = !!enrollmentForm.idEspecialidad;
   const isColectiva = enrollmentForm.tipoClase === "Colectiva";
+  const isIndividualSchedule =
+    horario != null ? isIndividualHorarioForOccupancy(horario) : !isColectiva;
   const cascadeDisabled = saving || !hasEspecialidad;
   const isGrupoScheduleTimesLocked = Boolean(horario?.ID_GRUPO?.trim());
   const scheduleItemGrupoId =
@@ -882,14 +1662,43 @@ function HorarioSubForm({
     setForm((prev) => (prev.precio === "0" ? prev : { ...prev, precio: "0" }));
   }, [isTariffFreeGrupoSelected, enrollmentForm.idGrupo]);
 
-  const occupancySlots = useMemo(
-    () => (appendMode ? buildScheduleOccupancySlots(grupoSlots, conflictCheckHorarios ?? []) : []),
-    [appendMode, grupoSlots, conflictCheckHorarios],
-  );
+  const occupancySlots = useMemo(() => {
+    if (!isIndividualSchedule) {
+      if (!appendMode) return [];
+      return buildScheduleOccupancySlots(grupoSlots, conflictCheckHorarios ?? []);
+    }
+
+    const excludeHorarioId = horario?.ID_HORARIO;
+    if (scheduleAssignmentContext) {
+      return buildProfAulaOccupancySlots(
+        scheduleAssignmentContext.grupoSlots,
+        scheduleAssignmentContext.horarios,
+        scheduleAssignmentContext.sesiones,
+        excludeHorarioId,
+      );
+    }
+
+    return buildProfAulaOccupancySlots(
+      grupoSlots,
+      tenantOccupancyHorarios ?? tenantIndividualHorarios ?? [],
+      occupancySesiones ?? [],
+      excludeHorarioId,
+    );
+  }, [
+    isIndividualSchedule,
+    appendMode,
+    grupoSlots,
+    conflictCheckHorarios,
+    scheduleAssignmentContext,
+    tenantOccupancyHorarios,
+    tenantIndividualHorarios,
+    occupancySesiones,
+    horario?.ID_HORARIO,
+  ]);
 
   const scheduleResourceConflict = useMemo(
     () =>
-      appendMode &&
+      isIndividualSchedule &&
       hasScheduleResourceConflict(
         form.dia,
         form.horaInicio,
@@ -899,7 +1708,7 @@ function HorarioSubForm({
         occupancySlots,
       ),
     [
-      appendMode,
+      isIndividualSchedule,
       form.dia,
       form.horaInicio,
       form.horaFin,
@@ -918,6 +1727,11 @@ function HorarioSubForm({
         form.horaFin,
         studentConflictHorarios ?? [],
         horario?.ID_HORARIO,
+        {
+          idGrupoHorario: horario?.ID_GRUPO_HORARIO,
+          alumnoId,
+          sesiones: scheduleAssignmentContext?.sesiones ?? occupancySesiones ?? [],
+        },
       ),
     [
       appendMode,
@@ -926,6 +1740,10 @@ function HorarioSubForm({
       form.horaFin,
       studentConflictHorarios,
       horario?.ID_HORARIO,
+      horario?.ID_GRUPO_HORARIO,
+      alumnoId,
+      scheduleAssignmentContext?.sesiones,
+      occupancySesiones,
     ],
   );
 
@@ -945,7 +1763,7 @@ function HorarioSubForm({
         idEspecialidad: defaultEspecialidadId,
       }),
     );
-  }, [horarioId, defaultProfesorId, defaultEspecialidadId, horario, appendMode]);
+  }, [horarioId, defaultProfesorId, defaultEspecialidadId, appendMode]);
 
   const grupoHorarioBlocks = useMemo(() => {
     if (!enrollmentForm.idGrupo) return [];
@@ -977,16 +1795,46 @@ function HorarioSubForm({
     [lookups.aulaById],
   );
 
+  const hasIndividualScheduleWindow =
+    isIndividualSchedule && !!form.dia.trim() && !!form.horaInicio && !!form.horaFin;
+
   const chivato = useMemo(
     () =>
-      !isColectiva ? buildProfesorOcupacionShort(form.idProfesor, form.dia, grupoSlots) : null,
-    [isColectiva, form.idProfesor, form.dia, grupoSlots],
+      isIndividualSchedule
+        ? buildProfesorOcupacionShort(
+            form.idProfesor,
+            form.dia,
+            grupoSlots,
+            tenantIndividualHorarios ?? [],
+          )
+        : null,
+    [isIndividualSchedule, form.idProfesor, form.dia, grupoSlots, tenantIndividualHorarios],
   );
 
   const profesorOptions = useMemo(
     () => profesorSelectOptions(selectOptions.profesores, form.idProfesor, lookups.profesorById),
     [selectOptions.profesores, form.idProfesor, lookups.profesorById],
   );
+
+  const isProfesorOccupied = (idProfesor: string) =>
+    hasScheduleResourceConflict(
+      form.dia,
+      form.horaInicio,
+      form.horaFin,
+      idProfesor,
+      "",
+      occupancySlots,
+    );
+
+  const isAulaOccupied = (idAula: string) =>
+    hasScheduleResourceConflict(
+      form.dia,
+      form.horaInicio,
+      form.horaFin,
+      "",
+      idAula,
+      occupancySlots,
+    );
 
   const patchField = <K extends keyof HorarioFormState>(key: K, value: HorarioFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -1025,6 +1873,17 @@ function HorarioSubForm({
     });
   };
 
+  const validateHardAssignment = (check: ScheduleAssignmentCheck): string | null => {
+    if (!scheduleAssignmentContext) return null;
+    return validateScheduleAssignmentHard(scheduleAssignmentContext, check);
+  };
+
+  const requireScheduleAssignmentContext = (): boolean => {
+    if (scheduleAssignmentContext) return true;
+    toast.error("No se pudo validar la ocupación del horario. Inténtalo de nuevo.");
+    return false;
+  };
+
   const handleSave = async () => {
     const effectiveForm = appendMode
       ? form
@@ -1042,7 +1901,51 @@ function HorarioSubForm({
       common.PRECIO = 0;
     }
 
-    if (isColectiva) {
+    const rowGrupoId = horario?.ID_GRUPO?.trim() ?? "";
+    const rowGrupoHorarioId = horario?.ID_GRUPO_HORARIO?.trim() ?? "";
+    if (horario && rowGrupoId && rowGrupoHorarioId) {
+      const slot = grupoSlots.find(
+        (s) => s.ID_GRUPO === rowGrupoId && s.ID_GRUPO_HORARIO === rowGrupoHorarioId,
+      );
+      if (!slot) {
+        toast.error("No se encontró el horario del grupo configurado para este bloque.");
+        return;
+      }
+      if (!requireScheduleAssignmentContext()) return;
+      const hard = validateHardAssignment(
+        assignmentCheckFromGrupoSlot(slot, {
+          idAlumno: alumnoId,
+          idHorarioExcluir: horario.ID_HORARIO,
+          idGrupo: rowGrupoId,
+          idGrupoHorario: rowGrupoHorarioId,
+        }),
+      );
+      if (hard) {
+        toast.error(hard);
+        return;
+      }
+      await onSave(slotToHorarioPatch(slot, rowGrupoId, common));
+      return;
+    }
+
+    const executeColectivaCreate = async () => {
+      if (appendMode && effectiveForm.tipoSesion === "Extra") {
+        await onSave(individualToHorarioPatch(effectiveForm, common));
+        return;
+      }
+      const slotsToCreate = grupoHorarioBlocks.filter(
+        (slot) => !assignedGrupoHorarioIds?.has(slot.ID_GRUPO_HORARIO),
+      );
+      if (slotsToCreate.length === 0) {
+        toast.error("Todos los horarios del grupo ya están asignados a esta matrícula.");
+        return;
+      }
+      await onSave(
+        slotsToCreate.map((slot) => slotToHorarioPatch(slot, effectiveForm.idGrupo, common)),
+      );
+    };
+
+    if (isColectiva && !horario) {
       if (!effectiveForm.idGrupo) {
         toast.error("Selecciona un grupo.");
         return;
@@ -1051,24 +1954,78 @@ function HorarioSubForm({
         toast.error("El grupo seleccionado no tiene horarios configurados.");
         return;
       }
-      if (!horario && grupoLleno) {
-        toast.error("El grupo está lleno.");
+
+      const slotsToValidate =
+        appendMode && effectiveForm.tipoSesion === "Extra"
+          ? []
+          : grupoHorarioBlocks.filter(
+              (slot) => !assignedGrupoHorarioIds?.has(slot.ID_GRUPO_HORARIO),
+            );
+
+      if (!requireScheduleAssignmentContext()) return;
+
+      if (appendMode && effectiveForm.tipoSesion === "Extra") {
+        const hard = validateHardAssignment({
+          idAlumno: alumnoId,
+          idProfesor: effectiveForm.idProfesor,
+          idAula: effectiveForm.idAula,
+          dia: effectiveForm.dia,
+          horaInicio: effectiveForm.horaInicio,
+          horaFin: effectiveForm.horaFin,
+          isIndividual: true,
+          extraAlumnoIds: alumnoId?.trim() ? [alumnoId.trim()] : [],
+        });
+        if (hard) {
+          toast.error(hard);
+          return;
+        }
+      }
+
+      for (const slot of slotsToValidate) {
+        const hard = validateHardAssignment(
+          assignmentCheckFromGrupoSlot(slot, {
+            idAlumno: alumnoId,
+            idGrupo: effectiveForm.idGrupo,
+            extraAlumnoIds: alumnoId?.trim() ? [alumnoId.trim()] : [],
+          }),
+        );
+        if (hard) {
+          toast.error(hard);
+          return;
+        }
+      }
+
+      if (
+        scheduleAssignmentContext &&
+        alumnoId?.trim() &&
+        checkGrupoPlazasWarning(scheduleAssignmentContext, effectiveForm.idGrupo, [alumnoId.trim()])
+      ) {
+        grupoCompletoProceedRef.current = executeColectivaCreate;
+        setGrupoCompletoConfirmOpen(true);
         return;
       }
 
-      if (horario) {
-        const slot =
-          grupoHorarioBlocks.find((s) => s.ID_GRUPO_HORARIO === horario.ID_GRUPO_HORARIO) ??
-          grupoHorarioBlocks[0];
-        await onSave(slotToHorarioPatch(slot, effectiveForm.idGrupo, common));
-      } else if (appendMode) {
-        await onSave(individualToHorarioPatch(effectiveForm, common));
-      } else {
-        await onSave(
-          grupoHorarioBlocks.map((slot) => slotToHorarioPatch(slot, effectiveForm.idGrupo, common)),
-        );
-      }
+      await executeColectivaCreate();
       return;
+    }
+
+    if (isIndividualSchedule) {
+      if (!requireScheduleAssignmentContext()) return;
+      const hard = validateHardAssignment({
+        idAlumno: alumnoId,
+        idProfesor: effectiveForm.idProfesor,
+        idAula: effectiveForm.idAula,
+        dia: effectiveForm.dia,
+        horaInicio: effectiveForm.horaInicio,
+        horaFin: effectiveForm.horaFin,
+        idHorarioExcluir: horario?.ID_HORARIO,
+        isIndividual: true,
+        extraAlumnoIds: alumnoId?.trim() ? [alumnoId.trim()] : [],
+      });
+      if (hard) {
+        toast.error(hard);
+        return;
+      }
     }
 
     await onSave(individualToHorarioPatch(effectiveForm, common));
@@ -1079,7 +2036,8 @@ function HorarioSubForm({
     !hasEspecialidad ||
     (isColectiva &&
       !horario &&
-      (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0 || grupoLleno));
+      (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0)) ||
+    (isIndividualSchedule && scheduleResourceConflict);
 
   const blockTitle =
     blockIndex != null ? `Bloque ${blockIndex + 1}` : horario ? "Horario" : "Nuevo horario";
@@ -1090,8 +2048,16 @@ function HorarioSubForm({
     blockIndex != null &&
     blockIndex >= tariffSessionLimit;
 
+  const showGrupoLockedSchedule =
+    !horario &&
+    isColectiva &&
+    !!enrollmentForm.idGrupo &&
+    grupoHorarioBlocks.length > 0 &&
+    (showEnrollmentFields || (appendMode && enrollmentForm.tipoSesion === "Incluida"));
+
   return (
-    <Card className="space-y-4 border-dashed p-4">
+    <>
+      <Card className="space-y-4 border-dashed p-4">
       {((!showEnrollmentFields && !isColectiva) || appendMode) && (
         <p className="text-xs font-medium text-muted-foreground">{blockTitle}</p>
       )}
@@ -1128,14 +2094,14 @@ function HorarioSubForm({
           grupoSlots={grupoSlots}
           saving={saving}
           defaultProfesorId={defaultProfesorId}
+          alumnoCenterId={alumnoCenterId}
+          matriculaTarifaId={matriculaTarifaId}
+          matriculaCursoId={matriculaCursoId}
+          centros={centros}
         />
       )}
 
-      {showEnrollmentFields &&
-        !horario &&
-        isColectiva &&
-        enrollmentForm.idGrupo &&
-        grupoHorarioBlocks.length > 0 && (
+      {showGrupoLockedSchedule && (
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Horarios del grupo</Label>
             {grupoHorarioBlocks.map((slot, index) => (
@@ -1149,7 +2115,8 @@ function HorarioSubForm({
           </div>
         )}
 
-      {(horario != null || !isColectiva || appendMode) && hasEspecialidad && (
+      {(horario != null || !isColectiva || (appendMode && !showGrupoLockedSchedule)) &&
+        hasEspecialidad && (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="space-y-1.5">
@@ -1215,7 +2182,15 @@ function HorarioSubForm({
                 </SelectTrigger>
                 <SelectContent>
                   {profesorOptions.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
+                    <SelectItem
+                      key={p.id}
+                      value={p.id}
+                      disabled={
+                        hasIndividualScheduleWindow &&
+                        p.id !== form.idProfesor &&
+                        isProfesorOccupied(p.id)
+                      }
+                    >
                       {p.label}
                     </SelectItem>
                   ))}
@@ -1234,7 +2209,15 @@ function HorarioSubForm({
                 </SelectTrigger>
                 <SelectContent>
                   {aulaOptions.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
+                    <SelectItem
+                      key={a.id}
+                      value={a.id}
+                      disabled={
+                        hasIndividualScheduleWindow &&
+                        a.id !== form.idAula &&
+                        isAulaOccupied(a.id)
+                      }
+                    >
                       {a.label}
                     </SelectItem>
                   ))}
@@ -1243,7 +2226,7 @@ function HorarioSubForm({
             </div>
           </div>
           {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
-          {appendMode && scheduleResourceConflict && (
+          {isIndividualSchedule && scheduleResourceConflict && (
             <p className="text-xs font-medium text-destructive">
               El profesor y/o el aula seleccionada ya están ocupados en este horario
             </p>
@@ -1328,6 +2311,32 @@ function HorarioSubForm({
         </Button>
       </div>
     </Card>
+
+      <AlertDialog open={grupoCompletoConfirmOpen} onOpenChange={setGrupoCompletoConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grupo completo</AlertDialogTitle>
+            <AlertDialogDescription>{GRUPO_COMPLETO_PROMPT}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={saving}
+              onClick={() => {
+                void (async () => {
+                  const proceed = grupoCompletoProceedRef.current;
+                  grupoCompletoProceedRef.current = null;
+                  setGrupoCompletoConfirmOpen(false);
+                  if (proceed) await proceed();
+                })();
+              }}
+            >
+              Asignar de todos modos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -1335,25 +2344,37 @@ function MatriculaHorariosGroup({
   matricula,
   horarios,
   alumnoId,
+  centros,
   selectOptions,
   lookups,
   grupoSlots,
   maxHorarios,
   horarioSaving,
   studentConflictHorarios,
+  tenantIndividualHorarios,
+  tenantOccupancyHorarios,
+  occupancySesiones,
+  scheduleAssignmentContext,
+  alumnoCenterId,
   onCreateHorario,
   onUpdateHorario,
   onRemoveHorario,
 }: {
-  matricula: Matricula;
+  matricula: Matricula & { ID_CURSO?: string | null };
   horarios: MatriculaTree["HORARIOS_MATRICULAS"];
   alumnoId: string;
-  studentConflictHorarios: MatriculaTree["HORARIOS_MATRICULAS"];
+  centros: CentroData[];
   selectOptions: SelectOptions;
   lookups: LookupMaps;
   grupoSlots: GrupoHorarioSlot[];
   maxHorarios: number | null;
   horarioSaving: boolean;
+  studentConflictHorarios: MatriculaTree["HORARIOS_MATRICULAS"];
+  tenantIndividualHorarios: MatriculaHorario[];
+  tenantOccupancyHorarios: MatriculaHorario[];
+  occupancySesiones: SesionOccupancyRow[];
+  scheduleAssignmentContext: ScheduleAssignmentContext | null;
+  alumnoCenterId?: string | null;
   onCreateHorario: (input: HorarioCreateInput) => Promise<void>;
   onUpdateHorario: (id: string, patch: HorarioUpdateInput) => Promise<void>;
   onRemoveHorario: (id: string) => Promise<void>;
@@ -1377,13 +2398,17 @@ function MatriculaHorariosGroup({
 
   useEffect(() => {
     setSharedEnrollment(matriculaEnrollmentFromHorarios(matricula, matriculaHorarios));
-  }, [
-    matricula.ID_MATRICULA,
-    matricula.ID_PROFESOR,
-    matricula.ESPECIALIDAD,
-    matriculaHorarioIds,
-    matriculaHorarios,
-  ]);
+  }, [matricula.ID_MATRICULA, matricula.ID_PROFESOR, matricula.ESPECIALIDAD, matriculaHorarioIds]);
+
+  const assignedGrupoHorarioIds = useMemo(
+    () =>
+      new Set(
+        matriculaHorarios
+          .map((h) => h.ID_GRUPO_HORARIO)
+          .filter((id): id is string => Boolean(id?.trim())),
+      ),
+    [matriculaHorarioIds],
+  );
 
   const hasExistingHorarios = matriculaHorarios.length > 0;
   useEffect(() => {
@@ -1417,6 +2442,8 @@ function MatriculaHorariosGroup({
     return { independentHorarios: independent, grupoHorariosByGrupoId: byGrupoId };
   }, [matriculaHorarios]);
 
+  const matriculaCursoId = matricula.ID_CURSO ?? null;
+
   const renderExistingHorarioSubForm = (horario: MatriculaHorario, blockIndex: number) => (
     <HorarioSubForm
       key={horario.ID_HORARIO}
@@ -1426,10 +2453,19 @@ function MatriculaHorariosGroup({
       grupoSlots={grupoSlots}
       defaultProfesorId={matricula.ID_PROFESOR}
       defaultEspecialidadId={matricula.ESPECIALIDAD}
+      alumnoCenterId={alumnoCenterId}
+      matriculaTarifaId={matricula.ID_TARIFA}
+      matriculaCursoId={matriculaCursoId}
+      centros={centros}
       sharedForm={sharedEnrollment}
       showEnrollmentFields={false}
       blockIndex={blockIndex}
       tariffSessionLimit={maxHorarios}
+      tenantIndividualHorarios={tenantIndividualHorarios}
+      tenantOccupancyHorarios={tenantOccupancyHorarios}
+      occupancySesiones={occupancySesiones}
+      scheduleAssignmentContext={scheduleAssignmentContext}
+      alumnoId={alumnoId}
       saving={horarioSaving}
       onSave={async (patchOrPatches) => {
         const patch = Array.isArray(patchOrPatches) ? patchOrPatches[0] : patchOrPatches;
@@ -1484,6 +2520,10 @@ function MatriculaHorariosGroup({
                   grupoSlots={grupoSlots}
                   saving={horarioSaving}
                   defaultProfesorId={matricula.ID_PROFESOR}
+                  alumnoCenterId={alumnoCenterId}
+                  matriculaTarifaId={matricula.ID_TARIFA}
+                  matriculaCursoId={matriculaCursoId}
+                  centros={centros}
                 />
               </div>
               <div className="space-y-3 p-3">
@@ -1525,27 +2565,42 @@ function MatriculaHorariosGroup({
                   grupoSlots={grupoSlots}
                   defaultProfesorId={matricula.ID_PROFESOR}
                   defaultEspecialidadId={matricula.ESPECIALIDAD}
+                  alumnoCenterId={alumnoCenterId}
+                  matriculaTarifaId={matricula.ID_TARIFA}
+                  matriculaCursoId={matriculaCursoId}
+                  centros={centros}
                   showEnrollmentFields={!hasExistingHorarios}
                   blockIndex={matriculaHorarios.length + draftIndex}
                   tariffSessionLimit={maxHorarios}
                   appendMode={hasExistingHorarios}
+                  assignedGrupoHorarioIds={assignedGrupoHorarioIds}
+                  tenantIndividualHorarios={tenantIndividualHorarios}
+                  tenantOccupancyHorarios={tenantOccupancyHorarios}
+                  occupancySesiones={occupancySesiones}
+                  scheduleAssignmentContext={scheduleAssignmentContext}
+                  alumnoId={alumnoId}
                   conflictCheckHorarios={matriculaHorarios}
                   studentConflictHorarios={studentConflictHorarios}
                   saving={horarioSaving}
                   onCancel={() => removeDraftHorario(draftId)}
                   onSave={async (patchOrPatches) => {
-                    const patch = Array.isArray(patchOrPatches)
-                      ? patchOrPatches[0]
-                      : patchOrPatches;
+                    const patches = Array.isArray(patchOrPatches) ? patchOrPatches : [patchOrPatches];
+                    if (patches.length === 0) return;
                     try {
-                      const { ID_HORARIO: _omitHorario, ...createPayload } = {
-                        ID_MATRICULA: matricula.ID_MATRICULA,
-                        ID_ALUMNO: alumnoId,
-                        ID_TARIFA: matricula.ID_TARIFA,
-                        ...patch,
-                      } as HorarioCreateInput & { ID_HORARIO?: string | null };
-                      await onCreateHorario(createPayload as HorarioCreateInput);
-                      toast.success("Horario creado");
+                      for (const patch of patches) {
+                        const { ID_HORARIO: _omitHorario, ...createPayload } = {
+                          ID_MATRICULA: matricula.ID_MATRICULA,
+                          ID_ALUMNO: alumnoId,
+                          ID_TARIFA: matricula.ID_TARIFA,
+                          ...patch,
+                        } as HorarioCreateInput & { ID_HORARIO?: string | null };
+                        await onCreateHorario(createPayload as HorarioCreateInput);
+                      }
+                      toast.success(
+                        patches.length === 1
+                          ? "Horario creado"
+                          : `${patches.length} horarios creados`,
+                      );
                       removeDraftHorario(draftId);
                     } catch (err) {
                       toast.error(err instanceof Error ? err.message : "Error al crear horario");
@@ -1574,13 +2629,17 @@ function MatriculaHorariosGroup({
 
 function MatriculaRowEditor({
   matricula,
+  centros,
+  alumnoCenterId,
   selectOptions,
   lookups,
   saving,
   onSave,
   onDelete,
 }: {
-  matricula: Matricula;
+  matricula: Matricula & { ID_CURSO?: string | null };
+  centros: CentroData[];
+  alumnoCenterId: string | null;
   selectOptions: SelectOptions;
   lookups: LookupMaps;
   saving: boolean;
@@ -1588,27 +2647,67 @@ function MatriculaRowEditor({
     ESPECIALIDAD: string | null;
     ID_PROFESOR: string | null;
     ESTADO: string | null;
+    ID_CURSO: string | null;
+    ID_TARIFA: string | null;
   }) => Promise<void>;
   onDelete: () => Promise<void>;
 }) {
   const [especialidad, setEspecialidad] = useState(matricula.ESPECIALIDAD ?? "");
   const [idProfesor, setIdProfesor] = useState(matricula.ID_PROFESOR ?? "");
   const [estado, setEstado] = useState(normalizeMatriculaEstado(matricula.ESTADO));
+  const [idCurso, setIdCurso] = useState(() => {
+    const saved = matricula.ID_CURSO?.trim() ?? "";
+    if (saved) return saved;
+    const centerId = matricula.ID_CENTRO?.trim() || alumnoCenterId?.trim() || "";
+    return centerId ? resolveCursoIdForCentro(centros, centerId, "") : "";
+  });
+  const [idTarifa, setIdTarifa] = useState(matricula.ID_TARIFA ?? "");
 
   useEffect(() => {
     setEspecialidad(matricula.ESPECIALIDAD ?? "");
     setIdProfesor(matricula.ID_PROFESOR ?? "");
     setEstado(normalizeMatriculaEstado(matricula.ESTADO));
-  }, [matricula.ID_MATRICULA, matricula.ESPECIALIDAD, matricula.ID_PROFESOR, matricula.ESTADO]);
+    setIdTarifa(matricula.ID_TARIFA ?? "");
+    const centerId = matricula.ID_CENTRO?.trim() || alumnoCenterId?.trim() || "";
+    const savedCurso = matricula.ID_CURSO?.trim() ?? "";
+    setIdCurso(
+      savedCurso || (centerId ? resolveCursoIdForCentro(centros, centerId, "") : ""),
+    );
+  }, [
+    matricula.ID_MATRICULA,
+    matricula.ESPECIALIDAD,
+    matricula.ID_PROFESOR,
+    matricula.ESTADO,
+    matricula.ID_CURSO,
+    matricula.ID_TARIFA,
+    matricula.ID_CENTRO,
+    centros,
+    alumnoCenterId,
+  ]);
+
+  const matriculaCenterId = matricula.ID_CENTRO?.trim() || alumnoCenterId?.trim() || "";
+  const cursoOptions = useMemo(
+    () => (matriculaCenterId ? cursosForCentro(centros, matriculaCenterId) : []),
+    [centros, matriculaCenterId],
+  );
+
+  const centroNombre = matriculaCenterId
+    ? (centros.find((c) => c.ID_CENTRO === matriculaCenterId)?.NOMBRE_CENTRO ?? matriculaCenterId)
+    : "—";
 
   const savedEstado = normalizeMatriculaEstado(matricula.ESTADO);
   const dirty =
     especialidad !== (matricula.ESPECIALIDAD ?? "") ||
     idProfesor !== (matricula.ID_PROFESOR ?? "") ||
-    estado !== savedEstado;
+    estado !== savedEstado ||
+    idCurso !== (matricula.ID_CURSO ?? "") ||
+    idTarifa !== (matricula.ID_TARIFA ?? "");
 
-  const tarifaLabel = matricula.ID_TARIFA
-    ? (lookups.tarifaById.get(matricula.ID_TARIFA) ?? "Sin tarifa")
+  const cursoNombre = formatCursoNombre(idCurso, centros, matriculaCenterId);
+  const tarifaLabel = idTarifa
+    ? (selectOptions.tarifas.find((t) => t.id === idTarifa)?.label ??
+      lookups.tarifaById.get(idTarifa) ??
+      "Sin tarifa")
     : "Sin tarifa";
 
   const profesorOptions = useMemo(
@@ -1619,20 +2718,34 @@ function MatriculaRowEditor({
   return (
     <Card className="space-y-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">{tarifaLabel}</p>
+        <p className="text-sm font-medium">
+          {tarifaLabel}
+          {cursoNombre !== "—" ? (
+            <span className="ml-2 font-normal text-muted-foreground">· {cursoNombre}</span>
+          ) : null}
+          <span className="ml-2 font-normal text-muted-foreground">· {centroNombre}</span>
+        </p>
         <div className="flex gap-2">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            disabled={saving || !dirty}
-            onClick={() =>
+            disabled={
+              saving || !dirty || !idCurso?.trim() || cursoOptions.length === 0
+            }
+            onClick={() => {
+              if (!idCurso?.trim()) {
+                toast.error("Selecciona un curso escolar.");
+                return;
+              }
               void onSave({
                 ESPECIALIDAD: especialidad || null,
                 ID_PROFESOR: idProfesor || null,
                 ESTADO: estado || null,
-              })
-            }
+                ID_CURSO: idCurso.trim(),
+                ID_TARIFA: idTarifa || null,
+              });
+            }}
           >
             Guardar
           </Button>
@@ -1648,7 +2761,56 @@ function MatriculaRowEditor({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <p className="text-xs text-muted-foreground">
+        Centro: <span className="font-medium text-foreground">{centroNombre}</span>
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">
+            Curso escolar <span className="text-destructive">*</span>
+          </Label>
+          <Select
+            value={idCurso || undefined}
+            onValueChange={setIdCurso}
+            disabled={saving || !matriculaCenterId || cursoOptions.length === 0}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Seleccionar curso" />
+            </SelectTrigger>
+            <SelectContent>
+              {cursoOptions.map((curso) => (
+                <SelectItem key={curso.ID_CURSO} value={String(curso.ID_CURSO)}>
+                  {curso.NOMBRE_CURSO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {matriculaCenterId && cursoOptions.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              Este centro no tiene cursos escolares activos.
+            </p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Tarifa</Label>
+          <Select
+            value={idTarifa || undefined}
+            onValueChange={setIdTarifa}
+            disabled={saving}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Seleccionar" />
+            </SelectTrigger>
+            <SelectContent>
+              {selectOptions.tarifas.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Especialidad</Label>
           <Select
@@ -1711,15 +2873,20 @@ export type DraftMatriculaInput = {
   ESPECIALIDAD: string;
   ID_TARIFA: string | null;
   ID_PROFESOR: string | null;
+  ID_CURSO: string | null;
 };
 
 function DraftMatriculaPanel({
+  centros,
+  alumnoCenterId,
   selectOptions,
   lookups,
   draftMatriculas,
   onAdd,
   onRemove,
 }: {
+  centros: CentroData[];
+  alumnoCenterId: string | null;
   selectOptions: SelectOptions;
   lookups: LookupMaps;
   draftMatriculas: DraftMatriculaInput[];
@@ -1730,6 +2897,27 @@ function DraftMatriculaPanel({
   const [newEspecialidad, setNewEspecialidad] = useState("");
   const [newTarifa, setNewTarifa] = useState("");
   const [newProfesor, setNewProfesor] = useState("");
+  const [newCurso, setNewCurso] = useState("");
+
+  const cursoOptions = useMemo(
+    () => (alumnoCenterId ? cursosForCentro(centros, alumnoCenterId) : []),
+    [centros, alumnoCenterId],
+  );
+
+  const cursoNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centros) {
+      for (const curso of centro.CURSO_ESCOLAR ?? []) {
+        map.set(curso.ID_CURSO, curso.NOMBRE_CURSO);
+      }
+    }
+    return map;
+  }, [centros]);
+
+  useEffect(() => {
+    if (!showAdd || !alumnoCenterId) return;
+    setNewCurso((prev) => resolveCursoIdForCentro(centros, alumnoCenterId, prev));
+  }, [showAdd, alumnoCenterId, centros]);
 
   const newMatriculaProfesorOptions = useMemo(
     () => profesorSelectOptions(selectOptions.profesores, newProfesor, lookups.profesorById),
@@ -1740,6 +2928,7 @@ function DraftMatriculaPanel({
     setNewEspecialidad("");
     setNewTarifa("");
     setNewProfesor("");
+    setNewCurso(alumnoCenterId ? resolveCursoIdForCentro(centros, alumnoCenterId, "") : "");
     setShowAdd(false);
   };
 
@@ -1763,6 +2952,11 @@ function DraftMatriculaPanel({
                     {selectOptions.tarifas.find((t) => t.id === mat.ID_TARIFA)?.label}
                   </span>
                 )}
+                {mat.ID_CURSO && (
+                  <span className="ml-2 text-muted-foreground">
+                    {cursoNombreById.get(mat.ID_CURSO) ?? mat.ID_CURSO}
+                  </span>
+                )}
                 {mat.ID_PROFESOR && (
                   <span className="ml-2 text-muted-foreground">
                     {lookups.profesorById.get(mat.ID_PROFESOR) ?? mat.ID_PROFESOR}
@@ -1780,7 +2974,31 @@ function DraftMatriculaPanel({
       {showAdd ? (
         <Card className="space-y-3 border-dashed p-4">
           <p className="text-sm font-medium">Nueva matrícula</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Curso escolar *</Label>
+              <Select
+                value={newCurso || undefined}
+                onValueChange={setNewCurso}
+                disabled={!alumnoCenterId || cursoOptions.length === 0}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Seleccionar curso" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cursoOptions.map((curso) => (
+                    <SelectItem key={curso.ID_CURSO} value={String(curso.ID_CURSO)}>
+                      {curso.NOMBRE_CURSO}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {alumnoCenterId && cursoOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Este centro no tiene cursos escolares activos.
+                </p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Especialidad *</Label>
               <Select value={newEspecialidad || undefined} onValueChange={setNewEspecialidad}>
@@ -1834,12 +3052,13 @@ function DraftMatriculaPanel({
             <Button
               type="button"
               size="sm"
-              disabled={!newEspecialidad}
+              disabled={!newEspecialidad || (cursoOptions.length > 0 && !newCurso)}
               onClick={() => {
                 onAdd({
                   ESPECIALIDAD: newEspecialidad,
                   ID_TARIFA: newTarifa || null,
                   ID_PROFESOR: newProfesor || null,
+                  ID_CURSO: newCurso || null,
                 });
                 resetAddForm();
               }}
@@ -1859,7 +3078,9 @@ function DraftMatriculaPanel({
 }
 
 function MatriculaManagePanel({
+  centros,
   alumnoId,
+  alumnoCenterId,
   selectOptions,
   lookups,
   tarifaSesionesById,
@@ -1870,7 +3091,9 @@ function MatriculaManagePanel({
   horarioSaving,
   treeMatriculas,
 }: {
+  centros: CentroData[];
   alumnoId: string | null;
+  alumnoCenterId?: string | null;
   selectOptions: SelectOptions;
   lookups: LookupMaps;
   tarifaSesionesById: Map<string, number | null>;
@@ -1881,11 +3104,48 @@ function MatriculaManagePanel({
   horarioSaving: boolean;
   treeMatriculas?: MatriculaTree[];
 }) {
+  const { tenantId } = useActiveTenant();
   const { list, create, update, remove } = useAlumnoMatriculas(alumnoId);
+  const allMatriculasQuery = useMatriculas(null);
+  const occupancyMetaQuery = useQuery({
+    queryKey: ["schedule-assignment-meta", tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: async () => {
+      const [sesionesRes, aulasRes] = await Promise.all([
+        supabase
+          .from("SESIONES")
+          .select(
+            "ID_SESION,ID_ALUMNO,ID_AULA,ID_PROFESOR,ID_HORARIO,ID_GRUPO_HORARIO,FECHA_EXACTA,HORA_INICIO,HORA_FIN,ESTADO",
+          )
+          .eq("ID_CLIENTE", tenantId!),
+        supabase.from("AULA").select("ID_AULA,CAPACIDAD").eq("ID_CLIENTE", tenantId!),
+      ]);
+      if (sesionesRes.error) throw sesionesRes.error;
+      if (aulasRes.error) throw aulasRes.error;
+      return {
+        sesiones: (sesionesRes.data ?? []) as SesionOccupancyRow[],
+        aulaCapacidadById: new Map(
+          (aulasRes.data ?? []).map((aula) => [aula.ID_AULA, aula.CAPACIDAD as number | null]),
+        ),
+      };
+    },
+  });
   const [showAdd, setShowAdd] = useState(false);
   const [newEspecialidad, setNewEspecialidad] = useState("");
   const [newTarifa, setNewTarifa] = useState("");
   const [newProfesor, setNewProfesor] = useState("");
+  const [newCurso, setNewCurso] = useState("");
+
+  const effectiveCenterId = alumnoCenterId?.trim() ?? "";
+  const cursoOptions = useMemo(
+    () => (effectiveCenterId ? cursosForCentro(centros, effectiveCenterId) : []),
+    [centros, effectiveCenterId],
+  );
+
+  useEffect(() => {
+    if (!showAdd || !effectiveCenterId) return;
+    setNewCurso((prev) => resolveCursoIdForCentro(centros, effectiveCenterId, prev));
+  }, [showAdd, effectiveCenterId, centros]);
 
   const matriculaSaving = create.isPending || update.isPending || remove.isPending;
   const matriculas = list.data && list.data.length > 0 ? list.data : (treeMatriculas ?? []);
@@ -1904,6 +3164,32 @@ function MatriculaManagePanel({
     () => (treeMatriculas ?? []).flatMap((mat) => mat.HORARIOS_MATRICULAS ?? []),
     [treeMatriculas],
   );
+
+  const tenantIndividualHorarios = useMemo(
+    () =>
+      (allMatriculasQuery.list.data?.rows ?? [])
+        .flatMap((mat) => mat.HORARIOS_MATRICULAS ?? [])
+        .filter(isIndividualHorarioForOccupancy),
+    [allMatriculasQuery.list.data],
+  );
+
+  const tenantHorarios = useMemo(
+    () =>
+      (allMatriculasQuery.list.data?.rows ?? []).flatMap(
+        (mat) => mat.HORARIOS_MATRICULAS ?? [],
+      ) as MatriculaHorario[],
+    [allMatriculasQuery.list.data],
+  );
+
+  const scheduleAssignmentContext = useMemo(() => {
+    if (!occupancyMetaQuery.data) return null;
+    return buildScheduleAssignmentContext(
+      grupoSlots,
+      tenantHorarios,
+      occupancyMetaQuery.data.sesiones,
+      occupancyMetaQuery.data.aulaCapacidadById,
+    );
+  }, [grupoSlots, tenantHorarios, occupancyMetaQuery.data]);
 
   if (!alumnoId) {
     return (
@@ -1929,6 +3215,9 @@ function MatriculaManagePanel({
     setNewEspecialidad("");
     setNewTarifa("");
     setNewProfesor("");
+    setNewCurso(
+      effectiveCenterId ? resolveCursoIdForCentro(centros, effectiveCenterId, "") : "",
+    );
     setShowAdd(false);
   };
 
@@ -1948,6 +3237,8 @@ function MatriculaManagePanel({
             <div key={mat.ID_MATRICULA} className="space-y-3">
               <MatriculaRowEditor
                 matricula={mat}
+                centros={centros}
+                alumnoCenterId={alumnoCenterId ?? null}
                 selectOptions={selectOptions}
                 lookups={lookups}
                 saving={matriculaSaving}
@@ -1974,12 +3265,18 @@ function MatriculaManagePanel({
                 matricula={mat}
                 horarios={horarios}
                 alumnoId={alumnoId}
+                centros={centros}
+                alumnoCenterId={alumnoCenterId}
                 selectOptions={selectOptions}
                 lookups={lookups}
                 grupoSlots={grupoSlots}
                 maxHorarios={maxHorarios}
                 horarioSaving={horarioSaving}
                 studentConflictHorarios={studentConflictHorarios}
+                tenantIndividualHorarios={tenantIndividualHorarios}
+                tenantOccupancyHorarios={tenantHorarios}
+                occupancySesiones={occupancyMetaQuery.data?.sesiones ?? []}
+                scheduleAssignmentContext={scheduleAssignmentContext}
                 onCreateHorario={onCreateHorario}
                 onUpdateHorario={onUpdateHorario}
                 onRemoveHorario={onRemoveHorario}
@@ -1992,7 +3289,31 @@ function MatriculaManagePanel({
       {showAdd ? (
         <Card className="space-y-3 border-dashed p-4">
           <p className="text-sm font-medium">Nueva matrícula</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Curso escolar *</Label>
+              <Select
+                value={newCurso || undefined}
+                onValueChange={setNewCurso}
+                disabled={matriculaSaving || !effectiveCenterId || cursoOptions.length === 0}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Seleccionar curso" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cursoOptions.map((curso) => (
+                    <SelectItem key={curso.ID_CURSO} value={String(curso.ID_CURSO)}>
+                      {curso.NOMBRE_CURSO}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {effectiveCenterId && cursoOptions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Este centro no tiene cursos escolares activos.
+                </p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Especialidad *</Label>
               <Select
@@ -2064,13 +3385,18 @@ function MatriculaManagePanel({
             <Button
               type="button"
               size="sm"
-              disabled={matriculaSaving || !newEspecialidad}
+              disabled={
+                matriculaSaving ||
+                !newEspecialidad ||
+                (cursoOptions.length > 0 && !newCurso)
+              }
               onClick={async () => {
                 try {
                   await create.mutateAsync({
                     ESPECIALIDAD: newEspecialidad,
                     ID_TARIFA: newTarifa || null,
                     ID_PROFESOR: newProfesor || null,
+                    ID_CURSO: newCurso || null,
                   });
                   toast.success("Matrícula creada");
                   resetAddForm();
@@ -2128,7 +3454,7 @@ export function AlumnoFormDialog({
   tarifaSesionesById: Map<string, number | null>;
   grupoSlots: GrupoHorarioSlot[];
   horarioSaving: boolean;
-  centros?: Array<{ ID_CENTRO: string; NOMBRE_CENTRO: string }>;
+  centros?: CentroData[];
   showCentroSelector?: boolean;
   assignedCenterId?: string | null;
   defaultCreateCenterId?: string | null;
@@ -2143,6 +3469,12 @@ export function AlumnoFormDialog({
   onRemoveHorario: (id: string) => Promise<void>;
   variant?: "dialog" | "embedded";
 }) {
+  const { rol } = useActiveTenant();
+  const initialId = initial?.ID_ALUMNO ?? null;
+  const isCreate = !initial;
+  const { create: createCargoExtra, update: updateCargoExtra, listByAlumno: cargosExtraByAlumno } = useCargosExtra({
+    alumnoId: initialId,
+  });
   const [internalActiveTab, setInternalActiveTab] = useState("resumen");
   const activeTab = controlledActiveTab ?? internalActiveTab;
   const setActiveTab = onTabChange ?? setInternalActiveTab;
@@ -2152,6 +3484,16 @@ export function AlumnoFormDialog({
   });
 
   const nacimiento = form.watch("NACIMIENTO");
+  const watchedCentro = form.watch("ID_CENTRO");
+  const centroNombreById = useMemo(
+    () => new Map(centros.map((c) => [c.ID_CENTRO, c.NOMBRE_CENTRO])),
+    [centros],
+  );
+  const alumnoCenterId =
+    watchedCentro?.trim() ||
+    initial?.ID_CENTRO?.trim() ||
+    assignedCenterId?.trim() ||
+    null;
   const nombreAlumno = form.watch("NOMBRE_ALUMNO") ?? "";
   const metodoPago = normalizeMetodoPago(form.watch("METODO_PAGO"));
   const tlfComunicacion = form.watch("TLF_COMUNICACION");
@@ -2171,14 +3513,71 @@ export function AlumnoFormDialog({
   const edad = useMemo(() => calcEdad(nacimiento), [nacimiento]);
   const isSepa = isBankRemittancePaymentMethod(metodoPago);
   const isBizum = isBizumPaymentMethod(metodoPago);
-  const isSimplePayment = !isSepa && !isBizum;
 
-  const initialId = initial?.ID_ALUMNO ?? null;
-  const isCreate = !initial;
   const editingKey = initialId ? String(initialId) : "create";
   const formInitKeyRef = useRef<string | null>(null);
   const [draftAlumnoId, setDraftAlumnoId] = useState("");
   const [draftMatriculas, setDraftMatriculas] = useState<DraftMatriculaInput[]>([]);
+  const [cargoExtraOpen, setCargoExtraOpen] = useState(false);
+  const [cargoExtraDetailOpen, setCargoExtraDetailOpen] = useState(false);
+  const [selectedCargoExtra, setSelectedCargoExtra] = useState<CargoExtraRow | null>(null);
+  const [cargoConcepto, setCargoConcepto] = useState("");
+  const [cargoCantidad, setCargoCantidad] = useState("1");
+  const [cargoPrecioUnitario, setCargoPrecioUnitario] = useState("");
+  const [cargoPorcentajeIva, setCargoPorcentajeIva] = useState("0");
+  const canAddCargoExtra = canAddCargoExtraRole(rol);
+  const cargoExtraTotal = calcCargoExtraTotal(cargoCantidad, cargoPrecioUnitario, cargoPorcentajeIva);
+
+  const resetCargoExtraForm = () => {
+    setCargoConcepto("");
+    setCargoCantidad("1");
+    setCargoPrecioUnitario("");
+    setCargoPorcentajeIva("0");
+  };
+
+  const handleOpenCargoExtra = () => {
+    resetCargoExtraForm();
+    setCargoExtraOpen(true);
+  };
+
+  const handleCloseCargoExtra = () => {
+    setCargoExtraOpen(false);
+    resetCargoExtraForm();
+  };
+
+  const handleSaveCargoExtra = async () => {
+    if (!initialId || !alumnoCenterId) {
+      toast.error("Guarda el alumno antes de añadir cargos extra.");
+      return;
+    }
+
+    try {
+      await createCargoExtra.mutateAsync({
+        ID_ALUMNO: initialId,
+        ID_CENTRO: alumnoCenterId,
+        CONCEPTO: cargoConcepto,
+        CANTIDAD: Number(cargoCantidad),
+        PRECIO_UNITARIO: Number(cargoPrecioUnitario),
+        PORCENTAJE_IVA: Number(cargoPorcentajeIva),
+      });
+
+      const { data: alumnoRow, error: alumnoError } = await supabase
+        .from("ALUMNOS")
+        .select("TOTAL_MENSUAL")
+        .eq("ID_ALUMNO", initialId)
+        .maybeSingle();
+
+      if (alumnoError) throw alumnoError;
+      if (alumnoRow?.TOTAL_MENSUAL != null) {
+        form.setValue("TOTAL_MENSUAL", alumnoRow.TOTAL_MENSUAL);
+      }
+
+      toast.success("Cargo extra añadido correctamente.");
+      handleCloseCargoExtra();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo añadir el cargo extra.");
+    }
+  };
 
   useEffect(() => {
     if (!open) {
@@ -2209,8 +3608,20 @@ export function AlumnoFormDialog({
   ]);
 
   const handleFormSubmit = (values: AlumnoFormValues) => {
-    if (isCreate && showCentroSelector && !values.ID_CENTRO?.trim()) {
+    if (showCentroSelector && !values.ID_CENTRO?.trim()) {
       form.setError("ID_CENTRO", { message: "Selecciona un centro" });
+      return;
+    }
+    const ajusteManual = values.AJUSTE_MANUAL_EUR;
+    const ajusteDistintoDeCero =
+      ajusteManual != null &&
+      Number.isFinite(Number(ajusteManual)) &&
+      Number(ajusteManual) !== 0;
+    if (ajusteDistintoDeCero && !values.MOTIVO_AJUSTE?.trim()) {
+      form.setError("MOTIVO_AJUSTE", {
+        message: "El motivo es obligatorio cuando el ajuste manual es distinto de 0.",
+      });
+      setActiveTab("pago");
       return;
     }
     const draft = isCreate ? { id: draftAlumnoId, matriculas: draftMatriculas } : undefined;
@@ -2225,15 +3636,24 @@ export function AlumnoFormDialog({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-4 grid w-full grid-cols-4">
+          <TabsList className="mb-2 grid w-full grid-cols-4">
             <TabsTrigger value="resumen">Resumen</TabsTrigger>
             <TabsTrigger value="personales">Datos personales</TabsTrigger>
             <TabsTrigger value="pago">Datos de pago</TabsTrigger>
             <TabsTrigger value="matricula">Matrículas</TabsTrigger>
           </TabsList>
 
+          {showCentroSelector && (
+            <p className="mb-4 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+              <span className="text-muted-foreground">Centro: </span>
+              <span className="font-medium">
+                {formatCentroNombre(watchedCentro, centroNombreById)}
+              </span>
+            </p>
+          )}
+
           <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {isCreate && showCentroSelector && (
+            {showCentroSelector && (
               <FormField
                 control={form.control as any}
                 name="ID_CENTRO"
@@ -2503,6 +3923,30 @@ export function AlumnoFormDialog({
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control as any}
+                name="MUNICIPIO"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Municipio</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="PROVINCIA"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Provincia</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
             </div>
 
             <div className="rounded-md border p-4 space-y-3">
@@ -2540,7 +3984,7 @@ export function AlumnoFormDialog({
           </TabsContent>
 
           <TabsContent value="pago" className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <FormField
                 control={form.control as any}
                 name="METODO_PAGO"
@@ -2574,17 +4018,7 @@ export function AlumnoFormDialog({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="__unset__">—</SelectItem>
-                        {(() => {
-                          const current = normalizeMetodoPago(field.value);
-                          const options = [...METODOS_PAGO_OPCIONES];
-                          if (
-                            current &&
-                            !(METODOS_PAGO_OPCIONES as readonly string[]).includes(current)
-                          ) {
-                            return [current, ...options];
-                          }
-                          return options;
-                        })().map((opt) => (
+                        {METODOS_PAGO_OPCIONES.map((opt) => (
                           <SelectItem key={opt} value={opt}>
                             {opt}
                           </SelectItem>
@@ -2630,7 +4064,7 @@ export function AlumnoFormDialog({
                   control={form.control as any}
                   name="TLF_BIZUM"
                   render={({ field }) => (
-                    <FormItem className="lg:col-span-2">
+                    <FormItem>
                       <FormLabel>Teléfono Bizum</FormLabel>
                       <Select
                         value={field.value ?? "__unset__"}
@@ -2661,120 +4095,168 @@ export function AlumnoFormDialog({
                 />
               )}
 
-              {isSimplePayment && (
-                <>
-                  <FormField
-                    control={form.control as any}
-                    name="DTO_HERMANOS_PORCENTAJE"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Dto. hermanos (%)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={field.value ?? ""}
-                            onChange={(e) => field.onChange(e.target.value)}
-                            disabled={submitting}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control as any}
-                    name="AJUSTE_MANUAL_EUR"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Ajuste manual (€)</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={field.value ?? ""}
-                            onChange={(e) => field.onChange(e.target.value)}
-                            disabled={submitting}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </>
+              {isSepa && (
+                <SepaMandatoBlock
+                  alumnoId={initialId}
+                  alumnoNombre={nombreAlumno.trim() || "Alumno"}
+                  interactive
+                  createMode={isCreate}
+                  disabled={submitting}
+                />
               )}
+
+              <FormField
+                control={form.control as any}
+                name="DTO_HERMANOS_PORCENTAJE"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Dto. hermanos (%)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.value)}
+                        disabled={submitting}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
+                El ajuste manual (positivo o negativo) se convertirá en una línea del recibo al
+                generar la remesa. No modifica un recibo ya generado; si el importe es distinto de
+                0, el motivo es obligatorio.
+              </p>
+              <FormField
+                control={form.control as any}
+                name="AJUSTE_MANUAL_EUR"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ajuste manual (€)</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={field.value ?? ""}
+                        onChange={(e) => field.onChange(e.target.value)}
+                        disabled={submitting}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control as any}
+                name="MOTIVO_AJUSTE"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Motivo ajuste</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} disabled={submitting} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
-            {(isSepa || isBizum) && (
-              <div
-                className={cn(
-                  "grid gap-4 sm:grid-cols-2",
-                  isSepa ? "lg:grid-cols-3" : "lg:grid-cols-2",
-                )}
-              >
-                {isSepa && (
-                  <SepaMandatoBlock
-                    alumnoId={initialId}
-                    alumnoNombre={nombreAlumno.trim() || "Alumno"}
-                    interactive
-                    createMode={isCreate}
-                    disabled={submitting}
-                  />
-                )}
-                <FormField
-                  control={form.control as any}
-                  name="DTO_HERMANOS_PORCENTAJE"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Dto. hermanos (%)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value)}
-                          disabled={submitting}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control as any}
-                  name="AJUSTE_MANUAL_EUR"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Ajuste manual (€)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value)}
-                          disabled={submitting}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+            {!isCreate && initialId && (
+              <div className="space-y-3 border-t pt-4">
+                <h3 className="text-sm font-semibold tracking-tight">Cargos extra</h3>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Concepto</TableHead>
+                        <TableHead className="text-right">Cantidad</TableHead>
+                        <TableHead className="text-right">Precio unit.</TableHead>
+                        <TableHead className="text-right">IVA %</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead>Estado</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Recibo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cargosExtraByAlumno.isLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                            Cargando cargos extra...
+                          </TableCell>
+                        </TableRow>
+                      ) : cargosExtraByAlumno.isError ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="py-6 text-center text-sm text-destructive">
+                            {(cargosExtraByAlumno.error as Error)?.message ??
+                              "Error al cargar los cargos extra."}
+                          </TableCell>
+                        </TableRow>
+                      ) : (cargosExtraByAlumno.data ?? []).length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                            Sin cargos extra
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        (cargosExtraByAlumno.data ?? []).map((row) => (
+                          <TableRow
+                            key={row.ID_CARGO}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => {
+                              setSelectedCargoExtra(row);
+                              setCargoExtraDetailOpen(true);
+                            }}
+                          >
+                            <TableCell>{row.CONCEPTO}</TableCell>
+                            <TableCell className="text-right">{row.CANTIDAD}</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(row.PRECIO_UNITARIO)}
+                            </TableCell>
+                            <TableCell className="text-right">{row.PORCENTAJE_IVA}%</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(calcCargoExtraRowTotal(row))}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                status={cargoExtraEstadoStatus(row.ESTADO)}
+                                className="capitalize"
+                              >
+                                {row.ESTADO ?? "—"}
+                              </StatusBadge>
+                            </TableCell>
+                            <TableCell>{formatCargoExtraFecha(row)}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {row.ID_RECIBO_VINCULADO ? (
+                                <span title={row.ID_RECIBO_VINCULADO}>Vinculado a recibo</span>
+                              ) : (
+                                "—"
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             )}
 
-            <FormField
-              control={form.control as any}
-              name="MOTIVO_AJUSTE"
-              render={({ field }) => (
-                <FormItem className="w-full">
-                  <FormLabel>Motivo ajuste</FormLabel>
-                  <FormControl>
-                    <Input {...field} value={field.value ?? ""} disabled={submitting} />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
+            {!isCreate && initialId && canAddCargoExtra && (
+              <div className="pt-2">
+                <Button type="button" variant="outline" onClick={handleOpenCargoExtra} disabled={submitting}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Añadir cargo extra
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="matricula">
             {isCreate ? (
               <DraftMatriculaPanel
+                centros={centros}
+                alumnoCenterId={alumnoCenterId}
                 selectOptions={selectOptions}
                 lookups={lookups}
                 draftMatriculas={draftMatriculas}
@@ -2785,7 +4267,9 @@ export function AlumnoFormDialog({
               />
             ) : (
               <MatriculaManagePanel
+                centros={centros}
                 alumnoId={initial?.ID_ALUMNO ?? null}
+                alumnoCenterId={alumnoCenterId}
                 selectOptions={selectOptions}
                 lookups={lookups}
                 tarifaSesionesById={tarifaSesionesById}
@@ -2823,19 +4307,137 @@ export function AlumnoFormDialog({
     </Form>
   );
 
+  const cargoExtraDialog = (
+    <Dialog open={cargoExtraOpen} onOpenChange={(next) => !next && handleCloseCargoExtra()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Añadir cargo extra</DialogTitle>
+          <DialogDescription>
+            El cargo quedará pendiente hasta generar la remesa mensual del alumno.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="cargo-concepto">Concepto *</Label>
+            <Input
+              id="cargo-concepto"
+              value={cargoConcepto}
+              onChange={(e) => setCargoConcepto(e.target.value)}
+              disabled={createCargoExtra.isPending}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="cargo-cantidad">Cantidad *</Label>
+              <Input
+                id="cargo-cantidad"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={cargoCantidad}
+                onChange={(e) => setCargoCantidad(e.target.value)}
+                disabled={createCargoExtra.isPending}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cargo-precio">Precio unitario (€) *</Label>
+              <Input
+                id="cargo-precio"
+                type="number"
+                step="0.01"
+                value={cargoPrecioUnitario}
+                onChange={(e) => setCargoPrecioUnitario(e.target.value)}
+                disabled={createCargoExtra.isPending}
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="cargo-iva">IVA (%) *</Label>
+              <Input
+                id="cargo-iva"
+                type="number"
+                step="0.01"
+                value={cargoPorcentajeIva}
+                onChange={(e) => setCargoPorcentajeIva(e.target.value)}
+                disabled={createCargoExtra.isPending}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Total</Label>
+              <Input
+                value={cargoExtraTotal != null ? formatCurrency(cargoExtraTotal) : "—"}
+                readOnly
+                disabled
+                className="bg-muted/40"
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleCloseCargoExtra}
+            disabled={createCargoExtra.isPending}
+          >
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSaveCargoExtra} disabled={createCargoExtra.isPending}>
+            {createCargoExtra.isPending ? "Guardando..." : "Guardar cargo"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  const cargoExtraDetailDialog = (
+    <CargoExtraDetailDialog
+      open={cargoExtraDetailOpen}
+      onOpenChange={setCargoExtraDetailOpen}
+      cargo={selectedCargoExtra}
+      canEdit={canAddCargoExtra}
+      updating={updateCargoExtra.isPending}
+      onUpdate={(input) => updateCargoExtra.mutateAsync(input)}
+      onUpdated={async (updated) => {
+        setSelectedCargoExtra(updated);
+        if (!initialId) return;
+        const { data: alumnoRow, error: alumnoError } = await supabase
+          .from("ALUMNOS")
+          .select("TOTAL_MENSUAL")
+          .eq("ID_ALUMNO", initialId)
+          .maybeSingle();
+        if (alumnoError) return;
+        if (alumnoRow?.TOTAL_MENSUAL != null) {
+          form.setValue("TOTAL_MENSUAL", alumnoRow.TOTAL_MENSUAL);
+        }
+      }}
+    />
+  );
+
   if (variant === "embedded") {
     if (!open) return null;
-    return formBody;
+    return (
+      <>
+        {formBody}
+        {cargoExtraDialog}
+        {cargoExtraDetailDialog}
+      </>
+    );
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        {formBody}
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          {formBody}
+        </DialogContent>
+      </Dialog>
+      {cargoExtraDialog}
+      {cargoExtraDetailDialog}
+    </>
   );
 }

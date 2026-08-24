@@ -1,0 +1,7 @@
+-- P2-1: Centro de sede opcional en PROFESOR (nullable; sin backfill en esta fase).
+
+ALTER TABLE "PROFESOR" ADD COLUMN IF NOT EXISTS "ID_CENTRO" text;
+
+ALTER TABLE "PROFESOR"
+  ADD CONSTRAINT fk_prof_cen
+  FOREIGN KEY ("ID_CENTRO") REFERENCES "CENTROS"("ID_CENTRO") ON DELETE SET NULL;

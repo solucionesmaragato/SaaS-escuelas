@@ -563,11 +563,9 @@ function TurnosPage() {
                       onClick={() => setOverlay({ id: t.ID_TURNO, mode: "detail" })}
                     >
                       <TableCell className="py-2 font-medium text-sm">
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <EntityLink type="profesor" id={t.ID_PROFESOR}>
-                            {t.NOMBRE_PROFESOR}
-                          </EntityLink>
-                        </span>
+                        <EntityLink type="profesor" id={t.ID_PROFESOR}>
+                          {t.NOMBRE_PROFESOR}
+                        </EntityLink>
                       </TableCell>
                       <TableCell className="py-2 text-sm">{t.DIA_SEMANA}</TableCell>
                       <TableCell className="py-2 text-xs text-muted-foreground font-mono tabular-nums">

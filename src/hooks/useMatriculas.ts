@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import { appendCenterFilter } from "@/lib/centroFilter";
+import { resolveMatriculaCenterId } from "@/lib/alumnoSchema";
 import {
   scopeTenantQuery,
   workspaceListKey,
@@ -330,7 +331,16 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
 
   const create = useMutation({
     mutationFn: async (input: any) => {
-      const payload = { ...input, ...workspaceScopeFields(tenantId, centerId) };
+      const idCentro = resolveMatriculaCenterId(input.ID_CENTRO, centerId);
+      if (!idCentro) {
+        throw new Error("No se puede crear la matrícula: selecciona un centro.");
+      }
+
+      const payload = {
+        ...workspaceScopeFields(tenantId, centerId),
+        ...input,
+        ID_CENTRO: idCentro,
+      };
       const { data, error } = await supabase.from("MATRICULAS").insert(payload).select().single();
       if (error) throw error;
       return data;

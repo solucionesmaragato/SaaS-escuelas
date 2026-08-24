@@ -29,6 +29,11 @@ import {
   isEstadoActivo,
   estadoFromToggle,
 } from "@/lib/alumnosMatriculasUtils";
+import {
+  isBankRemittancePaymentMethod,
+  isBizumPaymentMethod,
+  normalizeMetodoPago,
+} from "@/lib/alumnoPaymentUtils";
 import { formatCurrency } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -75,7 +80,9 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
     }
   };
 
-  const metodo = draft.METODO_PAGO ?? "";
+  const metodo = normalizeMetodoPago(draft.METODO_PAGO ?? "");
+  const isSepa = isBankRemittancePaymentMethod(metodo);
+  const isBizum = isBizumPaymentMethod(metodo);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -318,11 +325,12 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
 
             <DetailField label="Método de pago">
               <Select
-                value={metodo}
+                value={metodo || undefined}
                 disabled={!canWrite}
                 onValueChange={(val) => {
-                  setDraft({ ...draft, METODO_PAGO: val });
-                  save({ METODO_PAGO: val });
+                  const normalized = normalizeMetodoPago(val) || null;
+                  setDraft({ ...draft, METODO_PAGO: normalized });
+                  save({ METODO_PAGO: normalized });
                 }}
               >
                 <SelectTrigger>
@@ -338,7 +346,7 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
               </Select>
             </DetailField>
 
-            {metodo === "SEPA" && (
+            {isSepa && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <DetailField label="IBAN">
                   <Input
@@ -368,7 +376,7 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
               </div>
             )}
 
-            {metodo === "BIZUM" && (
+            {isBizum && (
               <DetailField label="Teléfono bizum">
                 <Input
                   value={draft.TLF_BIZUM ?? ""}

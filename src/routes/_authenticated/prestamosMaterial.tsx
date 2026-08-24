@@ -293,7 +293,7 @@ function ReceptorCell({
 
   const entityType = row.CATEGORIA === "PROFESOR" ? "profesor" : "alumno";
   return (
-    <span className="font-medium text-sm" onClick={(e) => e.stopPropagation()}>
+    <span className="font-medium text-sm">
       <EntityLink type={entityType} id={id}>
         {nombre}
       </EntityLink>

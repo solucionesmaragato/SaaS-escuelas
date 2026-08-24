@@ -8,6 +8,9 @@ export type GrupoHorarioSlot = GrupoHorario & {
   GRUPOS: {
     NOMBRE_GRUPO: string;
     ID_ESPECIALIDAD: string | null;
+    ID_CENTRO: string | null;
+    ID_TARIFA: string | null;
+    ID_CURSO: string | null;
     PLAZAS_MAXIMAS: number | null;
     ID_ALUMNOS: string[] | null;
   } | null;
@@ -18,6 +21,9 @@ const GRUPO_HORARIO_SELECT = `
   GRUPOS (
     NOMBRE_GRUPO,
     ID_ESPECIALIDAD,
+    ID_CENTRO,
+    ID_TARIFA,
+    ID_CURSO,
     PLAZAS_MAXIMAS,
     ID_ALUMNOS
   )

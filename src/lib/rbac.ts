@@ -101,7 +101,6 @@ const ROLE_PERMISSIONS: Record<Rol, Permission[]> = {
     "evaluaciones:read", "evaluaciones:write", "rubricas:read", "rubricas:write",
     "turnos:read", "turnos:write",
     "tarifas:read",
-    "recibos:read", "recibos:write",
   ],
   SECRETARIA: [
     "alumnos:read", "alumnos:write",
@@ -112,12 +111,12 @@ const ROLE_PERMISSIONS: Record<Rol, Permission[]> = {
     "sesiones:read", "sesiones:write:all",
     "incidencias:read", "incidencias:write",
     "leads:read", "leads:write",
-    "fichajes:read:all",
+    "fichajes:read:all", "fichajes:write:own",
     "documentos:read",
     "prestamos:read", "prestamos:write",
     "evaluaciones:read",
     "tarifas:read",
-    "recibos:read", "recibos:write",
+    "recibos:read", "recibos:write", "remesas:write",
   ],
   PROFESOR: [
     "alumnos:read",

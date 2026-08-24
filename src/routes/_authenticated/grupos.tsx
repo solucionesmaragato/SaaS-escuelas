@@ -1,5 +1,6 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   Loader2,
@@ -23,7 +24,19 @@ import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { getActiveCursoEscolar, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
 import { useTarifas } from "@/hooks/useTarifas";
+import { useMatriculas } from "@/hooks/useMatriculas";
 import { useActiveTenant } from "@/context/AppContext";
+import {
+  assignmentCheckFromGrupoSlot,
+  buildScheduleAssignmentContext,
+  checkGrupoPlazasWarning,
+  GRUPO_COMPLETO_PROMPT,
+  validateScheduleAssignmentHard,
+  type ScheduleAssignmentContext,
+  type SesionOccupancyRow,
+} from "@/components/alumnos/AlumnoFormDialog";
+import type { GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
+import { supabase } from "@/integrations/supabase/client";
 import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
 import { hasPermission } from "@/lib/rbac";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -483,9 +496,32 @@ function editFormFromGrupo(g: GrupoData): EditFormState {
   };
 }
 
+function buildGrupoSlotsFromGrupos(grupos: GrupoData[]): GrupoHorarioSlot[] {
+  return grupos.flatMap((grupo) =>
+    (grupo.GRUPOS_HORARIOS ?? []).map(
+      (horario) =>
+        ({
+          ...horario,
+          ID_GRUPO: grupo.ID_GRUPO,
+          ID_CLIENTE: grupo.ID_CLIENTE,
+          ESTADO: null,
+          GRUPOS: {
+            NOMBRE_GRUPO: grupo.NOMBRE_GRUPO,
+            ID_ESPECIALIDAD: grupo.ID_ESPECIALIDAD,
+            ID_CENTRO: grupo.ID_CENTRO,
+            ID_TARIFA: grupo.ID_TARIFA,
+            ID_CURSO: grupo.ID_CURSO,
+            PLAZAS_MAXIMAS: grupo.PLAZAS_MAXIMAS,
+            ID_ALUMNOS: grupo.ID_ALUMNOS,
+          },
+        }) as GrupoHorarioSlot,
+    ),
+  );
+}
+
 function GruposPage() {
   const { grupoId } = Route.useSearch();
-  const { rol, perfil, centerId } = useActiveTenant();
+  const { rol, perfil, centerId, tenantId } = useActiveTenant();
 
   if (isProfesorRole(rol)) {
     return (
@@ -533,6 +569,30 @@ function GruposPage() {
   const sortLocale = { sensitivity: "base" } as const;
 
   const { list, create, update, remove } = useGrupos(filterCenterId);
+  const allMatriculasQuery = useMatriculas(null);
+  const occupancyMetaQuery = useQuery({
+    queryKey: ["schedule-assignment-meta", tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: async () => {
+      const [sesionesRes, aulasRes] = await Promise.all([
+        supabase
+          .from("SESIONES")
+          .select(
+            "ID_SESION,ID_ALUMNO,ID_AULA,ID_PROFESOR,ID_HORARIO,ID_GRUPO_HORARIO,FECHA_EXACTA,HORA_INICIO,HORA_FIN,ESTADO",
+          )
+          .eq("ID_CLIENTE", tenantId!),
+        supabase.from("AULA").select("ID_AULA,CAPACIDAD").eq("ID_CLIENTE", tenantId!),
+      ]);
+      if (sesionesRes.error) throw sesionesRes.error;
+      if (aulasRes.error) throw aulasRes.error;
+      return {
+        sesiones: (sesionesRes.data ?? []) as SesionOccupancyRow[],
+        aulaCapacidadById: new Map(
+          (aulasRes.data ?? []).map((aula) => [aula.ID_AULA, aula.CAPACIDAD as number | null]),
+        ),
+      };
+    },
+  });
 
   const grupos = useMemo(() => list.data?.grupos ?? [], [list.data?.grupos]);
   const diccionarioAlumnos = useMemo(
@@ -583,6 +643,19 @@ function GruposPage() {
       ),
     [tarifas.list.data],
   );
+
+  const scheduleAssignmentContext = useMemo((): ScheduleAssignmentContext | null => {
+    if (!occupancyMetaQuery.data) return null;
+    const tenantHorarios = (allMatriculasQuery.list.data?.rows ?? []).flatMap(
+      (mat) => mat.HORARIOS_MATRICULAS ?? [],
+    );
+    return buildScheduleAssignmentContext(
+      buildGrupoSlotsFromGrupos(grupos),
+      tenantHorarios,
+      occupancyMetaQuery.data.sesiones,
+      occupancyMetaQuery.data.aulaCapacidadById,
+    );
+  }, [grupos, allMatriculasQuery.list.data, occupancyMetaQuery.data]);
 
   const alumnoNombreById = useMemo(() => {
     const map = new Map<string, string>();
@@ -711,6 +784,47 @@ function GruposPage() {
 
   const canViewPage = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
 
+  const validateManagingGrupoSlotsForAlumno = (
+    alumnoId: string,
+    grupo: GrupoData,
+  ): string | null => {
+    if (!scheduleAssignmentContext) {
+      return "Cargando datos de ocupación. Inténtalo de nuevo.";
+    }
+    for (const slot of grupo.GRUPOS_HORARIOS ?? []) {
+      const hard = validateScheduleAssignmentHard(
+        scheduleAssignmentContext,
+        assignmentCheckFromGrupoSlot(slot as GrupoHorarioSlot, {
+          idAlumno: alumnoId,
+          idGrupo: grupo.ID_GRUPO,
+          extraAlumnoIds: [alumnoId],
+        }),
+      );
+      if (hard) return hard;
+    }
+    return null;
+  };
+
+  const validateEditScheduleSlots = (grupoId: string, slots: EditScheduleSlot[]): string | null => {
+    if (!scheduleAssignmentContext) {
+      return "Cargando datos de ocupación. Inténtalo de nuevo.";
+    }
+    for (const slot of slots) {
+      if (!slot.DIA_SEMANA?.trim() || !slot.HORA_INICIO || !slot.HORA_FIN) continue;
+      const hard = validateScheduleAssignmentHard(scheduleAssignmentContext, {
+        idProfesor: slot.ID_PROFESOR || null,
+        idAula: slot.ID_AULA || null,
+        dia: slot.DIA_SEMANA,
+        horaInicio: slot.HORA_INICIO.slice(0, 5),
+        horaFin: slot.HORA_FIN.slice(0, 5),
+        idGrupo: grupoId,
+        idGrupoHorario: slot.ID_GRUPO_HORARIO,
+      });
+      if (hard) return hard;
+    }
+    return null;
+  };
+
   const persistAlumnoIds = async (nextIds: string[]) => {
     if (!managing) return;
     await update.mutateAsync({
@@ -723,6 +837,12 @@ function GruposPage() {
 
   const handleConfirmAdd = async () => {
     if (!managing || !pendingAdd) return;
+    const hard = validateManagingGrupoSlotsForAlumno(pendingAdd.id, managing);
+    if (hard) {
+      toast.error(hard);
+      setPendingAdd(null);
+      return;
+    }
     try {
       const nextIds = [...localAlumnoIds, pendingAdd.id];
       await persistAlumnoIds(nextIds);
@@ -856,6 +976,44 @@ function GruposPage() {
       selectedAlumnoIds.push(pendingCreateAlumno.id);
     }
 
+    if (!scheduleAssignmentContext) {
+      toast.error("Cargando datos de ocupación. Inténtalo de nuevo.");
+      return;
+    }
+
+    for (const row of scheduleRows) {
+      const baseCheck = {
+        idProfesor: nullIfEmptySelectId(row.ID_PROFESOR),
+        idAula: nullIfEmptySelectId(row.ID_AULA),
+        dia: row.DIA_SEMANA,
+        horaInicio: row.HORA_INICIO.slice(0, 5),
+        horaFin: row.HORA_FIN.slice(0, 5),
+      };
+
+      const hardSlot = validateScheduleAssignmentHard(scheduleAssignmentContext, baseCheck);
+      if (hardSlot) {
+        toast.error(hardSlot);
+        return;
+      }
+
+      for (const alumnoId of selectedAlumnoIds) {
+        const hard = validateScheduleAssignmentHard(scheduleAssignmentContext, {
+          ...baseCheck,
+          idAlumno: alumnoId,
+          extraAlumnoIds: [alumnoId],
+        });
+        if (hard) {
+          toast.error(hard);
+          return;
+        }
+      }
+    }
+
+    if (plazas != null && selectedAlumnoIds.length > plazas) {
+      const proceed = window.confirm(`${GRUPO_COMPLETO_PROMPT}\n\n¿Crear el grupo de todos modos?`);
+      if (!proceed) return;
+    }
+
     try {
       const customId = isMaster ? createForm.ID_GRUPO.trim() || undefined : undefined;
       await create.mutateAsync({
@@ -934,6 +1092,11 @@ function GruposPage() {
       toast.error("El curso escolar es obligatorio.");
       return;
     }
+    const hard = validateEditScheduleSlots(editing.ID_GRUPO, editForm.scheduleSlots);
+    if (hard) {
+      toast.error(hard);
+      return;
+    }
     try {
       await update.mutateAsync({
         id: editing.ID_GRUPO,
@@ -980,7 +1143,7 @@ function GruposPage() {
             {g.ID_CLIENTE}
           </TableCell>
         )}
-        <TableCell className="font-medium truncate" onClick={(e) => e.stopPropagation()}>
+        <TableCell className="font-medium truncate">
           <EntityLink type="grupo" id={g.ID_GRUPO}>
             {g.NOMBRE_GRUPO}
           </EntityLink>
@@ -997,7 +1160,7 @@ function GruposPage() {
             ))}
           </div>
         </TableCell>
-        <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+        <TableCell className="text-sm">
           <div className="flex flex-col gap-0.5">
             {horarios.map((horario) => (
               <span key={horario.ID_GRUPO_HORARIO} className="leading-snug">
@@ -1012,7 +1175,7 @@ function GruposPage() {
             ))}
           </div>
         </TableCell>
-        <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+        <TableCell className="text-sm">
           <div className="flex flex-col gap-0.5">
             {horarios.map((horario) => (
               <span key={horario.ID_GRUPO_HORARIO} className="leading-snug">
@@ -1749,7 +1912,7 @@ function GruposPage() {
                             toggleCreateAlumno(alumno.ID_ALUMNO);
                           }}
                         />
-                        <span className="text-sm truncate" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-sm truncate">
                           <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
                             {alumno.NOMBRE_ALUMNO}
                           </EntityLink>
@@ -2109,8 +2272,18 @@ function GruposPage() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Añadir alumno?</AlertDialogTitle>
-              <AlertDialogDescription>
-                ¿Añadir a {pendingAdd?.nombre} a este grupo?
+              <AlertDialogDescription asChild>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  {managing &&
+                  pendingAdd &&
+                  scheduleAssignmentContext &&
+                  checkGrupoPlazasWarning(scheduleAssignmentContext, managing.ID_GRUPO, [
+                    pendingAdd.id,
+                  ]) ? (
+                    <p>{GRUPO_COMPLETO_PROMPT}</p>
+                  ) : null}
+                  <p>¿Añadir a {pendingAdd?.nombre} a este grupo?</p>
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

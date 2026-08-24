@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   Search,
@@ -22,10 +22,18 @@ import {
   buildEnviarRemesaRpcPayloadFromRow,
   fetchIncompleteRemesaBankingNames,
   formatRemesaBankingValidationMessage,
+  validateRemesaLoteBeforeEnviar,
+  invokeGenerarXmlSepaRemesa,
+  fetchSepaBorradorRecibosForEnviar,
+  fetchDuplicatePaymentConflicts,
+  emitKorefactuForRemesaRecibos,
+  invokeGenerarZipRecibosRemesa,
+  VERIFACTU_EXITO_TOAST,
 } from "@/hooks/useRemesas";
+import { invokeGenerarPdfBorradorRecibo, invokeGenerarExcelRemesaControl } from "@/hooks/useVentasLineas";
+import { normalizeEstadoPago } from "@/hooks/useRecibos";
 import {
   useCentros,
-  getActiveCursoEscolar,
   type CentroData,
   type CursoEscolarData,
 } from "@/hooks/useCentros";
@@ -34,14 +42,13 @@ import type { WorkspaceOption } from "@/lib/workspaceProfiles";
 import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { MESES_ANIO } from "@/lib/alumnosMatriculasUtils";
-import { isAdminRole, isMasterRole } from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, tenantListKey } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -95,39 +102,6 @@ function parseCalendarDate(iso: string): Date | null {
 
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function isDateWithinCurso(curso: CursoEscolarData, referenceDate: Date): boolean {
-  const start = parseCalendarDate(curso.FECHA_INICIO);
-  const end = parseCalendarDate(curso.FECHA_FIN);
-  if (!start || !end) return false;
-  const day = new Date(
-    referenceDate.getFullYear(),
-    referenceDate.getMonth(),
-    referenceDate.getDate(),
-  );
-  return day >= start && day <= end;
-}
-
-/** Prefer the course whose term contains today; fall back to ESTADO activo. */
-function resolveOperationalCursoEscolar(
-  cursos: CursoEscolarData[],
-  referenceDate = new Date(),
-): CursoEscolarData | null {
-  if (cursos.length === 0) return null;
-
-  const inRange = cursos.filter((curso) => isDateWithinCurso(curso, referenceDate));
-  if (inRange.length === 1) return inRange[0];
-  if (inRange.length > 1) {
-    return inRange.find((curso) => curso.ESTADO?.trim().toLowerCase() === "activo") ?? inRange[0];
-  }
-
-  return getActiveCursoEscolar(cursos);
-}
-
-function cursosForCentro(centros: CentroData[], centroId: string): CursoEscolarData[] {
-  const centro = centros.find((c) => c.ID_CENTRO === centroId);
-  return centro?.CURSO_ESCOLAR ?? [];
 }
 
 function buildSchoolYearMonthOptions(curso: CursoEscolarData | null): string[] {
@@ -204,6 +178,11 @@ function isRemesaGenerada(estado: string | null | undefined): boolean {
   return estado?.trim().toLowerCase() === "generada";
 }
 
+function isRemesaExcelDownloadable(estado: string | null | undefined): boolean {
+  const normalized = estado?.trim().toLowerCase();
+  return normalized === "generada" || normalized === "enviada";
+}
+
 type RemesaEstado = "Generada" | "Enviada";
 
 function normalizeRemesaEstado(estado: string | null | undefined): RemesaEstado {
@@ -214,41 +193,32 @@ function remesaEstadoStatus(estado: RemesaEstado): StatusBadgeVariant {
   return estado === "Enviada" ? "success" : "info";
 }
 
-async function handleDownloadXML(remesa: RemesaXmlDownloadRow) {
-  if (!remesa.LINK_XML_SEPA) {
-    toast.error("No XML file linked to this remittance record.");
+async function handleDownloadXML(link: string) {
+  if (!link.trim()) {
+    toast.error("No hay XML SEPA vinculado a esta remesa.");
     return;
   }
 
   try {
-    const { data, error } = await supabase.storage
-      .from("remesas_sepa")
-      .download(remesa.LINK_XML_SEPA);
-
-    if (error) throw error;
-    if (!data) throw new Error("Empty file response from storage");
-
-    const url = window.URL.createObjectURL(data);
+    const response = await fetch(link);
+    if (!response.ok) {
+      throw new Error(`Error HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = remesa.LINK_XML_SEPA.split("/").pop() ?? "remesa_sepa.xml";
-
+    a.download = link.split("/").pop()?.split("?")[0] ?? "remesa_sepa.xml";
     document.body.appendChild(a);
     a.click();
-
     window.URL.revokeObjectURL(url);
     a.remove();
-
-    toast.success("XML downloaded successfully.");
+    toast.success("XML SEPA descargado correctamente.");
   } catch (error) {
-    console.error("Error downloading XML from Storage:", error);
-    toast.error("Failed to download the XML file. Please check storage permissions.");
+    console.error("Error al descargar XML SEPA:", error);
+    toast.error("No se pudo descargar el XML SEPA. Comprueba el enlace o los permisos.");
   }
 }
-
-type RemesaXmlDownloadRow = {
-  LINK_XML_SEPA?: string | null;
-};
 
 function RemesaVaultIconButton({
   available,
@@ -256,12 +226,14 @@ function RemesaVaultIconButton({
   icon: Icon,
   onClick,
   href,
+  loading = false,
 }: {
   available: boolean;
   label: string;
   icon: LucideIcon;
   onClick?: () => void;
   href?: string;
+  loading?: boolean;
 }) {
   const buttonClass = cn(
     "h-8 w-8 rounded-md border shadow-sm transition-colors",
@@ -270,7 +242,7 @@ function RemesaVaultIconButton({
       : "border-transparent bg-muted/30 text-muted-foreground/35 cursor-not-allowed",
   );
 
-  if (available && href) {
+  if (available && href && !loading) {
     return (
       <Button variant="ghost" size="icon" className={buttonClass} asChild title={label}>
         <a href={href} target="_blank" rel="noreferrer" aria-label={label}>
@@ -290,8 +262,9 @@ function RemesaVaultIconButton({
         onClick={onClick}
         title={label}
         aria-label={label}
+        disabled={loading}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className={cn("h-4 w-4", loading && "animate-spin")} />
       </Button>
     );
   }
@@ -344,13 +317,38 @@ async function executeGenerarRemesaSubmit({
 
 function RemesasPage() {
   const { tenantId, rol } = useActiveTenant();
+  const qc = useQueryClient();
   const canWrite = canWriteUi(rol, "remesas:write");
   const { list, update, remove, generarRemesaMensual, enviarRemesaBloque } = useRemesas();
+  const centros = useCentros();
+
+  const centroNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centros.list.data ?? []) {
+      if (centro.ID_CENTRO) {
+        map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO?.trim() || centro.ID_CENTRO);
+      }
+    }
+    return map;
+  }, [centros.list.data]);
+
+  const cursoNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centros.list.data ?? []) {
+      for (const curso of centro.CURSO_ESCOLAR ?? []) {
+        if (curso.ID_CURSO) {
+          map.set(curso.ID_CURSO, curso.NOMBRE_CURSO?.trim() || curso.ID_CURSO);
+        }
+      }
+    }
+    return map;
+  }, [centros.list.data]);
 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<any | null>(null);
   const [creating, setCreating] = useState(false);
+  const [generatingRemesa, setGeneratingRemesa] = useState(false);
   const [deleting, setDeleting] = useState<any | null>(null);
   const [sendingRemesaId, setSendingRemesaId] = useState<string | null>(null);
   const [validatingRemesaId, setValidatingRemesaId] = useState<string | null>(null);
@@ -362,23 +360,166 @@ function RemesasPage() {
     MES_PERIODO?: string | null;
     ESTADO?: string | null;
   } | null>(null);
+  const [duplicatePaymentPrompt, setDuplicatePaymentPrompt] = useState<{
+    alumnoNombre: string;
+  } | null>(null);
+  const [generatingZipRemesaId, setGeneratingZipRemesaId] = useState<string | null>(null);
+  const [generatingExcelRemesaId, setGeneratingExcelRemesaId] = useState<string | null>(null);
+  const duplicatePaymentPromptResolverRef = useRef<((include: boolean) => void) | null>(null);
 
-  const executeEnviarRemesa = async (row: {
+  const promptDuplicatePaymentInclusion = (alumnoNombre: string) =>
+    new Promise<boolean>((resolve) => {
+      duplicatePaymentPromptResolverRef.current = resolve;
+      setDuplicatePaymentPrompt({ alumnoNombre });
+    });
+
+  const resolveDuplicatePaymentPrompt = (include: boolean) => {
+    duplicatePaymentPromptResolverRef.current?.(include);
+    duplicatePaymentPromptResolverRef.current = null;
+    setDuplicatePaymentPrompt(null);
+  };
+
+  const toastMissingZipAlumnos = (missingAlumnos: string[]) => {
+    if (missingAlumnos.length === 0) return;
+    toast.warning(`Faltan facturas de ${missingAlumnos.join(", ")}`);
+  };
+
+  const handleDownloadExcelRemesa = async (row: {
     ID_REMESA: string;
     ID_CLIENTE?: string | null;
     ID_CENTRO?: string | null;
     ID_CURSO?: string | null;
     MES_PERIODO?: string | null;
-    ESTADO?: string | null;
   }) => {
+    const payload = assertGenerarRemesaRpcPayload(buildEnviarRemesaRpcPayloadFromRow(row));
+    setGeneratingExcelRemesaId(row.ID_REMESA);
+    try {
+      const link = await invokeGenerarExcelRemesaControl({
+        id_cliente: payload.p_id_cliente,
+        id_centro: payload.p_id_centro,
+        id_curso: payload.p_id_curso,
+        mes_periodo: payload.p_mes_periodo,
+      });
+      window.open(link, "_blank", "noopener,noreferrer");
+      await qc.invalidateQueries({ queryKey: tenantListKey("remesas", rol, tenantId) });
+      toast.success("Excel contable generado.");
+    } catch (err) {
+      toast.error(collectErrorText(err) || "Error al generar el Excel contable.");
+    } finally {
+      setGeneratingExcelRemesaId(null);
+    }
+  };
+
+  const handleDownloadZipRemesa = async (row: {
+    ID_REMESA: string;
+    ID_CLIENTE?: string | null;
+    ID_CENTRO?: string | null;
+    ID_CURSO?: string | null;
+    MES_PERIODO?: string | null;
+  }) => {
+    const payload = assertGenerarRemesaRpcPayload(buildEnviarRemesaRpcPayloadFromRow(row));
+    setGeneratingZipRemesaId(row.ID_REMESA);
+    try {
+      const zipResult = await invokeGenerarZipRecibosRemesa(payload);
+      if (!zipResult.link) {
+        if (zipResult.missingAlumnos.length > 0) {
+          toastMissingZipAlumnos(zipResult.missingAlumnos);
+        } else {
+          toast.info("No hay PDF oficiales guardados en este lote para empaquetar.");
+        }
+        return;
+      }
+      window.open(zipResult.link, "_blank", "noopener,noreferrer");
+      await qc.invalidateQueries({ queryKey: tenantListKey("remesas", rol, tenantId) });
+      toastMissingZipAlumnos(zipResult.missingAlumnos);
+      toast.success(
+        zipResult.pdfCount === 1
+          ? "ZIP generado con 1 factura oficial."
+          : `ZIP generado con ${zipResult.pdfCount} facturas oficiales.`,
+      );
+    } catch (err) {
+      toast.error(collectErrorText(err) || "Error al generar el ZIP de facturas.");
+    } finally {
+      setGeneratingZipRemesaId(null);
+    }
+  };
+
+  const executeEnviarRemesa = async (
+    row: {
+      ID_REMESA: string;
+      ID_CLIENTE?: string | null;
+      ID_CENTRO?: string | null;
+      ID_CURSO?: string | null;
+      MES_PERIODO?: string | null;
+      ESTADO?: string | null;
+    },
+    includedReciboIds: string[],
+  ) => {
     if (!isRemesaGenerada(row.ESTADO)) return;
 
     const payload = assertGenerarRemesaRpcPayload(buildEnviarRemesaRpcPayloadFromRow(row));
     setSendingRemesaId(row.ID_REMESA);
 
     try {
-      await enviarRemesaBloque.mutateAsync(payload);
-      toast.success("Remesa enviada al banco correctamente");
+      if (includedReciboIds.length === 0) {
+        toast.warning("No hay recibos SEPA incluidos en el envío.");
+        return;
+      }
+
+      let xmlLink: string | null = null;
+      try {
+        xmlLink = await invokeGenerarXmlSepaRemesa(payload, includedReciboIds);
+      } catch (xmlErr) {
+        toast.error(collectErrorText(xmlErr) || "Error al generar el XML SEPA. La remesa sigue Generada.");
+        return;
+      }
+
+      if (!xmlLink) {
+        toast.error("No se pudo generar el XML SEPA. La remesa sigue Generada.");
+        return;
+      }
+
+      const { cobradosConUuid, failures, excelErrors } =
+        await emitKorefactuForRemesaRecibos(includedReciboIds);
+
+      for (const failure of failures) {
+        toast.error(failure.message);
+      }
+
+      if (cobradosConUuid.length === 0) {
+        toast.error("Ningún recibo pudo emitirse en Korefactu. La remesa sigue Generada.");
+        return;
+      }
+
+      if (failures.length > 0) {
+        toast.warning(
+          `${failures.length} recibo(s) no se emitieron en Korefactu y no pasarán a Cobrado.`,
+        );
+      }
+
+      for (const excelError of excelErrors) {
+        toast.warning(excelError);
+      }
+
+      await enviarRemesaBloque.mutateAsync({ ...payload, p_id_recibos: cobradosConUuid });
+
+      try {
+        const zipResult = await invokeGenerarZipRecibosRemesa(payload);
+        if (zipResult.link) {
+          void qc.invalidateQueries({ queryKey: tenantListKey("remesas", rol, tenantId) });
+        }
+        toastMissingZipAlumnos(zipResult.missingAlumnos);
+      } catch (zipErr) {
+        toast.error(collectErrorText(zipErr) || "Error al generar el ZIP de facturas.");
+      }
+
+      if (failures.length === 0) {
+        toast.success(VERIFACTU_EXITO_TOAST);
+      } else {
+        toast.success(
+          `Remesa enviada. ${cobradosConUuid.length} recibo(s) Cobrados con factura Korefactu.`,
+        );
+      }
     } catch (err) {
       toast.error(collectErrorText(err) || "Error al enviar la remesa al banco");
     } finally {
@@ -398,14 +539,24 @@ function RemesasPage() {
 
     setValidatingRemesaId(row.ID_REMESA);
     try {
-      const incompleteNames = await fetchIncompleteRemesaBankingNames(tenantId, rol, row);
+      const [incompleteNames, loteErrors] = await Promise.all([
+        fetchIncompleteRemesaBankingNames(tenantId, rol, row),
+        validateRemesaLoteBeforeEnviar(tenantId, rol, row),
+      ]);
+
+      const validationMessages: string[] = [];
       if (incompleteNames.length > 0) {
-        toast.error(formatRemesaBankingValidationMessage(incompleteNames));
+        validationMessages.push(formatRemesaBankingValidationMessage(incompleteNames));
+      }
+      validationMessages.push(...loteErrors);
+
+      if (validationMessages.length > 0) {
+        toast.error(validationMessages.join("\n\n"));
         return;
       }
       setConfirmEnviarRemesa(row);
     } catch (err) {
-      toast.error(collectErrorText(err) || "Error al validar los datos bancarios de la remesa");
+      toast.error(collectErrorText(err) || "Error al validar la remesa antes del envío");
     } finally {
       setValidatingRemesaId(null);
     }
@@ -415,7 +566,23 @@ function RemesasPage() {
     if (!confirmEnviarRemesa || sendingRemesaId) return;
     const row = confirmEnviarRemesa;
     setConfirmEnviarRemesa(null);
-    await executeEnviarRemesa(row);
+
+    try {
+      const sepaRecibos = await fetchSepaBorradorRecibosForEnviar(tenantId, rol, row);
+      const conflicts = await fetchDuplicatePaymentConflicts(tenantId, rol, row, sepaRecibos);
+      const includedIds = new Set(sepaRecibos.map((recibo) => recibo.ID_RECIBO));
+
+      for (const conflict of conflicts) {
+        const include = await promptDuplicatePaymentInclusion(conflict.alumnoNombre);
+        if (!include) {
+          includedIds.delete(conflict.ID_RECIBO);
+        }
+      }
+
+      await executeEnviarRemesa(row, [...includedIds]);
+    } catch (err) {
+      toast.error(collectErrorText(err) || "Error al preparar el envío de la remesa");
+    }
   };
 
   const filtered = useMemo(() => {
@@ -426,9 +593,11 @@ function RemesasPage() {
       (r: any) =>
         r.MES_PERIODO?.toLowerCase().includes(q) ||
         r.ESTADO?.toLowerCase().includes(q) ||
-        r.ID_REMESA?.toLowerCase().includes(q),
+        r.ID_REMESA?.toLowerCase().includes(q) ||
+        centroNameById.get(r.ID_CENTRO ?? "")?.toLowerCase().includes(q) ||
+        cursoNameById.get(r.ID_CURSO ?? "")?.toLowerCase().includes(q),
     );
-  }, [list.data, query]);
+  }, [list.data, query, centroNameById, cursoNameById]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -446,7 +615,7 @@ function RemesasPage() {
       {/* Cabecera del panel */}
       <PageHeader
         title="Gestión de Recibos Mensuales"
-        description={`${list.data?.length ?? 0} remesas SEPA de cobros consolidadas en el sistema`}
+        description={`${list.data?.length ?? 0} lotes de recibos borrador registrados en el sistema`}
         actions={
           canWrite && (
             <Button onClick={() => setCreating(true)}>
@@ -483,6 +652,8 @@ function RemesasPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Periodo / Mes</TableHead>
+                <TableHead>Centro</TableHead>
+                <TableHead>Curso</TableHead>
                 <TableHead>Estado Remesa</TableHead>
                 <TableHead className="text-center">XML SEPA (Banco)</TableHead>
                 <TableHead className="text-center">Excel Contable</TableHead>
@@ -494,17 +665,17 @@ function RemesasPage() {
               {list.isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={8}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : pageRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     {query
                       ? "Sin resultados para tu búsqueda."
-                      : "No hay registros de remesas SEPA."}
+                      : "No hay lotes de recibos borrador registrados."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -525,6 +696,12 @@ function RemesasPage() {
                           {r.MES_PERIODO || "—"}
                         </div>
                       </TableCell>
+                      <TableCell className="text-slate-700">
+                        {centroNameById.get(r.ID_CENTRO ?? "") ?? r.ID_CENTRO ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-slate-700">
+                        {cursoNameById.get(r.ID_CURSO ?? "") ?? r.ID_CURSO ?? "—"}
+                      </TableCell>
                       <TableCell>
                         <StatusBadge
                           status={remesaEstadoStatus(remesaEstado)}
@@ -541,7 +718,11 @@ function RemesasPage() {
                             available={Boolean(r.LINK_XML_SEPA)}
                             label="Descargar XML SEPA"
                             icon={FileCode}
-                            onClick={() => void handleDownloadXML(r)}
+                            onClick={
+                              r.LINK_XML_SEPA
+                                ? () => void handleDownloadXML(r.LINK_XML_SEPA as string)
+                                : undefined
+                            }
                           />
                         </div>
                       </TableCell>
@@ -550,10 +731,15 @@ function RemesasPage() {
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-center">
                           <RemesaVaultIconButton
-                            available={Boolean(r.LINK_EXCEL_CONTABILIDAD)}
+                            available={isRemesaExcelDownloadable(r.ESTADO)}
                             label="Descargar Excel contable"
                             icon={FileSpreadsheet}
-                            href={r.LINK_EXCEL_CONTABILIDAD ?? undefined}
+                            loading={generatingExcelRemesaId === r.ID_REMESA}
+                            onClick={
+                              isRemesaExcelDownloadable(r.ESTADO)
+                                ? () => void handleDownloadExcelRemesa(r)
+                                : undefined
+                            }
                           />
                         </div>
                       </TableCell>
@@ -562,10 +748,15 @@ function RemesasPage() {
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-center">
                           <RemesaVaultIconButton
-                            available={Boolean(r.LINK_RECIBOS_ZIP)}
-                            label="Descargar recibos ZIP"
+                            available={normalizeRemesaEstado(r.ESTADO) === "Enviada"}
+                            label="Descargar facturas ZIP"
                             icon={FileArchive}
-                            href={r.LINK_RECIBOS_ZIP ?? undefined}
+                            loading={generatingZipRemesaId === r.ID_REMESA}
+                            onClick={
+                              normalizeRemesaEstado(r.ESTADO) === "Enviada"
+                                ? () => void handleDownloadZipRemesa(r)
+                                : undefined
+                            }
                           />
                         </div>
                       </TableCell>
@@ -632,18 +823,87 @@ function RemesasPage() {
       {/* Create Modal */}
       <GenerarRemesaDialog
         open={creating}
-        onClose={() => setCreating(false)}
-        submitting={generarRemesaMensual.isPending}
+        onClose={() => {
+          if (!generatingRemesa) setCreating(false);
+        }}
+        submitting={generatingRemesa}
         onSubmit={async (payload) => {
+          setGeneratingRemesa(true);
           try {
             const result = await generarRemesaMensual.mutateAsync(payload);
             const count = result?.recibos_generados ?? 0;
-            toast.success(`Success! Generated ${count} draft receipts.`);
+
+            const { data: recibos, error: recibosErr } = await supabase
+              .from("RECIBOS_MENSUALES")
+              .select("ID_RECIBO, ESTADO_PAGO")
+              .eq("ID_CLIENTE", payload.p_id_cliente)
+              .eq("ID_CENTRO", payload.p_id_centro)
+              .eq("ID_CURSO", payload.p_id_curso)
+              .eq("MES_PERIODO", payload.p_mes_periodo);
+
+            if (recibosErr) {
+              toast.warning(
+                `Remesa generada (${count} recibos), pero no se pudieron listar para PDF borrador: ${recibosErr.message}`,
+              );
+              setCreating(false);
+              return;
+            }
+
+            const borradores = (recibos ?? []).filter(
+              (row) => normalizeEstadoPago(row.ESTADO_PAGO) === "Borrador",
+            );
+
+            let pdfOk = 0;
+            let pdfFail = 0;
+            for (const recibo of borradores) {
+              try {
+                await invokeGenerarPdfBorradorRecibo(recibo.ID_RECIBO);
+                pdfOk += 1;
+              } catch {
+                pdfFail += 1;
+              }
+            }
+
+            if (pdfFail > 0) {
+              toast.warning(
+                `Remesa generada: ${count} recibos. PDF borrador: ${pdfOk} correctos, ${pdfFail} fallidos.`,
+              );
+            }
+
+            let excelOk = false;
+            try {
+              await invokeGenerarExcelRemesaControl({
+                id_cliente: payload.p_id_cliente,
+                id_centro: payload.p_id_centro,
+                id_curso: payload.p_id_curso,
+                mes_periodo: payload.p_mes_periodo,
+              });
+              excelOk = true;
+            } catch (excelErr) {
+              toast.warning(
+                `Excel de control: ${excelErr instanceof Error ? excelErr.message : "Error al generar el Excel."}`,
+              );
+            }
+
+            if (pdfFail === 0) {
+              const partes = [`${count} recibos borrador`];
+              if (pdfOk > 0) partes.push(`${pdfOk} PDF borrador`);
+              if (excelOk) partes.push("Excel de control");
+              toast.success(`Remesa generada: ${partes.join(", ")}.`);
+            }
+
+            qc.invalidateQueries({ queryKey: tenantListKey("recibos", rol, tenantId) });
+            qc.invalidateQueries({
+              predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "remesas",
+            });
+
             setCreating(false);
           } catch (err) {
             if (isRestrictVetoError(err)) throw err;
             toast.error(collectErrorText(err) || "Error al generar la remesa");
             throw err;
+          } finally {
+            setGeneratingRemesa(false);
           }
         }}
       />
@@ -678,9 +938,11 @@ function RemesasPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Enviar remesa al banco</AlertDialogTitle>
             <AlertDialogDescription>
-              ¡ATENCIÓN! Vas a enviar esta remesa al banco. Esto cambiará automáticamente el estado
-              de todos los recibos SEPA asociados de este lote a &quot;Cobrado&quot;. ¿Deseas
-              continuar?
+              Se generará el XML SEPA para que lo subas al banco manualmente. Si el XML es
+              correcto, la remesa pasará a Enviada y los recibos con método SEPA quedarán en
+              Cobrado. Las facturas oficiales (Verifactu) solo se emitirán si la integración está
+              disponible; el ZIP del listado contendrá facturas oficiales, no PDF borrador.
+              ¿Deseas continuar?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -693,6 +955,34 @@ function RemesasPage() {
               }}
             >
               {sendingRemesaId ? "Enviando..." : "Confirmar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!duplicatePaymentPrompt}
+        onOpenChange={(open) => {
+          if (!open && duplicatePaymentPrompt) {
+            resolveDuplicatePaymentPrompt(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Inclusión en XML SEPA</AlertDialogTitle>
+            <AlertDialogDescription>
+              {duplicatePaymentPrompt
+                ? `${duplicatePaymentPrompt.alumnoNombre} ya ha pagado una factura este mes. ¿Desea incluirlo en el XML?`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => resolveDuplicatePaymentPrompt(false)}>
+              No
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => resolveDuplicatePaymentPrompt(true)}>
+              Sí
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -769,39 +1059,35 @@ function GenerarRemesaDialog({
   const showCentroSelect = isAdminRole(rol) || isMasterRole(rol);
 
   const [selectedCenterId, setSelectedCenterId] = useState("");
+  const [selectedCursoId, setSelectedCursoId] = useState("");
   const [mesPeriodo, setMesPeriodo] = useState("");
   const [restrictVetoError, setRestrictVetoError] = useState<string | null>(null);
 
   const resolvedCenterId = showCentroSelect ? selectedCenterId || defaultCenterId : defaultCenterId;
 
-  const embeddedCursos = useMemo(
-    () => cursosForCentro(centrosOrdenados, resolvedCenterId),
-    [centrosOrdenados, resolvedCenterId],
-  );
-
   const { data: fetchedCursos, isLoading: fetchedCursosLoading } = useQuery({
     queryKey: ["remesa-curso-escolar", tenantId, resolvedCenterId],
-    enabled: open && Boolean(resolvedCenterId) && embeddedCursos.length === 0,
+    enabled: open && Boolean(resolvedCenterId),
     queryFn: async (): Promise<CursoEscolarData[]> => {
       const { data, error } = await supabase
         .from("CURSO_ESCOLAR")
         .select("*")
         .eq("ID_CLIENTE", tenantId)
-        .eq("ID_CENTRO", resolvedCenterId);
+        .eq("ID_CENTRO", resolvedCenterId)
+        .order("FECHA_INICIO", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CursoEscolarData[];
     },
   });
 
-  const cursosForResolvedCentro =
-    embeddedCursos.length > 0 ? embeddedCursos : (fetchedCursos ?? []);
+  const cursosForResolvedCentro = fetchedCursos ?? [];
 
-  const activeCurso = useMemo(
-    () => resolveOperationalCursoEscolar(cursosForResolvedCentro),
-    [cursosForResolvedCentro],
+  const selectedCurso = useMemo(
+    () => cursosForResolvedCentro.find((curso) => curso.ID_CURSO === selectedCursoId) ?? null,
+    [cursosForResolvedCentro, selectedCursoId],
   );
 
-  const monthOptions = useMemo(() => buildSchoolYearMonthOptions(activeCurso), [activeCurso]);
+  const monthOptions = useMemo(() => buildSchoolYearMonthOptions(selectedCurso), [selectedCurso]);
 
   const lockedCentroName = useMemo(() => {
     if (!resolvedCenterId) return "";
@@ -812,8 +1098,23 @@ function GenerarRemesaDialog({
     if (!open) return;
     setRestrictVetoError(null);
     setMesPeriodo("");
+    setSelectedCursoId("");
     setSelectedCenterId(defaultCenterId);
   }, [open, defaultCenterId]);
+
+  useEffect(() => {
+    if (!open || cursosForResolvedCentro.length === 0) {
+      if (open) setSelectedCursoId("");
+      return;
+    }
+    setSelectedCursoId((prev) => {
+      if (prev && cursosForResolvedCentro.some((curso) => curso.ID_CURSO === prev)) return prev;
+      const activo = cursosForResolvedCentro.find(
+        (curso) => curso.ESTADO?.trim().toLowerCase() === "activo",
+      );
+      return activo?.ID_CURSO ?? cursosForResolvedCentro[0]?.ID_CURSO ?? "";
+    });
+  }, [open, cursosForResolvedCentro]);
 
   useEffect(() => {
     if (!open || monthOptions.length === 0) return;
@@ -823,22 +1124,37 @@ function GenerarRemesaDialog({
       if (monthOptions.includes(currentMonth)) return currentMonth;
       return monthOptions[monthOptions.length - 1] ?? "";
     });
-  }, [open, monthOptions]);
+  }, [open, monthOptions, selectedCursoId]);
 
   const canSubmit =
     Boolean(resolvedCenterId) &&
-    Boolean(activeCurso?.ID_CURSO) &&
+    Boolean(selectedCurso?.ID_CURSO) &&
     Boolean(mesPeriodo) &&
     !submitting;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !submitting) onClose();
+      }}
+    >
+      <DialogContent
+        className={cn("max-w-lg", submitting && "[&>button]:pointer-events-none [&>button]:opacity-30")}
+        onPointerDownOutside={(e) => {
+          if (submitting) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (submitting) e.preventDefault();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>Generar Registro de Remesa Bancaria</DialogTitle>
+          <DialogTitle>Generar lote de recibos borrador</DialogTitle>
           <DialogDescription>
-            Se generarán los recibos borrador del periodo seleccionado. Los archivos SEPA y
-            contables se procesarán automáticamente en segundo plano.
+            Se crearán recibos en estado Borrador, con su PDF borrador y el Excel de control del
+            lote. Antes de usar Enviar, revisa las fichas de alumno y Compras internas. El XML SEPA,
+            el ZIP de recibos y el envío al banco no ocurren al generar; corresponden al paso
+            Enviar.
           </DialogDescription>
         </DialogHeader>
 
@@ -851,14 +1167,14 @@ function GenerarRemesaDialog({
               await executeGenerarRemesaSubmit({
                 id_cliente: tenantId,
                 id_centro: resolvedCenterId,
-                id_curso: activeCurso?.ID_CURSO ?? "",
+                id_curso: selectedCurso?.ID_CURSO ?? "",
                 mes_periodo: mesPeriodo,
                 onSubmit,
               });
             } catch (err) {
               if (isRestrictVetoError(err)) {
                 setRestrictVetoError(
-                  "Error: The drafts for this month have already been generated. Please edit them manually on the Receipts panel.",
+                  "Ya existe una remesa para este mes, centro y curso. Revísala en el listado de remesas.",
                 );
               }
             }
@@ -873,13 +1189,26 @@ function GenerarRemesaDialog({
             </Alert>
           )}
 
+          {submitting && (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertTitle>Generando remesa</AlertTitle>
+              <AlertDescription>
+                Se están generando los recibos borrador, los PDF y el Excel de control. No cierres
+                esta ventana hasta que termine el proceso.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {showCentroSelect ? (
             <div className="space-y-2">
               <Label>Sede / Centro *</Label>
               <Select
                 value={resolvedCenterId || undefined}
                 onValueChange={setSelectedCenterId}
-                disabled={centros.list.isLoading || centrosOrdenados.length === 0}
+                disabled={
+                  submitting || centros.list.isLoading || centrosOrdenados.length === 0
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un centro" />
@@ -902,44 +1231,70 @@ function GenerarRemesaDialog({
             )
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Mes / Periodo de la Remesa *</Label>
-              <Select
-                value={mesPeriodo}
-                onValueChange={setMesPeriodo}
-                disabled={
-                  monthOptions.length === 0 || centros.list.isLoading || fetchedCursosLoading
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un mes" />
-                </SelectTrigger>
-                <SelectContent>
-                  {monthOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {monthOptions.length === 0 &&
-                resolvedCenterId &&
-                !centros.list.isLoading &&
-                !fetchedCursosLoading && (
-                  <p className="text-xs text-muted-foreground">
-                    No hay meses disponibles para el curso escolar activo de este centro.
-                  </p>
-                )}
-            </div>
-            <div className="space-y-2">
-              <Label>Estado</Label>
-              <div className="flex h-10 items-center">
-                <Badge variant="outline" className="capitalize px-3 py-1">
-                  Generada
-                </Badge>
-              </div>
-            </div>
+          <div className="space-y-2">
+            <Label>Curso escolar *</Label>
+            <Select
+              value={selectedCursoId || undefined}
+              onValueChange={setSelectedCursoId}
+              disabled={
+                submitting ||
+                cursosForResolvedCentro.length === 0 ||
+                centros.list.isLoading ||
+                fetchedCursosLoading
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un curso" />
+              </SelectTrigger>
+              <SelectContent>
+                {cursosForResolvedCentro.map((curso) => (
+                  <SelectItem key={curso.ID_CURSO} value={curso.ID_CURSO}>
+                    {curso.NOMBRE_CURSO}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {cursosForResolvedCentro.length === 0 &&
+              resolvedCenterId &&
+              !centros.list.isLoading &&
+              !fetchedCursosLoading && (
+                <p className="text-xs text-muted-foreground">
+                  No hay cursos escolares configurados para este centro.
+                </p>
+              )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Mes / Periodo de la Remesa *</Label>
+            <Select
+              value={mesPeriodo}
+              onValueChange={setMesPeriodo}
+              disabled={
+                submitting ||
+                monthOptions.length === 0 ||
+                centros.list.isLoading ||
+                fetchedCursosLoading
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un mes" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {monthOptions.length === 0 &&
+              selectedCursoId &&
+              !centros.list.isLoading &&
+              !fetchedCursosLoading && (
+                <p className="text-xs text-muted-foreground">
+                  No hay meses disponibles para el curso seleccionado.
+                </p>
+              )}
           </div>
 
           <DialogFooter className="pt-2">
@@ -950,7 +1305,7 @@ function GenerarRemesaDialog({
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generando...
+                  Generando…
                 </>
               ) : (
                 "Generar Entrada"

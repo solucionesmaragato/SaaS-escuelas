@@ -120,6 +120,7 @@ import { toast } from "sonner";
 type EvaluacionesSearch = {
   profesorId?: string;
   alumnoId?: string;
+  evaluacionId?: string;
 };
 
 export const Route = createFileRoute("/_authenticated/evaluaciones")({
@@ -130,6 +131,9 @@ export const Route = createFileRoute("/_authenticated/evaluaciones")({
     }
     if (typeof search.alumnoId === "string" && search.alumnoId) {
       result.alumnoId = search.alumnoId;
+    }
+    if (typeof search.evaluacionId === "string" && search.evaluacionId) {
+      result.evaluacionId = search.evaluacionId;
     }
     return result;
   },
@@ -638,7 +642,11 @@ function EvaluacionesTab() {
     return sortCursosEscolares(all);
   }, [centrosList.data]);
 
-  const { profesorId: deepLinkProfesorId, alumnoId: deepLinkAlumnoId } = Route.useSearch();
+  const {
+    profesorId: deepLinkProfesorId,
+    alumnoId: deepLinkAlumnoId,
+    evaluacionId: deepLinkEvaluacionId,
+  } = Route.useSearch();
   const navigate = Route.useNavigate();
 
   const [query, setQuery] = useState("");
@@ -666,6 +674,17 @@ function EvaluacionesTab() {
       navigate({ search: (prev) => ({ ...prev, alumnoId: undefined }), replace: true });
     }
   }, [deepLinkAlumnoId, alumnos.length, alumnoById, navigate]);
+
+  useEffect(() => {
+    if (!deepLinkEvaluacionId || !list.data?.length) return;
+    const target = list.data.find((row) => row.ID_EVALUACION === deepLinkEvaluacionId);
+    if (target) setDetail(target);
+  }, [deepLinkEvaluacionId, list.data]);
+
+  const handleCloseDetail = useCallback(() => {
+    setDetail(null);
+    navigate({ search: (prev) => ({ ...prev, evaluacionId: undefined }), replace: true });
+  }, [navigate]);
 
   const { gruposByAlumno, aulasByAlumno } = useMemo(
     () => buildEvaluacionesGrupoMaps(grupos),
@@ -1066,11 +1085,9 @@ function EvaluacionesTab() {
                     <TableCell>{row.TRIMESTRE === "FINAL" ? "Final" : row.TRIMESTRE}</TableCell>
                     <TableCell>
                       {alumnoById.get(row.ID_ALUMNO) ? (
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <EntityLink type="alumno" id={row.ID_ALUMNO}>
-                            {alumnoById.get(row.ID_ALUMNO)}
-                          </EntityLink>
-                        </span>
+                        <EntityLink type="alumno" id={row.ID_ALUMNO}>
+                          {alumnoById.get(row.ID_ALUMNO)}
+                        </EntityLink>
                       ) : (
                         "—"
                       )}
@@ -1081,11 +1098,9 @@ function EvaluacionesTab() {
                     </TableCell>
                     <TableCell>
                       {row.ID_PROFESOR && profesorById.get(row.ID_PROFESOR) ? (
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <EntityLink type="profesor" id={row.ID_PROFESOR}>
-                            {profesorById.get(row.ID_PROFESOR)}
-                          </EntityLink>
-                        </span>
+                        <EntityLink type="profesor" id={row.ID_PROFESOR}>
+                          {profesorById.get(row.ID_PROFESOR)}
+                        </EntityLink>
                       ) : (
                         "—"
                       )}
@@ -1182,9 +1197,9 @@ function EvaluacionesTab() {
           cursoById={cursoById}
           rubricaById={rubricaById}
           canMutate={canMutate}
-          onClose={() => setDetail(null)}
+          onClose={handleCloseDetail}
           onEdit={() => {
-            setDetail(null);
+            handleCloseDetail();
             setEditing(detail);
           }}
         />

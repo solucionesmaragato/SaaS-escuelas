@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { Bell, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAvisosInternos, type AvisoInterno } from "@/hooks/useAvisosInternos";
+import { useActiveTenant } from "@/context/AppContext";
+import { isDireccionRole, isSecretariaRole } from "@/lib/tenantQuery";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,16 +69,26 @@ function isAvisoNavigable(aviso: AvisoInterno): boolean {
   return !!(aviso.ID_ALUMNO?.trim() || aviso.ID_PROFESOR?.trim() || aviso.ID_HORARIO?.trim());
 }
 
-export function AvisosWidget() {
+export function AvisosWidget({ filterCenterId }: { filterCenterId?: string | null }) {
   const navigate = useNavigate();
+  const { rol, centerId } = useActiveTenant();
   const { list, markAsRead } = useAvisosInternos();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const pending = useMemo(
-    () => (list.data ?? []).filter((aviso) => aviso.LEIDO === false),
-    [list.data],
-  );
+  const effectiveFilterCenterId = isSecretariaRole(rol)
+    ? centerId?.trim() || null
+    : filterCenterId?.trim() || null;
+
+  const pending = useMemo(() => {
+    return (list.data ?? []).filter((aviso) => {
+      if (aviso.LEIDO !== false) return false;
+      if (!effectiveFilterCenterId) return true;
+      return aviso.ID_CENTRO === effectiveFilterCenterId;
+    });
+  }, [list.data, effectiveFilterCenterId]);
+
+  if (isDireccionRole(rol)) return null;
 
   const handleResolveClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -100,7 +112,7 @@ export function AvisosWidget() {
         className="cursor-pointer transition-colors hover:bg-muted/30"
         onClick={() => setDialogOpen(true)}
       >
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
           <CardTitle className="text-sm font-medium text-muted-foreground">Avisos</CardTitle>
           <Bell
             className={cn(
@@ -109,22 +121,15 @@ export function AvisosWidget() {
             )}
           />
         </CardHeader>
-        <CardContent>
+        <CardContent className="pb-3 pt-0">
           {list.isLoading ? (
-            <Skeleton className="mx-auto h-12 w-12 rounded-full" />
+            <Skeleton className="h-7 w-12" />
           ) : (
-            <div className="relative flex items-center justify-center py-2">
-              <Bell
-                className={cn(
-                  "h-12 w-12",
-                  pending.length > 0 ? "text-destructive" : "text-muted-foreground",
-                )}
-              />
-              {pending.length > 0 ? (
-                <span className="absolute -right-1 -top-1 flex h-6 min-w-6 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-semibold text-destructive-foreground">
-                  {pending.length}
-                </span>
-              ) : null}
+            <div className="flex items-baseline gap-2">
+              <span className="text-xl font-semibold">{pending.length}</span>
+              <span className="text-xs text-muted-foreground">
+                {pending.length === 1 ? "pendiente" : "pendientes"}
+              </span>
             </div>
           )}
         </CardContent>

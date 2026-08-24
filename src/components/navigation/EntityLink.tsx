@@ -23,6 +23,10 @@ export interface EntityLinkProps {
  * on its module page, via a route search param (e.g. /alumnos?studentId=...).
  * The target route reads the param on mount and auto-opens the matching overlay.
  */
+function stopRowClick(event: React.MouseEvent) {
+  event.stopPropagation();
+}
+
 export function EntityLink({ type, id, children, className }: EntityLinkProps) {
   if (id === undefined || id === null || id === "") {
     return <span className={className}>{children}</span>;
@@ -34,43 +38,78 @@ export function EntityLink({ type, id, children, className }: EntityLinkProps) {
   switch (type) {
     case "alumno":
       return (
-        <Link to="/alumnos" search={{ studentId: entityId }} className={linkClassName}>
+        <Link
+          to="/alumnos"
+          search={{ studentId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "profesor":
       return (
-        <Link to="/profesores" search={{ profesorId: entityId }} className={linkClassName}>
+        <Link
+          to="/profesores"
+          search={{ profesorId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "grupo":
       return (
-        <Link to="/grupos" search={{ grupoId: entityId }} className={linkClassName}>
+        <Link
+          to="/grupos"
+          search={{ grupoId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "matricula":
       return (
-        <Link to="/matriculas" search={{ matriculaId: entityId }} className={linkClassName}>
+        <Link
+          to="/matriculas"
+          search={{ matriculaId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "aula":
       return (
-        <Link to="/aulas" search={{ aulaId: entityId }} className={linkClassName}>
+        <Link
+          to="/aulas"
+          search={{ aulaId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "factura":
       return (
-        <Link to="/facturas" search={{ invoiceId: entityId }} className={linkClassName}>
+        <Link
+          to="/facturas"
+          search={{ invoiceId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );
     case "documento":
       return (
-        <Link to="/documentos" search={{ documentoId: entityId }} className={linkClassName}>
+        <Link
+          to="/documentos"
+          search={{ documentoId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
           {children}
         </Link>
       );

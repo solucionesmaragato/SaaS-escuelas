@@ -12,6 +12,8 @@ import {
   type AulaLookup,
   type EspecialidadLookup,
 } from "@/hooks/useProfesores";
+import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
+import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import {
   isAdminRole,
@@ -75,6 +77,14 @@ import {
   formatSaldoDisplay,
   sortProfesoresByEstado,
 } from "@/components/profesores/profesoresShared";
+
+function formatCentroNombre(
+  idCentro: string | null | undefined,
+  centroNombreById: Map<string, string>,
+): string {
+  if (!idCentro) return "—";
+  return centroNombreById.get(idCentro) ?? idCentro;
+}
 
 type ProfesoresSearch = {
   tab?: "personal" | "profesores";
@@ -378,6 +388,12 @@ function ProfesoresPage() {
   const { tab: searchTab, profesorId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { list, create, update } = useProfesores();
+  const {
+    centrosOrdenados,
+    showCentroFilter,
+    selectedCenterId,
+    setSelectedCenterId,
+  } = useAdminCentroFilter();
 
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
   const aulas = useMemo(() => list.data?.aulas ?? [], [list.data?.aulas]);
@@ -385,6 +401,13 @@ function ProfesoresPage() {
     () => list.data?.especialidades ?? [],
     [list.data?.especialidades],
   );
+  const centroNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centrosOrdenados) {
+      map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO);
+    }
+    return map;
+  }, [centrosOrdenados]);
 
   const [query, setQuery] = useState("");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
@@ -395,21 +418,25 @@ function ProfesoresPage() {
   const isDireccionView = isDireccionRole(rol);
   const isTableView = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
   const canManage = isMasterRole(rol) || isAdminRole(rol);
+  const showCentroSelector = canManage && centrosOrdenados.length >= 1;
 
   const filtered = useMemo(() => {
-    const base = !query.trim()
-      ? profesores
-      : profesores.filter((p) => {
-          const q = query.toLowerCase();
-          return (
-            p.NOMBRE_PROFESOR?.toLowerCase().includes(q) ||
-            p.EMAIL_PROFESORES?.toLowerCase().includes(q) ||
-            p.TEXTO_ESPECIALIDADES.toLowerCase().includes(q) ||
-            p.DNI?.toLowerCase().includes(q)
-          );
-        });
+    let base = profesores;
+    if (showCentroFilter && selectedCenterId) {
+      base = base.filter((p) => p.ID_CENTRO === selectedCenterId);
+    }
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      base = base.filter(
+        (p) =>
+          p.NOMBRE_PROFESOR?.toLowerCase().includes(q) ||
+          p.EMAIL_PROFESORES?.toLowerCase().includes(q) ||
+          p.TEXTO_ESPECIALIDADES.toLowerCase().includes(q) ||
+          p.DNI?.toLowerCase().includes(q),
+      );
+    }
     return sortProfesoresByEstado(base);
-  }, [profesores, query]);
+  }, [profesores, query, showCentroFilter, selectedCenterId]);
 
   const overlayProfesor = useMemo(
     () => profesores.find((p) => p.ID_PROFESOR === overlay?.id) ?? null,
@@ -461,7 +488,7 @@ function ProfesoresPage() {
     }
   };
 
-  const tableColCount = canManage ? 8 : 7;
+  const tableColCount = canManage ? 9 : 8;
 
   if (isPersonalDataView) {
     return (
@@ -516,14 +543,24 @@ function ProfesoresPage() {
       />
 
       <Card className="p-4">
-        <div className="relative mb-4 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre, email, especialidad o DNI..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="relative flex-1 max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre, email, especialidad o DNI..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {showCentroFilter && (
+            <CentroTableFilter
+              id="profesores-centro-filter"
+              centros={centrosOrdenados}
+              value={selectedCenterId}
+              onChange={setSelectedCenterId}
+            />
+          )}
         </div>
 
         {list.isError && (
@@ -537,6 +574,7 @@ function ProfesoresPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="h-9 text-xs font-semibold">Nombre</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Centro</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Contacto</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Vacaciones</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Asuntos Propios</TableHead>
@@ -561,7 +599,9 @@ function ProfesoresPage() {
                     colSpan={tableColCount}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    {query ? "Sin resultados." : "Aún no hay profesores."}
+                    {query || (showCentroFilter && selectedCenterId)
+                      ? "Sin resultados."
+                      : "Aún no hay profesores."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -578,6 +618,9 @@ function ProfesoresPage() {
                     }
                   >
                     <TableCell className="py-2 font-medium text-sm">{p.NOMBRE_PROFESOR}</TableCell>
+                    <TableCell className="py-2 text-sm">
+                      {formatCentroNombre(p.ID_CENTRO, centroNombreById)}
+                    </TableCell>
                     <TableCell className="py-2 text-sm">
                       <ContactCompactCell phone={p.TELEFONO} email={p.EMAIL_PROFESORES} />
                     </TableCell>
@@ -639,6 +682,8 @@ function ProfesoresPage() {
         submitting={create.isPending}
         aulas={aulas}
         especialidades={especialidades}
+        centros={centrosOrdenados}
+        showCentroSelector={showCentroSelector}
         onSubmit={async (values: ProfesorCreateInput | ProfesorUpdateInput) => {
           try {
             await create.mutateAsync(values as ProfesorCreateInput);
@@ -661,6 +706,8 @@ function ProfesoresPage() {
         profesor={overlayProfesor}
         aulas={aulas}
         especialidades={especialidades}
+        centros={centrosOrdenados}
+        showCentroSelector={showCentroSelector}
         submitting={update.isPending}
         onClose={handleCloseOverlay}
         onEdit={handleEditOverlay}
@@ -735,6 +782,9 @@ function ProfesorFormDialog({
   submitting,
   aulas,
   especialidades,
+  centros = [],
+  showCentroSelector = false,
+  assignedCenterId = null,
   onSubmit,
 }: {
   open: boolean;
@@ -746,6 +796,9 @@ function ProfesorFormDialog({
   submitting: boolean;
   aulas: AulaLookup[];
   especialidades: EspecialidadLookup[];
+  centros?: Array<{ ID_CENTRO: string; NOMBRE_CENTRO: string }>;
+  showCentroSelector?: boolean;
+  assignedCenterId?: string | null;
   onSubmit: (values: ProfesorCreateInput | ProfesorUpdateInput) => void;
 }) {
   return (
@@ -763,6 +816,9 @@ function ProfesorFormDialog({
               isCreate={isCreate}
               aulas={aulas}
               especialidades={especialidades}
+              centros={centros}
+              showCentroSelector={showCentroSelector}
+              assignedCenterId={assignedCenterId}
               submitting={submitting}
               onSubmit={onSubmit}
             />

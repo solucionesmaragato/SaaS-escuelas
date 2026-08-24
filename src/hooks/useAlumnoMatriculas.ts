@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import type { Matricula } from "@/types/database";
+import { resolveMatriculaCenterId } from "@/lib/alumnoSchema";
 import {
   isAdminRole,
   isSecretariaRole,
@@ -20,6 +21,7 @@ export type MatriculaCreateInput = {
   ESPECIALIDAD: string | null;
   ID_TARIFA: string | null;
   ID_PROFESOR: string | null;
+  ID_CURSO?: string | null;
   ESTADO?: string | null;
   FECHA_ALTA?: string | null;
 };
@@ -27,6 +29,7 @@ export type MatriculaCreateInput = {
 export type MatriculaUpdateInput = {
   ESPECIALIDAD?: string | null;
   ID_TARIFA?: string | null;
+  ID_CURSO?: string | null;
   ID_PROFESOR?: string | null;
   ESTADO?: string | null;
   FECHA_ALTA?: string | null;
@@ -82,14 +85,37 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
     mutationFn: async (input: MatriculaCreateInput) => {
       assertCanMutateAlumnos(rol);
       if (!alumnoId) throw new Error("Alumno no definido");
+
+      const { data: alumno, error: alumnoError } = await supabase
+        .from("ALUMNOS")
+        .select("ID_CENTRO")
+        .eq("ID_ALUMNO", alumnoId)
+        .eq("ID_CLIENTE", tenantId)
+        .single();
+      if (alumnoError) throw alumnoError;
+
+      const idCentro = resolveMatriculaCenterId(alumno.ID_CENTRO, centerId);
+      if (!idCentro) {
+        throw new Error(
+          "No se puede crear la matrícula: el alumno no tiene centro asignado.",
+        );
+      }
+
+      const idCurso = input.ID_CURSO?.trim();
+      if (!idCurso) {
+        throw new Error("No se puede crear la matrícula: selecciona un curso escolar.");
+      }
+
       const payload = {
         ID_ALUMNO: alumnoId,
         ESPECIALIDAD: input.ESPECIALIDAD,
         ID_TARIFA: input.ID_TARIFA,
         ID_PROFESOR: input.ID_PROFESOR,
+        ID_CURSO: idCurso,
         ESTADO: input.ESTADO ?? "Activo",
         FECHA_ALTA: input.FECHA_ALTA ?? new Date().toISOString().slice(0, 10),
         ...workspaceScopeFields(tenantId, centerId),
+        ID_CENTRO: idCentro,
       };
       const { data, error } = await supabase
         .from("MATRICULAS")
@@ -105,9 +131,19 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
   const update = useMutation({
     mutationFn: async ({ id, patch }: { id: string; patch: MatriculaUpdateInput }) => {
       assertCanMutateAlumnos(rol);
+
+      const normalizedPatch = { ...patch };
+      if ("ID_CURSO" in normalizedPatch) {
+        const idCurso = normalizedPatch.ID_CURSO?.trim();
+        if (!idCurso) {
+          throw new Error("Selecciona un curso escolar.");
+        }
+        normalizedPatch.ID_CURSO = idCurso;
+      }
+
       let query = supabase
         .from("MATRICULAS")
-        .update(patch)
+        .update(normalizedPatch)
         .eq("ID_MATRICULA", id)
         .eq("ID_CLIENTE", tenantId);
       if (centerId) query = query.eq("ID_CENTRO", centerId);

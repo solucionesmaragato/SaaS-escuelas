@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SelectTenantRouteImport } from './routes/select-tenant'
+import { Route as RegistroRouteImport } from './routes/registro'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RegistroCallbackRouteImport } from './routes/registro.callback'
 import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AuthenticatedTurnosRouteImport } from './routes/_authenticated/turnos'
 import { Route as AuthenticatedTarifasRouteImport } from './routes/_authenticated/tarifas'
@@ -34,6 +36,7 @@ import { Route as AuthenticatedEspecialidadesRouteImport } from './routes/_authe
 import { Route as AuthenticatedEscuelaRouteImport } from './routes/_authenticated/escuela'
 import { Route as AuthenticatedDocumentosRouteImport } from './routes/_authenticated/documentos'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedComprasInternasRouteImport } from './routes/_authenticated/comprasInternas'
 import { Route as AuthenticatedClientesRouteImport } from './routes/_authenticated/clientes'
 import { Route as AuthenticatedAusenciasRouteImport } from './routes/_authenticated/ausencias'
 import { Route as AuthenticatedAulasRouteImport } from './routes/_authenticated/aulas'
@@ -60,6 +63,11 @@ const SelectTenantRoute = SelectTenantRouteImport.update({
   path: '/select-tenant',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegistroRoute = RegistroRouteImport.update({
+  id: '/registro',
+  path: '/registro',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -78,6 +86,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const RegistroCallbackRoute = RegistroCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => RegistroRoute,
 } as any)
 const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
   id: '/usuarios',
@@ -184,6 +197,12 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedComprasInternasRoute =
+  AuthenticatedComprasInternasRouteImport.update({
+    id: '/comprasInternas',
+    path: '/comprasInternas',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedClientesRoute = AuthenticatedClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
@@ -300,6 +319,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/registro': typeof RegistroRouteWithChildren
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
   '/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
@@ -307,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/aulas': typeof AuthenticatedAulasRoute
   '/ausencias': typeof AuthenticatedAusenciasRoute
   '/clientes': typeof AuthenticatedClientesRoute
+  '/comprasInternas': typeof AuthenticatedComprasInternasRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/escuela': typeof AuthenticatedEscuelaRoute
@@ -327,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
+  '/registro/callback': typeof RegistroCallbackRoute
   '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/app/archivos': typeof AuthenticatedAppArchivosRoute
   '/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
@@ -346,12 +368,14 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/registro': typeof RegistroRouteWithChildren
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
   '/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
   '/aulas': typeof AuthenticatedAulasRoute
   '/ausencias': typeof AuthenticatedAusenciasRoute
   '/clientes': typeof AuthenticatedClientesRoute
+  '/comprasInternas': typeof AuthenticatedComprasInternasRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/documentos': typeof AuthenticatedDocumentosRoute
   '/escuela': typeof AuthenticatedEscuelaRoute
@@ -372,6 +396,7 @@ export interface FileRoutesByTo {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
+  '/registro/callback': typeof RegistroCallbackRoute
   '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/app/archivos': typeof AuthenticatedAppArchivosRoute
   '/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
@@ -393,6 +418,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/registro': typeof RegistroRouteWithChildren
   '/select-tenant': typeof SelectTenantRoute
   '/_authenticated/alumnos': typeof AuthenticatedAlumnosRoute
   '/_authenticated/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
@@ -400,6 +426,7 @@ export interface FileRoutesById {
   '/_authenticated/aulas': typeof AuthenticatedAulasRoute
   '/_authenticated/ausencias': typeof AuthenticatedAusenciasRoute
   '/_authenticated/clientes': typeof AuthenticatedClientesRoute
+  '/_authenticated/comprasInternas': typeof AuthenticatedComprasInternasRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/documentos': typeof AuthenticatedDocumentosRoute
   '/_authenticated/escuela': typeof AuthenticatedEscuelaRoute
@@ -420,6 +447,7 @@ export interface FileRoutesById {
   '/_authenticated/tarifas': typeof AuthenticatedTarifasRoute
   '/_authenticated/turnos': typeof AuthenticatedTurnosRoute
   '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
+  '/registro/callback': typeof RegistroCallbackRoute
   '/_authenticated/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/_authenticated/app/archivos': typeof AuthenticatedAppArchivosRoute
   '/_authenticated/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
@@ -441,6 +469,7 @@ export interface FileRouteTypes {
     | '/'
     | '/firmar-sepa'
     | '/login'
+    | '/registro'
     | '/select-tenant'
     | '/alumnos'
     | '/alumnosMatriculas'
@@ -448,6 +477,7 @@ export interface FileRouteTypes {
     | '/aulas'
     | '/ausencias'
     | '/clientes'
+    | '/comprasInternas'
     | '/dashboard'
     | '/documentos'
     | '/escuela'
@@ -468,6 +498,7 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
+    | '/registro/callback'
     | '/app/alumnos'
     | '/app/archivos'
     | '/app/datos-personales'
@@ -487,12 +518,14 @@ export interface FileRouteTypes {
     | '/'
     | '/firmar-sepa'
     | '/login'
+    | '/registro'
     | '/select-tenant'
     | '/alumnos'
     | '/alumnosMatriculas'
     | '/aulas'
     | '/ausencias'
     | '/clientes'
+    | '/comprasInternas'
     | '/dashboard'
     | '/documentos'
     | '/escuela'
@@ -513,6 +546,7 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
+    | '/registro/callback'
     | '/app/alumnos'
     | '/app/archivos'
     | '/app/datos-personales'
@@ -533,6 +567,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/firmar-sepa'
     | '/login'
+    | '/registro'
     | '/select-tenant'
     | '/_authenticated/alumnos'
     | '/_authenticated/alumnosMatriculas'
@@ -540,6 +575,7 @@ export interface FileRouteTypes {
     | '/_authenticated/aulas'
     | '/_authenticated/ausencias'
     | '/_authenticated/clientes'
+    | '/_authenticated/comprasInternas'
     | '/_authenticated/dashboard'
     | '/_authenticated/documentos'
     | '/_authenticated/escuela'
@@ -560,6 +596,7 @@ export interface FileRouteTypes {
     | '/_authenticated/tarifas'
     | '/_authenticated/turnos'
     | '/_authenticated/usuarios'
+    | '/registro/callback'
     | '/_authenticated/app/alumnos'
     | '/_authenticated/app/archivos'
     | '/_authenticated/app/datos-personales'
@@ -581,6 +618,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   FirmarSepaRoute: typeof FirmarSepaRoute
   LoginRoute: typeof LoginRoute
+  RegistroRoute: typeof RegistroRouteWithChildren
   SelectTenantRoute: typeof SelectTenantRoute
 }
 
@@ -591,6 +629,13 @@ declare module '@tanstack/react-router' {
       path: '/select-tenant'
       fullPath: '/select-tenant'
       preLoaderRoute: typeof SelectTenantRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/registro': {
+      id: '/registro'
+      path: '/registro'
+      fullPath: '/registro'
+      preLoaderRoute: typeof RegistroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -620,6 +665,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/registro/callback': {
+      id: '/registro/callback'
+      path: '/callback'
+      fullPath: '/registro/callback'
+      preLoaderRoute: typeof RegistroCallbackRouteImport
+      parentRoute: typeof RegistroRoute
     }
     '/_authenticated/usuarios': {
       id: '/_authenticated/usuarios'
@@ -759,6 +811,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/comprasInternas': {
+      id: '/_authenticated/comprasInternas'
+      path: '/comprasInternas'
+      fullPath: '/comprasInternas'
+      preLoaderRoute: typeof AuthenticatedComprasInternasRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/clientes': {
@@ -960,6 +1019,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedAulasRoute: typeof AuthenticatedAulasRoute
   AuthenticatedAusenciasRoute: typeof AuthenticatedAusenciasRoute
   AuthenticatedClientesRoute: typeof AuthenticatedClientesRoute
+  AuthenticatedComprasInternasRoute: typeof AuthenticatedComprasInternasRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDocumentosRoute: typeof AuthenticatedDocumentosRoute
   AuthenticatedEscuelaRoute: typeof AuthenticatedEscuelaRoute
@@ -989,6 +1049,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAulasRoute: AuthenticatedAulasRoute,
   AuthenticatedAusenciasRoute: AuthenticatedAusenciasRoute,
   AuthenticatedClientesRoute: AuthenticatedClientesRoute,
+  AuthenticatedComprasInternasRoute: AuthenticatedComprasInternasRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDocumentosRoute: AuthenticatedDocumentosRoute,
   AuthenticatedEscuelaRoute: AuthenticatedEscuelaRoute,
@@ -1015,11 +1076,24 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface RegistroRouteChildren {
+  RegistroCallbackRoute: typeof RegistroCallbackRoute
+}
+
+const RegistroRouteChildren: RegistroRouteChildren = {
+  RegistroCallbackRoute: RegistroCallbackRoute,
+}
+
+const RegistroRouteWithChildren = RegistroRoute._addFileChildren(
+  RegistroRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   FirmarSepaRoute: FirmarSepaRoute,
   LoginRoute: LoginRoute,
+  RegistroRoute: RegistroRouteWithChildren,
   SelectTenantRoute: SelectTenantRoute,
 }
 export const routeTree = rootRouteImport

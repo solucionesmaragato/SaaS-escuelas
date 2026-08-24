@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -47,21 +47,31 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { EntityLink } from "@/components/navigation/EntityLink";
+import { CalendarQuickIncidenciaForm } from "@/components/sesiones/CalendarQuickIncidenciaForm";
 import { cn } from "@/lib/utils";
 
-export type CalendarEventType = "matriculas" | "leads" | "incidencias";
+export type CalendarEventType = "matriculas" | "leads" | "faltas" | "recuperaciones" | "incidencias";
 
 export interface CalendarWidgetProps {
   hideFilters?: boolean;
   embedded?: boolean;
   defaultVisibleTypes?: CalendarEventType[];
+  enableQuickIncidencia?: boolean;
+  filterCenterId?: string | null;
   pageTitle?: string;
   pageDescription?: string;
   initialAlumnoId?: string;
   initialSesionId?: string;
   initialHorarioId?: string;
   onSessionDetailClose?: () => void;
+  toolbarRight?: ReactNode;
 }
 
 const ALL_VALUE = "__all__";
@@ -84,6 +94,31 @@ function findGroupedSessionByHorarioId(
   return (
     sesiones.find((block) =>
       block.ALUMNOS_GRUPO.some((alumno) => alumno.ID_HORARIO === normalized),
+    ) ?? null
+  );
+}
+
+function findRefreshedGroupedSession(
+  blocks: GroupedSession[],
+  snapshot: GroupedSession,
+): GroupedSession | null {
+  const byGroupKey = blocks.find((block) => block.GROUP_KEY === snapshot.GROUP_KEY);
+  if (byGroupKey) return byGroupKey;
+
+  const sesionIds = new Set(snapshot.ID_SESIONES);
+  const bySesion = blocks.find((block) =>
+    block.ID_SESIONES.some((id) => sesionIds.has(id)),
+  );
+  if (bySesion) return bySesion;
+
+  const alumnoSesionIds = new Set(
+    snapshot.ALUMNOS_GRUPO.map((alumno) => alumno.ID_SESION).filter(Boolean) as string[],
+  );
+  if (alumnoSesionIds.size === 0) return null;
+
+  return (
+    blocks.find((block) =>
+      block.ALUMNOS_GRUPO.some((alumno) => alumno.ID_SESION && alumnoSesionIds.has(alumno.ID_SESION)),
     ) ?? null
   );
 }
@@ -134,26 +169,32 @@ function parseSesionDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function CalendarColorLegend() {
-  const items = [
-    { colorClass: "bg-amber-400", label: " Nuevos alumnos" },
-    { colorClass: "bg-destructive/80", label: "Faltas de alumnos" },
-    { colorClass: "bg-emerald-500", label: "Clases de Recuperación" },
-  ] as const;
+const WEEKDAY_SHORT = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const;
 
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {items.map((item) => (
-        <span key={item.label} className="inline-flex items-center gap-1.5">
-          <span
-            className={cn("size-2 shrink-0 rounded-full", item.colorClass)}
-            aria-hidden="true"
-          />
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
+function weekdayShort(date: Date): string {
+  return WEEKDAY_SHORT[(date.getDay() + 6) % 7];
+}
+
+function formatHoraRange(ev: GroupedSession): string {
+  const start = ev.HORA_INICIO?.slice(0, 5) ?? "—";
+  const end = ev.HORA_FIN?.slice(0, 5);
+  return end ? `${start}–${end}` : start;
+}
+
+function eventSubject(ev: GroupedSession): string {
+  const alumnos = ev.ALUMNOS_GRUPO.map((a) => a.TEXTO_ALUMNO).filter(Boolean);
+  const who = alumnos.length > 0 ? alumnos.join(", ") : ev.TITULO_BLOQUE;
+  if (ev.TEXTO_ESPECIALIDAD && ev.TEXTO_ESPECIALIDAD !== "—") {
+    return `${ev.TEXTO_ESPECIALIDAD} · ${who}`;
+  }
+  return who;
+}
+
+function eventDotClass(ev: GroupedSession): string {
+  if (ev.ESTADO === "Lead") return "bg-amber-400";
+  if (ev.COLOR_INCIDENCIA === "verde") return "bg-emerald-500";
+  if (ev.COLOR_INCIDENCIA === "rojo") return "bg-destructive/80";
+  return "bg-blue-500";
 }
 
 const formatearFechaKey = (d: Date) => {
@@ -267,7 +308,8 @@ type FilterExclude =
 type FilterState = {
   verClasesNormales: boolean;
   verLeads: boolean;
-  verIncidencias: boolean;
+  verFaltas: boolean;
+  verRecuperaciones: boolean;
   FILTRO_AULA: string;
   FILTRO_PROFESOR: string;
   FILTRO_ESPECIALIDAD: string;
@@ -281,12 +323,19 @@ type FilterState = {
 
 function alumnoVisibleByTypeToggle(
   alumno: GroupedSession["ALUMNOS_GRUPO"][number],
-  f: Pick<FilterState, "verClasesNormales" | "verLeads" | "verIncidencias">,
+  f: Pick<FilterState, "verClasesNormales" | "verLeads" | "verFaltas" | "verRecuperaciones">,
 ): boolean {
-  if (!f.verClasesNormales && alumno.ESTADO === "Matricula") return false;
-  if (!f.verLeads && alumno.ESTADO === "Lead") return false;
-  if (!f.verIncidencias && alumno.ESTADO === "Incidencia") return false;
-  return true;
+  if (isAlumnoRecuperacion(alumno)) return f.verRecuperaciones;
+  if (isAlumnoFalta(alumno)) return f.verFaltas;
+  if (alumno.ESTADO === "Lead") return f.verLeads;
+  if (alumno.ESTADO === "Matricula") return f.verClasesNormales;
+  return f.verClasesNormales;
+}
+
+function isAlumnoFalta(alumno: GroupedSession["ALUMNOS_GRUPO"][number]): boolean {
+  if (alumno.COLOR_INCIDENCIA === "rojo") return true;
+  if (alumno.ESTADO !== "Incidencia") return false;
+  return !isAlumnoRecuperacion(alumno);
 }
 
 function deriveBlockColorFromAlumnos(
@@ -422,6 +471,49 @@ function isIncidenciaBlock(ev: GroupedSession): boolean {
   return ev.ESTADO === "Incidencia" || Boolean(ev.COLOR_INCIDENCIA);
 }
 
+function applyCenterFilterToBlocks(
+  blocks: GroupedSession[],
+  filterCenterId?: string | null,
+): GroupedSession[] {
+  const centerId = filterCenterId?.trim();
+  if (!centerId) return blocks;
+
+  return blocks
+    .map((block) => {
+      const alumnos = block.ALUMNOS_GRUPO.filter((alumno) => alumno.ID_CENTRO === centerId);
+      if (alumnos.length === 0) return null;
+      return { ...block, ALUMNOS_GRUPO: alumnos };
+    })
+    .filter((block): block is GroupedSession => block !== null);
+}
+
+function isAlumnoRecuperacion(alumno: GroupedSession["ALUMNOS_GRUPO"][number]): boolean {
+  if (alumno.COLOR_INCIDENCIA === "verde") return true;
+  const titulo = (alumno.TITULO_CALENDARIO ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  return titulo.includes("recuperacion");
+}
+
+function canQuickIncidenciaConsulta(
+  enableQuickIncidencia: boolean,
+  alumno: GroupedSession["ALUMNOS_GRUPO"][number],
+): boolean {
+  const alumnoId = alumno.ID_ALUMNO?.trim();
+  return Boolean(enableQuickIncidencia && alumnoId && alumno.ESTADO !== "Lead");
+}
+
+function canQuickIncidenciaFalta(
+  enableQuickIncidencia: boolean,
+  alumno: GroupedSession["ALUMNOS_GRUPO"][number],
+): boolean {
+  if (!canQuickIncidenciaConsulta(enableQuickIncidencia, alumno)) return false;
+  if (alumno.COLOR_INCIDENCIA === "rojo") return false;
+  if (isAlumnoRecuperacion(alumno)) return false;
+  return true;
+}
+
 function isProminentBlock(ev: GroupedSession): boolean {
   return !isMatriculaBlock(ev);
 }
@@ -429,10 +521,14 @@ function isProminentBlock(ev: GroupedSession): boolean {
 function shouldAutoExpandSlot(
   bloques: GroupedSession[],
   verLeads: boolean,
-  verIncidencias: boolean,
+  verFaltas: boolean,
+  verRecuperaciones: boolean,
 ): boolean {
   if (verLeads && bloques.some(isLeadBlock)) return true;
-  if (verIncidencias && bloques.some(isIncidenciaBlock)) return true;
+  if (verFaltas && bloques.some((b) => b.ALUMNOS_GRUPO.some(isAlumnoFalta))) return true;
+  if (verRecuperaciones && bloques.some((b) => b.ALUMNOS_GRUPO.some(isAlumnoRecuperacion))) {
+    return true;
+  }
   return false;
 }
 
@@ -496,28 +592,32 @@ function groupEventsBy30MinSlot(eventos: GroupedSession[]): [string, GroupedSess
 function getDefaultExpandedSlots(
   slots: [string, GroupedSession[]][],
   verLeads: boolean,
-  verIncidencias: boolean,
+  verFaltas: boolean,
+  verRecuperaciones: boolean,
 ): string[] {
   return slots
-    .filter(([, bloques]) => shouldAutoExpandSlot(bloques, verLeads, verIncidencias))
+    .filter(([, bloques]) => shouldAutoExpandSlot(bloques, verLeads, verFaltas, verRecuperaciones))
     .map(([key]) => key);
 }
 
 function resolveInitialVisibleTypes(
   defaultVisibleTypes: CalendarEventType[] | undefined,
   rol: string,
-): { verClasesNormales: boolean; verLeads: boolean; verIncidencias: boolean } {
+): { verClasesNormales: boolean; verLeads: boolean; verFaltas: boolean; verRecuperaciones: boolean } {
   if (defaultVisibleTypes) {
+    const legacyIncidencias = defaultVisibleTypes.includes("incidencias");
     return {
       verClasesNormales: defaultVisibleTypes.includes("matriculas"),
       verLeads: defaultVisibleTypes.includes("leads"),
-      verIncidencias: defaultVisibleTypes.includes("incidencias"),
+      verFaltas: defaultVisibleTypes.includes("faltas") || legacyIncidencias,
+      verRecuperaciones: defaultVisibleTypes.includes("recuperaciones") || legacyIncidencias,
     };
   }
   return {
     verClasesNormales: isProfesorRole(rol) || isDireccionRole(rol),
     verLeads: true,
-    verIncidencias: true,
+    verFaltas: true,
+    verRecuperaciones: true,
   };
 }
 
@@ -570,12 +670,15 @@ export function CalendarWidget({
   hideFilters = false,
   embedded = false,
   defaultVisibleTypes,
+  enableQuickIncidencia = false,
+  filterCenterId,
   pageTitle,
   pageDescription,
   initialAlumnoId,
   initialSesionId,
   initialHorarioId,
   onSessionDetailClose,
+  toolbarRight,
 }: CalendarWidgetProps) {
   const { rol, perfil, tenantId } = useActiveTenant();
   const lockVisibleTypes = hideFilters && defaultVisibleTypes !== undefined;
@@ -585,6 +688,10 @@ export function CalendarWidget({
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarView, setCalendarView] = useState<"day" | "week" | "month">("month");
   const [selectedEvent, setSelectedEvent] = useState<GroupedSession | null>(null);
+  const [quickIncidencia, setQuickIncidencia] = useState<{
+    alumnoId: string;
+    kind: "falta" | "consulta";
+  } | null>(null);
 
   const sesionDeepLinkQuery = useQuery({
     queryKey: ["sesion-deep-link", tenantId, initialSesionId],
@@ -606,6 +713,7 @@ export function CalendarWidget({
     (open: boolean) => {
       if (open) return;
       setSelectedEvent(null);
+      setQuickIncidencia(null);
       if (initialSesionId) {
         onSessionDetailClose?.();
       }
@@ -670,21 +778,18 @@ export function CalendarWidget({
   const [FILTRO_ESPECIALIDAD, setFILTRO_ESPECIALIDAD] = useState("");
   const [FILTRO_ALUMNO, setFILTRO_ALUMNO] = useState(() => initialAlumnoId ?? "");
   const [verLeadsState, setVerLeads] = useState(initialTypes.verLeads);
-  const [verIncidenciasState, setVerIncidencias] = useState(initialTypes.verIncidencias);
+  const [verFaltasState, setVerFaltas] = useState(initialTypes.verFaltas);
+  const [verRecuperacionesState, setVerRecuperaciones] = useState(initialTypes.verRecuperaciones);
   const [FILTRO_DIA, setFILTRO_DIA] = useState("");
   const [FILTRO_HORA_INICIO, setFILTRO_HORA_INICIO] = useState("");
   const [FILTRO_HORA_FIN, setFILTRO_HORA_FIN] = useState("");
   const [verClasesNormalesState, setVerClasesNormales] = useState(initialTypes.verClasesNormales);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const verLeads = lockVisibleTypes
-    ? defaultVisibleTypes!.includes("leads")
-    : verLeadsState;
-  const verIncidencias = lockVisibleTypes
-    ? defaultVisibleTypes!.includes("incidencias")
-    : verIncidenciasState;
-  const verClasesNormales = lockVisibleTypes
-    ? defaultVisibleTypes!.includes("matriculas")
-    : verClasesNormalesState;
+  const verLeads = verLeadsState;
+  const verFaltas = verFaltasState;
+  const verRecuperaciones = verRecuperacionesState;
+  const verClasesNormales = verClasesNormalesState;
 
   useEffect(() => {
     if (isDireccionRole(rol) && perfil?.ID_PROFESOR) {
@@ -759,7 +864,8 @@ export function CalendarWidget({
     () => ({
       verClasesNormales,
       verLeads,
-      verIncidencias,
+      verFaltas,
+      verRecuperaciones,
       FILTRO_AULA,
       FILTRO_PROFESOR,
       FILTRO_ESPECIALIDAD,
@@ -773,7 +879,8 @@ export function CalendarWidget({
     [
       verClasesNormales,
       verLeads,
-      verIncidencias,
+      verFaltas,
+      verRecuperaciones,
       FILTRO_AULA,
       FILTRO_PROFESOR,
       FILTRO_ESPECIALIDAD,
@@ -786,14 +893,31 @@ export function CalendarWidget({
     ],
   );
 
-  const eventosFiltrados = useMemo(
-    () =>
-      sesiones
-        .filter((block) => passesFilters(block, null, filterState))
-        .map((block) => applyTypeFiltersToBlock(block, filterState))
-        .filter((block): block is GroupedSession => block !== null),
-    [sesiones, filterState],
-  );
+  const eventosFiltrados = useMemo(() => {
+    const filtered = sesiones
+      .filter((block) => passesFilters(block, null, filterState))
+      .map((block) => applyTypeFiltersToBlock(block, filterState))
+      .filter((block): block is GroupedSession => block !== null);
+
+    return applyCenterFilterToBlocks(filtered, filterCenterId);
+  }, [sesiones, filterState, filterCenterId]);
+
+  useEffect(() => {
+    if (!selectedEvent) return;
+
+    const match = findRefreshedGroupedSession(eventosFiltrados, selectedEvent);
+    if (!match) {
+      setSelectedEvent(null);
+      setQuickIncidencia(null);
+      if (initialSesionId) {
+        onSessionDetailClose?.();
+      }
+      return;
+    }
+    if (match !== selectedEvent) {
+      setSelectedEvent(match);
+    }
+  }, [eventosFiltrados, selectedEvent, initialSesionId, onSessionDetailClose]);
 
   const cascadingOptions = useMemo(() => {
     const typeFilteredBlocks = sesiones
@@ -936,6 +1060,59 @@ export function CalendarWidget({
     setCalendarView("day");
   };
 
+  const renderDayNumber = (date: Date, isToday: boolean, compact = false) => {
+    const className = cn(
+      compact
+        ? "flex h-5 w-5 items-center justify-center self-end rounded-full text-[10px] font-semibold"
+        : "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
+      isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+      enableQuickIncidencia && "cursor-pointer hover:opacity-80",
+    );
+
+    if (enableQuickIncidencia) {
+      return (
+        <button
+          type="button"
+          aria-label={`Ver día ${date.getDate()}`}
+          onClick={() => navigateToDay(date)}
+          className={className}
+        >
+          {date.getDate()}
+        </button>
+      );
+    }
+
+    return <span className={className}>{date.getDate()}</span>;
+  };
+
+  const renderAgendaRow = (ev: GroupedSession, compact = false) => (
+    <button
+      key={ev.GROUP_KEY}
+      type="button"
+      onClick={() => setSelectedEvent(ev)}
+      className={cn(
+        "flex w-full max-w-full min-w-0 flex-col rounded-lg text-left transition-opacity hover:opacity-90",
+        getEventColorClass(ev),
+        compact ? "gap-0.5 px-2 py-1.5" : "gap-1 px-3 py-2.5",
+      )}
+    >
+      <span
+        className={cn(
+          "tabular-nums font-semibold",
+          compact ? "text-[11px]" : "text-sm",
+        )}
+      >
+        {formatHoraRange(ev)}
+      </span>
+      <span className={cn("break-words font-medium", compact ? "text-[11px]" : "text-sm")}>
+        {eventSubject(ev)}
+      </span>
+      <span className={cn("break-all opacity-70", compact ? "text-[10px]" : "text-xs")}>
+        {ev.TEXTO_AULA}
+      </span>
+    </button>
+  );
+
   const renderEventButton = (ev: GroupedSession, compact = true) => (
     <button
       key={ev.GROUP_KEY}
@@ -1022,7 +1199,7 @@ export function CalendarWidget({
       );
     }
 
-    const defaultExpanded = getDefaultExpandedSlots(slots, verLeads, verIncidencias);
+    const defaultExpanded = getDefaultExpandedSlots(slots, verLeads, verFaltas, verRecuperaciones);
 
     return (
       <Accordion
@@ -1077,8 +1254,10 @@ export function CalendarWidget({
       FILTRO_PROFESOR ||
       FILTRO_ESPECIALIDAD ||
       FILTRO_AULA ||
-      (!lockVisibleTypes && !verLeads) ||
-      (!lockVisibleTypes && !verIncidencias) ||
+      !verClasesNormales ||
+      !verLeads ||
+      !verFaltas ||
+      !verRecuperaciones ||
       FILTRO_DIA ||
       FILTRO_HORA_INICIO ||
       FILTRO_HORA_FIN);
@@ -1090,16 +1269,165 @@ export function CalendarWidget({
     setFILTRO_PROFESOR(isDireccionRole(rol) && perfil?.ID_PROFESOR ? perfil.ID_PROFESOR : "");
     setFILTRO_ESPECIALIDAD("");
     setFILTRO_AULA("");
-    if (!lockVisibleTypes) {
-      setVerLeads(true);
-      setVerIncidencias(true);
-    }
+    setVerClasesNormales(true);
+    setVerLeads(true);
+    setVerFaltas(true);
+    setVerRecuperaciones(true);
     setFILTRO_DIA("");
     setFILTRO_HORA_INICIO("");
     setFILTRO_HORA_FIN("");
   };
 
-  const viewControls = (
+  const typeToggleButtons = (
+    <div
+      className={cn(
+        "flex items-center",
+        lockVisibleTypes
+          ? "max-lg:grid max-lg:w-full max-lg:grid-cols-2 max-lg:gap-1 lg:flex lg:flex-nowrap lg:gap-1"
+          : "flex-wrap gap-2",
+      )}
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size={lockVisibleTypes ? undefined : "sm"}
+        aria-pressed={verClasesNormales}
+        className={cn(
+          lockVisibleTypes && "h-7 px-2 text-xs max-lg:w-full",
+          verClasesNormales
+            ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 shadow-sm ring-1 ring-blue-300/60 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 dark:ring-blue-800/60 dark:hover:bg-blue-900/40"
+            : "border-blue-200 text-blue-800 hover:bg-blue-50 opacity-60 dark:border-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/20",
+        )}
+        onClick={() => setVerClasesNormales((v) => !v)}
+      >
+        🟦 Matriculadas
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size={lockVisibleTypes ? undefined : "sm"}
+        aria-pressed={verLeads}
+        className={cn(
+          lockVisibleTypes && "h-7 px-2 text-xs max-lg:w-full",
+          verLeads
+            ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 dark:ring-amber-800/60 dark:hover:bg-amber-900/40"
+            : "border-amber-200 text-amber-800 hover:bg-amber-50 opacity-60 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-900/20",
+        )}
+        onClick={() => setVerLeads((v) => !v)}
+      >
+        🟨 Leads
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size={lockVisibleTypes ? undefined : "sm"}
+        aria-pressed={verFaltas}
+        className={cn(
+          lockVisibleTypes && "h-7 px-2 text-xs max-lg:w-full",
+          verFaltas
+            ? "bg-red-100 text-red-900 border-red-300 hover:bg-red-200 shadow-sm ring-1 ring-red-300/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:ring-red-800/60 dark:hover:bg-red-900/40"
+            : "border-red-200 text-red-800 hover:bg-red-50 opacity-60 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20",
+        )}
+        onClick={() => setVerFaltas((v) => !v)}
+      >
+        🟥 Faltas
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size={lockVisibleTypes ? undefined : "sm"}
+        aria-pressed={verRecuperaciones}
+        className={cn(
+          lockVisibleTypes && "h-7 px-2 text-xs max-lg:w-full",
+          verRecuperaciones
+            ? "bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200 shadow-sm ring-1 ring-emerald-300/60 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800 dark:ring-emerald-800/60 dark:hover:bg-emerald-900/40"
+            : "border-emerald-200 text-emerald-800 hover:bg-emerald-50 opacity-60 dark:border-emerald-900/50 dark:text-emerald-400 dark:hover:bg-emerald-900/20",
+        )}
+        onClick={() => setVerRecuperaciones((v) => !v)}
+      >
+        🟩 Recuperaciones
+      </Button>
+    </div>
+  );
+
+  const dashboardToolbarControls = (
+    <div className="flex flex-nowrap items-center gap-1">
+      <ToggleGroup
+        type="single"
+        value={calendarView}
+        onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
+        className="border rounded-md p-0.5"
+      >
+        <ToggleGroupItem value="day" aria-label="Vista día" className="h-7 px-2 text-xs">
+          Día
+        </ToggleGroupItem>
+        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-7 px-2 text-xs">
+          Semana
+        </ToggleGroupItem>
+        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-7 px-2 text-xs">
+          Mes
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={navigatePrev}>
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </Button>
+      <div className="min-w-0 max-w-[140px] truncate text-center text-xs font-medium capitalize">
+        {tituloCalendario}
+      </div>
+      <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={navigateNext}>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        variant="outline"
+        className="h-7 shrink-0 px-2 text-xs"
+        onClick={() => setCurrentDate(new Date())}
+      >
+        Hoy
+      </Button>
+    </div>
+  );
+
+  const dashboardMobileToolbarControls = (
+    <div className="flex w-full min-w-0 flex-col gap-1.5">
+      <ToggleGroup
+        type="single"
+        value={calendarView}
+        onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
+        className="w-full border rounded-md p-0.5"
+      >
+        <ToggleGroupItem value="day" aria-label="Vista día" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Día
+        </ToggleGroupItem>
+        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Semana
+        </ToggleGroupItem>
+        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Mes
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={navigatePrev}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0 flex-1 truncate text-center text-xs font-medium capitalize">
+          {tituloCalendario}
+        </div>
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={navigateNext}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 px-2 text-xs"
+          onClick={() => setCurrentDate(new Date())}
+        >
+          Hoy
+        </Button>
+      </div>
+    </div>
+  );
+
+  const desktopCalendarControls = (
     <div className="flex flex-wrap items-center gap-2">
       <ToggleGroup
         type="single"
@@ -1120,7 +1448,7 @@ export function CalendarWidget({
       <Button variant="outline" size="icon" onClick={navigatePrev}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      <div className="min-w-[180px] text-center font-medium capitalize text-sm">
+      <div className="min-w-0 max-w-[180px] truncate text-center font-medium capitalize text-sm">
         {tituloCalendario}
       </div>
       <Button variant="outline" size="icon" onClick={navigateNext}>
@@ -1132,6 +1460,159 @@ export function CalendarWidget({
     </div>
   );
 
+  const viewControls = hideFilters ? (
+    desktopCalendarControls
+  ) : (
+    <div className="flex w-full min-w-0 flex-col gap-1.5 lg:hidden">
+      <ToggleGroup
+        type="single"
+        value={calendarView}
+        onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
+        className="w-full border rounded-md p-0.5"
+      >
+        <ToggleGroupItem value="day" aria-label="Vista día" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Día
+        </ToggleGroupItem>
+        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Semana
+        </ToggleGroupItem>
+        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-8 min-w-0 flex-1 px-2 text-xs">
+          Mes
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <div className="flex min-w-0 items-center gap-1">
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={navigatePrev}>
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0 flex-1 truncate text-center text-xs font-medium capitalize">
+          {tituloCalendario}
+        </div>
+        <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={navigateNext}>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const sidebarFilterFields = (
+    <>
+      <div className="space-y-3">
+        {showCentroFilter ? (
+          <FilterMultiSelect
+            id="sesiones-centro-filter"
+            label="Centro"
+            icon={Building2}
+            options={centroOptions}
+            selected={selectedCenters}
+            onChange={setSelectedCenters}
+            allLabel="Todos los centros"
+            searchPlaceholder="Buscar centro..."
+          />
+        ) : null}
+        <FilterMultiSelect
+          label="Grupos"
+          icon={Users}
+          options={grupoOptions}
+          selected={selectedGrupos}
+          onChange={setSelectedGrupos}
+          allLabel="Todos los grupos"
+          searchPlaceholder="Buscar grupo..."
+        />
+        <FilterSelect
+          label="Alumno"
+          icon={User}
+          value={FILTRO_ALUMNO}
+          options={cascadingOptions.alumnos}
+          onChange={setFILTRO_ALUMNO}
+          placeholder="Todos los alumnos"
+        />
+        <FilterSelect
+          label="Profesor"
+          icon={GraduationCap}
+          value={FILTRO_PROFESOR}
+          options={cascadingOptions.profesores}
+          onChange={setFILTRO_PROFESOR}
+          placeholder="Todos los profesores"
+        />
+        <FilterSelect
+          label="Especialidad"
+          icon={BookOpen}
+          value={FILTRO_ESPECIALIDAD}
+          options={cascadingOptions.especialidades}
+          onChange={setFILTRO_ESPECIALIDAD}
+          placeholder="Todas las especialidades"
+        />
+        <FilterSelect
+          label="Aula"
+          icon={Home}
+          value={FILTRO_AULA}
+          options={cascadingOptions.aulas}
+          onChange={setFILTRO_AULA}
+          placeholder="Todas las aulas"
+        />
+      </div>
+
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="temporal" className="border rounded-lg px-3">
+          <AccordionTrigger className="text-xs font-semibold py-3 hover:no-underline">
+            Filtros Avanzados Temporales
+          </AccordionTrigger>
+          <AccordionContent className="space-y-3 pb-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Día exacto</Label>
+              <Input
+                type="date"
+                className="h-9 text-sm"
+                value={FILTRO_DIA}
+                onChange={(e) => setFILTRO_DIA(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Hora inicio</Label>
+                <Input
+                  className="h-9 text-sm text-center"
+                  placeholder="16:00"
+                  value={FILTRO_HORA_INICIO}
+                  onChange={(e) => setFILTRO_HORA_INICIO(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Hora fin</Label>
+                <Input
+                  className="h-9 text-sm text-center"
+                  placeholder="17:00"
+                  value={FILTRO_HORA_FIN}
+                  onChange={(e) => setFILTRO_HORA_FIN(e.target.value)}
+                />
+              </div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      {hasActiveFilters && (
+        <Button
+          variant="ghost"
+          className="w-full h-8 text-xs text-destructive hover:text-destructive"
+          onClick={clearAllFilters}
+        >
+          Limpiar filtros
+        </Button>
+      )}
+    </>
+  );
+
+  const mobileSheetFilterFields = (
+    <>
+      <div className="space-y-2">
+        <Label className="text-xs font-medium text-muted-foreground">Tipo de sesión</Label>
+        {typeToggleButtons}
+      </div>
+      {sidebarFilterFields}
+    </>
+  );
+
   return (
     <>
       <div
@@ -1140,65 +1621,69 @@ export function CalendarWidget({
         )}
       >
       {lockVisibleTypes ? (
-          <div
-            className={cn(
-              "flex shrink-0 flex-col gap-4 md:flex-row md:items-center md:justify-between",
-              !embedded && "mb-4",
-            )}
-          >
-            <CalendarColorLegend />
-            {viewControls}
-          </div>
-        ) : (
-          <div className={cn("flex flex-col gap-3", embedded && "shrink-0")}>
-            {pageTitle && <PageHeader title={pageTitle} description={pageDescription} />}
-            <div className="flex flex-wrap items-center justify-between gap-4 w-full">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={verClasesNormales}
-                  className={
-                    verClasesNormales
-                      ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 shadow-sm ring-1 ring-blue-300/60 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 dark:ring-blue-800/60 dark:hover:bg-blue-900/40"
-                      : "border-blue-200 text-blue-800 hover:bg-blue-50 opacity-60 dark:border-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                  }
-                  onClick={() => setVerClasesNormales((v) => !v)}
-                >
-                  🟦 Ver Clases Matriculadas
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={verLeads}
-                  className={
-                    verLeads
-                      ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 dark:ring-amber-800/60 dark:hover:bg-amber-900/40"
-                      : "border-amber-200 text-amber-800 hover:bg-amber-50 opacity-60 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                  }
-                  onClick={() => setVerLeads((v) => !v)}
-                >
-                  🟨 Ver Leads
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-pressed={verIncidencias}
-                  className={
-                    verIncidencias
-                      ? "bg-red-100 text-red-900 border-red-300 hover:bg-red-200 shadow-sm ring-1 ring-red-300/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:ring-red-800/60 dark:hover:bg-red-900/40"
-                      : "border-red-200 text-red-800 hover:bg-red-50 opacity-60 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20"
-                  }
-                  onClick={() => setVerIncidencias((v) => !v)}
-                >
-                  🟥/🟩 Ver Incidencias
-                </Button>
-              </div>
-              {viewControls}
+          <>
+            <div
+              className={cn(
+                "flex w-full shrink-0 flex-col gap-2 lg:hidden",
+                !embedded && "mb-2",
+              )}
+            >
+              {typeToggleButtons}
+              {dashboardMobileToolbarControls}
+              {toolbarRight ? (
+                <div className="flex w-full justify-end">{toolbarRight}</div>
+              ) : null}
             </div>
+            <div
+              className={cn(
+                "hidden w-full shrink-0 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-2 lg:overflow-x-auto",
+                !embedded && "mb-2",
+              )}
+            >
+              <div className="min-w-0 justify-self-start">{typeToggleButtons}</div>
+              <div className="shrink-0 justify-self-center">{dashboardToolbarControls}</div>
+              <div className="shrink-0 justify-self-end">
+                {toolbarRight ?? <span className="inline-block w-0" aria-hidden="true" />}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className={cn("flex flex-col gap-2", embedded && "shrink-0")}>
+            {pageTitle ? (
+              <>
+                <div className="hidden lg:block">
+                  <PageHeader title={pageTitle} description={pageDescription} />
+                </div>
+                <div className="flex items-center gap-2 lg:hidden">
+                  <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{pageTitle}</h1>
+                  {!hideFilters && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFiltersOpen(true)}
+                    >
+                      <Filter className="mr-1.5 h-3.5 w-3.5" />
+                      Filtros
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentDate(new Date())}
+                  >
+                    Hoy
+                  </Button>
+                </div>
+              </>
+            ) : null}
+            {viewControls}
+            {!hideFilters && (
+              <div className="hidden flex-wrap items-center justify-between gap-4 w-full lg:flex">
+                {typeToggleButtons}
+                {desktopCalendarControls}
+              </div>
+            )}
           </div>
         )}
 
@@ -1210,122 +1695,28 @@ export function CalendarWidget({
           )}
         >
         {!hideFilters && (
-          <Card
-            className={cn(
-              "space-y-4 p-4 lg:col-span-1 shadow-sm",
-              embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
-            )}
-          >
-            <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              Filtros
-            </div>
-
-            <div className="space-y-3">
-              {showCentroFilter ? (
-                <FilterMultiSelect
-                  id="sesiones-centro-filter"
-                  label="Centro"
-                  icon={Building2}
-                  options={centroOptions}
-                  selected={selectedCenters}
-                  onChange={setSelectedCenters}
-                  allLabel="Todos los centros"
-                  searchPlaceholder="Buscar centro..."
-                />
-              ) : null}
-              <FilterMultiSelect
-                label="Grupos"
-                icon={Users}
-                options={grupoOptions}
-                selected={selectedGrupos}
-                onChange={setSelectedGrupos}
-                allLabel="Todos los grupos"
-                searchPlaceholder="Buscar grupo..."
-              />
-              <FilterSelect
-                label="Alumno"
-                icon={User}
-                value={FILTRO_ALUMNO}
-                options={cascadingOptions.alumnos}
-                onChange={setFILTRO_ALUMNO}
-                placeholder="Todos los alumnos"
-              />
-              <FilterSelect
-                label="Profesor"
-                icon={GraduationCap}
-                value={FILTRO_PROFESOR}
-                options={cascadingOptions.profesores}
-                onChange={setFILTRO_PROFESOR}
-                placeholder="Todos los profesores"
-              />
-              <FilterSelect
-                label="Especialidad"
-                icon={BookOpen}
-                value={FILTRO_ESPECIALIDAD}
-                options={cascadingOptions.especialidades}
-                onChange={setFILTRO_ESPECIALIDAD}
-                placeholder="Todas las especialidades"
-              />
-              <FilterSelect
-                label="Aula"
-                icon={Home}
-                value={FILTRO_AULA}
-                options={cascadingOptions.aulas}
-                onChange={setFILTRO_AULA}
-                placeholder="Todas las aulas"
-              />
-            </div>
-
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="temporal" className="border rounded-lg px-3">
-                <AccordionTrigger className="text-xs font-semibold py-3 hover:no-underline">
-                  Filtros Avanzados Temporales
-                </AccordionTrigger>
-                <AccordionContent className="space-y-3 pb-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Día exacto</Label>
-                    <Input
-                      type="date"
-                      className="h-9 text-sm"
-                      value={FILTRO_DIA}
-                      onChange={(e) => setFILTRO_DIA(e.target.value)}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Hora inicio</Label>
-                      <Input
-                        className="h-9 text-sm text-center"
-                        placeholder="16:00"
-                        value={FILTRO_HORA_INICIO}
-                        onChange={(e) => setFILTRO_HORA_INICIO(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Hora fin</Label>
-                      <Input
-                        className="h-9 text-sm text-center"
-                        placeholder="17:00"
-                        value={FILTRO_HORA_FIN}
-                        onChange={(e) => setFILTRO_HORA_FIN(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                className="w-full h-8 text-xs text-destructive hover:text-destructive"
-                onClick={clearAllFilters}
-              >
-                Limpiar filtros
-              </Button>
-            )}
-          </Card>
+          <>
+            <Card
+              className={cn(
+                "hidden space-y-4 p-4 shadow-sm lg:col-span-1 lg:block",
+                embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
+              )}
+            >
+              <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                Filtros
+              </div>
+              {!filtersOpen ? sidebarFilterFields : null}
+            </Card>
+            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+              <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto lg:hidden">
+                <SheetHeader>
+                  <SheetTitle>Filtros</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 space-y-4">{mobileSheetFilterFields}</div>
+              </SheetContent>
+            </Sheet>
+          </>
         )}
 
         <div
@@ -1340,8 +1731,19 @@ export function CalendarWidget({
               embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
             )}
           >
-            {calendarView !== "day" && (
+            {calendarView === "month" && (
               <div className="mb-1 shrink-0 grid grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground">
+                <div>Lun</div>
+                <div>Mar</div>
+                <div>Mié</div>
+                <div>Jue</div>
+                <div>Vie</div>
+                <div>Sáb</div>
+                <div>Dom</div>
+              </div>
+            )}
+            {calendarView === "week" && (
+              <div className="mb-1 hidden shrink-0 grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground lg:grid">
                 <div>Lun</div>
                 <div>Mar</div>
                 <div>Mié</div>
@@ -1353,9 +1755,70 @@ export function CalendarWidget({
             )}
 
               {calendarView === "month" && (
+                <>
                 <div
                   className={cn(
-                    "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60",
+                    "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:hidden",
+                    embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                  )}
+                  style={
+                    embedded
+                      ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                      : { gridTemplateRows: `repeat(${monthWeekRows}, 80px)` }
+                  }
+                >
+                  {list.isLoading
+                    ? Array.from({ length: 35 }).map((_, i) => (
+                        <Skeleton
+                          key={i}
+                          className={cn(
+                            "h-full w-full rounded-none",
+                            !embedded && "h-[80px]",
+                          )}
+                        />
+                      ))
+                    : diasDelMes.map((dia, index) => {
+                        const dateKey = formatearFechaKey(dia.date);
+                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                        const isToday = dia.date.toDateString() === new Date().toDateString();
+                        const dots = [...new Set(eventosDelDia.map(eventDotClass))].slice(0, 4);
+
+                        return (
+                          <button
+                            key={index}
+                            type="button"
+                            onClick={() => navigateToDay(dia.date)}
+                            className={cn(
+                              "flex h-full w-full min-h-0 flex-col items-center bg-background p-1.5",
+                              !embedded && "h-[80px]",
+                              !dia.isCurrentMonth && "bg-muted/30 opacity-40",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                                isToday
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {dia.date.getDate()}
+                            </span>
+                            <span className="mt-1 flex flex-wrap justify-center gap-0.5">
+                              {dots.map((dotClass) => (
+                                <span
+                                  key={dotClass}
+                                  className={cn("size-1.5 rounded-full", dotClass)}
+                                />
+                              ))}
+                            </span>
+                          </button>
+                        );
+                      })}
+                </div>
+                <div
+                  className={cn(
+                    "hidden grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:grid",
                     embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
                   )}
                   style={
@@ -1388,17 +1851,8 @@ export function CalendarWidget({
                               !dia.isCurrentMonth && "bg-muted/30 opacity-40",
                             )}
                           >
-                            <span
-                              className={cn(
-                                "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
-                                isToday
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground",
-                              )}
-                            >
-                              {dia.date.getDate()}
-                            </span>
-  
+                            {renderDayNumber(dia.date, isToday)}
+
                             <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
                               {eventosDelDia.map((ev) => renderEventButton(ev))}
                             </div>
@@ -1406,59 +1860,100 @@ export function CalendarWidget({
                         );
                       })}
                 </div>
+                </>
               )}
 
             {calendarView === "week" && (
-              <div
-                className={cn(
-                  "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60",
-                  embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
-                )}
-              >
-                {list.isLoading
-                  ? Array.from({ length: 7 }).map((_, i) => (
-                      <Skeleton
-                        key={i}
-                        className={cn(
-                          "h-full w-full rounded-none",
-                          !embedded && "min-h-[90px]",
-                        )}
-                      />
-                    ))
-                  : diasDeLaSemana.map((dia, index) => {
-                      const dateKey = formatearFechaKey(dia.date);
-                      const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                      const isToday = dia.date.toDateString() === new Date().toDateString();
+              <>
+                <div
+                  className={cn(
+                    "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:hidden",
+                    !embedded && "min-h-[360px]",
+                  )}
+                >
+                  {list.isLoading
+                    ? Array.from({ length: 7 }).map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                      ))
+                    : diasDeLaSemana.map((dia, index) => {
+                        const dateKey = formatearFechaKey(dia.date);
+                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                        const isToday = dia.date.toDateString() === new Date().toDateString();
 
-                      return (
-                        <div
-                          key={index}
-                          className={cn(
-                            "flex flex-col bg-background p-1",
-                            embedded ? "h-full min-h-0" : "min-h-[90px]",
-                          )}
-                        >
-                          <span
-                            className={`flex h-5 w-5 items-center justify-center self-end rounded-full text-[10px] font-semibold ${
-                              isToday
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground"
-                            }`}
+                        return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "rounded-lg border p-2",
+                              isToday && "border-primary/40 bg-primary/5",
+                            )}
                           >
-                            {dia.date.getDate()}
-                          </span>
-
-                          <div className="mt-0.5 min-h-0 flex-1 overflow-y-auto">
-                            {renderTimeBlockTimeline(
-                              eventosDelDia,
-                              true,
-                              `${dateKey}-${verLeads}-${verIncidencias}`,
+                            <button
+                              type="button"
+                              onClick={() => navigateToDay(dia.date)}
+                              className="mb-1.5 flex w-full items-baseline justify-between gap-2 text-left"
+                            >
+                              <span className="text-sm font-semibold">
+                                {weekdayShort(dia.date)} {dia.date.getDate()}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {eventosDelDia.length === 0
+                                  ? "Sin sesiones"
+                                  : `${eventosDelDia.length} ${eventosDelDia.length === 1 ? "clase" : "clases"}`}
+                              </span>
+                            </button>
+                            {eventosDelDia.length > 0 && (
+                              <div className="space-y-1">
+                                {eventosDelDia.map((ev) => renderAgendaRow(ev, true))}
+                              </div>
                             )}
                           </div>
-                        </div>
-                      );
-                    })}
-              </div>
+                        );
+                      })}
+                </div>
+                <div
+                  className={cn(
+                    "hidden gap-px overflow-hidden rounded-lg bg-border/60 lg:grid lg:grid-cols-7",
+                    embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                  )}
+                >
+                  {list.isLoading
+                    ? Array.from({ length: 7 }).map((_, i) => (
+                        <Skeleton
+                          key={i}
+                          className={cn(
+                            "h-full w-full rounded-none",
+                            !embedded && "min-h-[90px]",
+                          )}
+                        />
+                      ))
+                    : diasDeLaSemana.map((dia, index) => {
+                        const dateKey = formatearFechaKey(dia.date);
+                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                        const isToday = dia.date.toDateString() === new Date().toDateString();
+
+                        return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "flex flex-col bg-background p-1",
+                              embedded ? "h-full min-h-0" : "min-h-[90px]",
+                            )}
+                          >
+                            {renderDayNumber(dia.date, isToday, true)}
+
+                            <div className="mt-0.5 min-h-0 flex-1 overflow-y-auto">
+                              {renderTimeBlockTimeline(
+                                eventosDelDia,
+                                true,
+                                `${dateKey}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                </div>
+              </>
             )}
 
             {calendarView === "day" && (
@@ -1488,7 +1983,7 @@ export function CalendarWidget({
                       {renderTimeBlockTimeline(
                         mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? [],
                         false,
-                        `${formatearFechaKey(currentDate)}-${verLeads}-${verIncidencias}`,
+                        `${formatearFechaKey(currentDate)}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
                       )}
                     </div>
                   </div>
@@ -1555,25 +2050,82 @@ export function CalendarWidget({
                   Alumnos en este bloque ({selectedEvent.ALUMNOS_GRUPO.length})
                 </p>
                 <ul className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                  {alumnosOrdenados.map((alumno, idx) => (
-                    <li
-                      key={`${alumno.TEXTO_ALUMNO}-${idx}`}
-                      className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2"
-                    >
-                      <span className="font-medium text-sm">
-                        {alumno.ID_ALUMNO ? (
-                          <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
-                            {alumno.TEXTO_ALUMNO}
-                          </EntityLink>
-                        ) : (
-                          alumno.TEXTO_ALUMNO
-                        )}
-                      </span>
-                      <Badge className={`text-[10px] shrink-0 ${getAlumnoBadgeClass(alumno)}`}>
-                        {getAlumnoBadgeLabel(alumno)}
-                      </Badge>
-                    </li>
-                  ))}
+                  {alumnosOrdenados.map((alumno, idx) => {
+                    const alumnoId = alumno.ID_ALUMNO?.trim() ?? "";
+                    const quickOpen =
+                      quickIncidencia?.alumnoId === alumnoId ? quickIncidencia.kind : null;
+                    const showFalta = canQuickIncidenciaFalta(enableQuickIncidencia, alumno);
+                    const showConsulta = canQuickIncidenciaConsulta(enableQuickIncidencia, alumno);
+
+                    return (
+                      <li
+                        key={`${alumno.TEXTO_ALUMNO}-${idx}`}
+                        className="rounded-md border bg-muted/20 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-sm">
+                            {alumno.ID_ALUMNO ? (
+                              <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
+                                {alumno.TEXTO_ALUMNO}
+                              </EntityLink>
+                            ) : (
+                              alumno.TEXTO_ALUMNO
+                            )}
+                          </span>
+                          <Badge className={`text-[10px] shrink-0 ${getAlumnoBadgeClass(alumno)}`}>
+                            {getAlumnoBadgeLabel(alumno)}
+                          </Badge>
+                        </div>
+
+                        {showFalta || showConsulta ? (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {showFalta ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() =>
+                                  setQuickIncidencia({ alumnoId, kind: "falta" })
+                                }
+                              >
+                                Falta
+                              </Button>
+                            ) : null}
+                            {showConsulta ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() =>
+                                  setQuickIncidencia({ alumnoId, kind: "consulta" })
+                                }
+                              >
+                                Consulta
+                              </Button>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {quickOpen &&
+                        selectedEvent &&
+                        alumnoId &&
+                        (quickOpen === "consulta" ? showConsulta : showFalta) ? (
+                          <CalendarQuickIncidenciaForm
+                            block={selectedEvent}
+                            alumno={alumno}
+                            kind={quickOpen}
+                            onCancel={() => setQuickIncidencia(null)}
+                            onSuccess={() => {
+                              setQuickIncidencia(null);
+                              void list.refetch();
+                            }}
+                          />
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
 

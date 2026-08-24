@@ -766,7 +766,7 @@ function PermisosPage() {
                       </TableCell>
                     )}
                     {isManagementRole && (
-                      <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="font-medium">
                         <EntityLink type="profesor" id={a.ID_PROFESOR}>
                           {a.NOMBRE_PROFESOR}
                         </EntityLink>

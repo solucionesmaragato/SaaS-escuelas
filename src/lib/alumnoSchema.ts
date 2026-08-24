@@ -58,6 +58,8 @@ export const alumnoFormSchema = z.object({
   TLF_PADRE: optionalString,
   DIRECCION: optionalString,
   CP: optionalString,
+  MUNICIPIO: optionalString,
+  PROVINCIA: optionalString,
   ESTADO_ALUMNO: optionalString,
   ESTADO_MATRICULA: optionalString,
   ESTADO_RESERVA: optionalString,
@@ -100,6 +102,8 @@ const ALUMNO_UPDATE_PATCH_KEYS = [
   "TLF_PADRE",
   "DIRECCION",
   "CP",
+  "MUNICIPIO",
+  "PROVINCIA",
   "ESTADO_ALUMNO",
   "ESTADO_MATRICULA",
   "ESTADO_RESERVA",
@@ -115,7 +119,6 @@ const ALUMNO_UPDATE_PATCH_KEYS = [
   "MANDATO",
   "TARJETA",
   "STRIPE_ID",
-  "HOLDED_ID",
   "AUT_MEDIOS",
   "AUT_INSTALACIONES",
   "AUT_WEB",
@@ -167,6 +170,8 @@ export function emptyAlumnoFormValues(): AlumnoFormValues {
     TLF_PADRE: null,
     DIRECCION: null,
     CP: null,
+    MUNICIPIO: null,
+    PROVINCIA: null,
     ESTADO_ALUMNO: null,
     ESTADO_MATRICULA: null,
     ESTADO_RESERVA: null,
@@ -213,6 +218,8 @@ export function alumnoRecordToFormValues(
     TLF_PADRE: toFormString(readAlumnoField(record, "TLF_PADRE", "tlf_padre")),
     DIRECCION: toFormString(readAlumnoField(record, "DIRECCION", "direccion")),
     CP: toFormString(readAlumnoField(record, "CP", "cp")),
+    MUNICIPIO: toFormString(readAlumnoField(record, "MUNICIPIO", "municipio")),
+    PROVINCIA: toFormString(readAlumnoField(record, "PROVINCIA", "provincia")),
     ESTADO_ALUMNO: toFormString(readAlumnoField(record, "ESTADO_ALUMNO", "estado_alumno")),
     ESTADO_MATRICULA: toFormString(readAlumnoField(record, "ESTADO_MATRICULA", "estado_matricula")),
     ESTADO_RESERVA: toFormString(readAlumnoField(record, "ESTADO_RESERVA", "estado_reserva")),
@@ -232,7 +239,7 @@ export function alumnoRecordToFormValues(
     MANDATO: toFormString(readAlumnoField(record, "MANDATO", "mandato")),
     TARJETA: toFormString(readAlumnoField(record, "TARJETA", "tarjeta")),
     STRIPE_ID: toFormString(readAlumnoField(record, "STRIPE_ID", "stripe_id")),
-    HOLDED_ID: toFormString(readAlumnoField(record, "HOLDED_ID", "korefactu_id")),
+    HOLDED_ID: toFormString(readAlumnoField(record, "KOREFACTU_ID", "korefactu_id")),
     AUT_MEDIOS: toFormBool(readAlumnoField(record, "AUT_MEDIOS", "aut_medios")),
     AUT_INSTALACIONES: toFormBool(readAlumnoField(record, "AUT_INSTALACIONES", "aut_instalaciones")),
     AUT_WEB: toFormBool(readAlumnoField(record, "AUT_WEB", "aut_web")),
@@ -265,6 +272,14 @@ export function resolveAlumnoCreateCenterId(
   return options.assignedCenterId?.trim() || null;
 }
 
+/** Matrícula overlay: centro del alumno; perfil solo como respaldo (p. ej. secretaría). */
+export function resolveMatriculaCenterId(
+  alumnoCenterId: string | null | undefined,
+  profileCenterId: string | null | undefined,
+): string | null {
+  return alumnoCenterId?.trim() || profileCenterId?.trim() || null;
+}
+
 /** @deprecated Use alumnoRecordToFormValues instead. */
 export function alumnoToFormValues(
   alumno: Partial<AlumnoFormValues> & { NOMBRE_ALUMNO?: string },
@@ -277,6 +292,7 @@ export function formToAlumnoCreatePayload(values: AlumnoFormValues): AlumnoCreat
     ...values,
     NOMBRE_ALUMNO: values.NOMBRE_ALUMNO.trim(),
     ESTADO_ALUMNO: values.ESTADO_ALUMNO ?? "Activo",
+    METODO_PAGO: normalizeMetodoPago(values.METODO_PAGO) || null,
   });
 
   return payload as AlumnoCreateInput;
@@ -291,6 +307,9 @@ export function formToAlumnoUpdatePayload(values: AlumnoFormValues): AlumnoUpdat
     if (key === "NOMBRE_ALUMNO") continue;
     patch[key] = values[key];
   }
+
+  patch.KOREFACTU_ID = values.HOLDED_ID;
+  patch.METODO_PAGO = normalizeMetodoPago(values.METODO_PAGO) || null;
 
   return sanitizeAlumnoPaymentPayloadForUpdate(patch) as AlumnoUpdateInput;
 }

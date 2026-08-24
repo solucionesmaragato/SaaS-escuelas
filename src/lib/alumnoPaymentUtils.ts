@@ -12,13 +12,11 @@ export type BizumPhoneSource = {
 export function normalizeMetodoPago(metodo: string | null | undefined): string {
   if (!metodo?.trim()) return "";
   const m = metodo.trim().toLowerCase();
-  if (m === "sepa" || m.includes("remesa") || m === "giro" || m.includes("iban")) {
-    return "SEPA";
-  }
-  if (m === "tarjeta") return "Tarjeta";
+  if (m === "efectivo" || m === "cash") return "Efectivo";
+  if (m === "tarjeta" || m === "card" || m === "tpv" || m.includes("stripe")) return "Tarjeta";
   if (m === "bizum") return "Bizum";
-  if (m === "efectivo") return "Efectivo";
-  return metodo.trim();
+  if (m === "transferencia" || m === "transfer") return "Transferencia";
+  return "SEPA";
 }
 
 export function isBankRemittancePaymentMethod(metodo: string | null | undefined): boolean {
@@ -27,6 +25,10 @@ export function isBankRemittancePaymentMethod(metodo: string | null | undefined)
 
 export function isBizumPaymentMethod(metodo: string | null | undefined): boolean {
   return normalizeMetodoPago(metodo) === "Bizum";
+}
+
+export function isTarjetaPaymentMethod(metodo: string | null | undefined): boolean {
+  return normalizeMetodoPago(metodo) === "Tarjeta";
 }
 
 export function collectBizumPhoneOptions(source: BizumPhoneSource): string[] {
@@ -60,6 +62,11 @@ export function sanitizeAlumnoPaymentPayloadForUpdate<T extends Record<string, u
 
   if (!isBizumPaymentMethod(metodo)) {
     sanitized.TLF_BIZUM = null;
+  }
+
+  if ("HOLDED_ID" in sanitized) {
+    sanitized.KOREFACTU_ID = sanitized.HOLDED_ID ?? null;
+    delete sanitized.HOLDED_ID;
   }
 
   return sanitized as T;

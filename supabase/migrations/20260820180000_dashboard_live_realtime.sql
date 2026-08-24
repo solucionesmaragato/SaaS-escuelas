@@ -1,0 +1,8 @@
+-- Dashboard live: publicar FICHAJES y SESIONES en supabase_realtime.
+-- REPLICA IDENTITY FULL permite filtros por ID_CLIENTE en DELETE/UPDATE.
+
+ALTER TABLE public."FICHAJES" REPLICA IDENTITY FULL;
+ALTER TABLE public."SESIONES" REPLICA IDENTITY FULL;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public."FICHAJES";
+ALTER PUBLICATION supabase_realtime ADD TABLE public."SESIONES";

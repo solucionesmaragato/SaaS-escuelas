@@ -688,7 +688,7 @@ function DocumentosPage() {
                         {d.ID_CLIENTE}
                       </TableCell>
                     )}
-                    <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="font-medium">
                       <EntityLink type="profesor" id={d.ID_PROFESOR}>
                         {d.NOMBRE_PROFESOR}
                       </EntityLink>

@@ -154,12 +154,14 @@ function EmptySectionRow({ colSpan, message }: { colSpan: number; message: strin
 function MatriculasSubSection({
   matriculas,
   especialidadById,
+  cursoById,
   lookups,
   alumnoId,
   onNavigateToEntity,
 }: {
   matriculas: MatriculaRow[];
   especialidadById: Map<string, string>;
+  cursoById: Map<string, CursoEscolarData>;
   lookups: LookupMaps;
   alumnoId: string;
   onNavigateToEntity: OnNavigateToEntity;
@@ -184,14 +186,16 @@ function MatriculasSubSection({
             <TableRow>
               <TableHead className="w-10" />
               <TableHead>Especialidad</TableHead>
+              <TableHead>Curso</TableHead>
               <TableHead>Profesor Asignado</TableHead>
+              <TableHead>Tarifa</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Fecha Alta</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {matriculas.length === 0 ? (
-              <EmptySectionRow colSpan={5} message="Sin matrículas en este curso." />
+              <EmptySectionRow colSpan={7} message="Sin matrículas en este curso." />
             ) : (
               matriculas.map((m) => {
                 const isExpanded = expanded.has(m.ID_MATRICULA);
@@ -230,11 +234,39 @@ function MatriculasSubSection({
                           </span>
                         )}
                       </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.CURSO_ESCOLAR?.NOMBRE_CURSO ??
+                          (m.ID_CURSO ? cursoById.get(m.ID_CURSO)?.NOMBRE_CURSO : null) ??
+                          "—"}
+                      </TableCell>
                       <TableCell className="text-sm">
                         {m.PROFESOR?.NOMBRE_PROFESOR ? (
                           m.PROFESOR.NOMBRE_PROFESOR
                         ) : (
                           <span className="text-muted-foreground">Sin asignar</span>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className="text-sm"
+                        onClick={(e) => {
+                          if (m.ID_TARIFA) e.stopPropagation();
+                        }}
+                      >
+                        {m.ID_TARIFA ? (
+                          <button
+                            type="button"
+                            className="text-left text-primary underline-offset-4 hover:underline"
+                            onClick={() =>
+                              onNavigateToEntity({
+                                to: "/tarifas",
+                                search: { tarifaId: m.ID_TARIFA! },
+                              })
+                            }
+                          >
+                            {lookups.tarifaById.get(m.ID_TARIFA) ?? m.ID_TARIFA}
+                          </button>
+                        ) : (
+                          "—"
                         )}
                       </TableCell>
                       <TableCell>
@@ -246,7 +278,7 @@ function MatriculasSubSection({
                     </TableRow>
                     {isExpanded && (
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
-                        <TableCell colSpan={5} className="p-0">
+                        <TableCell colSpan={7} className="p-0">
                           <div className="p-3">
                             {horarios.length === 0 ? (
                               <p className="text-sm text-muted-foreground">
@@ -273,7 +305,10 @@ function MatriculasSubSection({
                                           onClick={() =>
                                             onNavigateToEntity({
                                               to: "/sesiones",
-                                              search: { alumnoId },
+                                              search: {
+                                                alumnoId,
+                                                horarioId: horario.ID_HORARIO,
+                                              },
                                             })
                                           }
                                         >
@@ -420,7 +455,13 @@ function GruposSubSection({
   );
 }
 
-function IncidenciasSubSection({ incidencias }: { incidencias: IncidenciaData[] }) {
+function IncidenciasSubSection({
+  incidencias,
+  onNavigateToEntity,
+}: {
+  incidencias: IncidenciaData[];
+  onNavigateToEntity: OnNavigateToEntity;
+}) {
   return (
     <div className="space-y-2">
       <SectionTitle>Incidencias</SectionTitle>
@@ -439,7 +480,16 @@ function IncidenciasSubSection({ incidencias }: { incidencias: IncidenciaData[] 
               <EmptySectionRow colSpan={4} message="Sin incidencias en este curso." />
             ) : (
               incidencias.map((inc) => (
-                <TableRow key={inc.ID_INCIDENCIA}>
+                <TableRow
+                  key={inc.ID_INCIDENCIA}
+                  className="cursor-pointer transition-colors hover:bg-muted/50"
+                  onClick={() =>
+                    onNavigateToEntity({
+                      to: "/incidencias",
+                      search: { incidenciaId: inc.ID_INCIDENCIA },
+                    })
+                  }
+                >
                   <TableCell className="text-sm">
                     <div className="font-medium flex items-center gap-1">
                       {inc.FECHA_EXACTA ?? "—"}
@@ -499,10 +549,12 @@ function EvaluacionesSubSection({
   evaluaciones,
   lookups,
   rubricaById,
+  onNavigateToEntity,
 }: {
   evaluaciones: EvaluacionData[];
   lookups: LookupMaps;
   rubricaById: Map<string, RubricaData>;
+  onNavigateToEntity: OnNavigateToEntity;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -542,16 +594,28 @@ function EvaluacionesSubSection({
                   <Fragment key={row.ID_EVALUACION}>
                     <TableRow
                       className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => toggle(row.ID_EVALUACION)}
+                      onClick={() =>
+                        onNavigateToEntity({
+                          to: "/evaluaciones",
+                          search: { evaluacionId: row.ID_EVALUACION },
+                        })
+                      }
                     >
-                      <TableCell className="w-10 px-2">
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 text-muted-foreground transition-transform",
-                            isExpanded && "rotate-180",
-                          )}
-                          aria-hidden
-                        />
+                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+                          aria-label={isExpanded ? "Contraer criterios" : "Expandir criterios"}
+                          onClick={() => toggle(row.ID_EVALUACION)}
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 text-muted-foreground transition-transform",
+                              isExpanded && "rotate-180",
+                            )}
+                            aria-hidden
+                          />
+                        </button>
                       </TableCell>
                       <TableCell>{row.TRIMESTRE === "FINAL" ? "Final" : row.TRIMESTRE}</TableCell>
                       <TableCell>
@@ -743,6 +807,7 @@ export function AlumnoAcademicoTab({
                 <MatriculasSubSection
                   matriculas={matriculas.filter((m) => (m.ID_CURSO || SIN_CURSO_KEY) === cursoId)}
                   especialidadById={matriculasEspecialidadById}
+                  cursoById={cursoById}
                   lookups={lookups}
                   alumnoId={alumnoId}
                   onNavigateToEntity={onNavigateToEntity}
@@ -753,6 +818,7 @@ export function AlumnoAcademicoTab({
                 />
                 <IncidenciasSubSection
                   incidencias={incidencias.filter((i) => (i.ID_CURSO || SIN_CURSO_KEY) === cursoId)}
+                  onNavigateToEntity={onNavigateToEntity}
                 />
                 <EvaluacionesSubSection
                   evaluaciones={evaluaciones.filter(
@@ -760,6 +826,7 @@ export function AlumnoAcademicoTab({
                   )}
                   lookups={lookups}
                   rubricaById={rubricaById}
+                  onNavigateToEntity={onNavigateToEntity}
                 />
               </div>
             </AccordionContent>

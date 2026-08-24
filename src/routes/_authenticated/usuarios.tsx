@@ -9,6 +9,7 @@ import {
   type PerfilUpdateInput,
 } from "@/hooks/usePerfiles";
 import { useClientes } from "@/hooks/useClientes";
+import { useCentros } from "@/hooks/useCentros";
 import { useProfesores } from "@/hooks/useProfesores";
 import { useActiveTenant } from "@/context/AppContext";
 import { ROLE_LABEL } from "@/lib/rbac";
@@ -90,6 +91,8 @@ const ESTADO_OPTIONS = [
   { value: "INACTIVO", label: "Inactivo" },
 ] as const;
 
+const CENTRO_NONE_VALUE = "__none__";
+
 function formatCreatedAt(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -114,6 +117,15 @@ function formatEstado(estado: string | null | undefined): string {
   if (upper === "ACTIVO") return "Activo";
   if (upper === "INACTIVO") return "Inactivo";
   return estado;
+}
+
+function formatCentroNombre(
+  idCentro: string | null | undefined,
+  centroNombreById: Map<string, string>,
+): string {
+  const id = idCentro?.trim();
+  if (!id) return "Sin centro";
+  return centroNombreById.get(id) ?? id;
 }
 
 type PendingSave =
@@ -159,6 +171,18 @@ function normalizePerfilRol(rol: string | null | undefined): Rol {
     return upper as Rol;
   }
   return "ADMIN";
+}
+
+function perfilRolSinCentroEnPerfil(rol: Rol): boolean {
+  return rol === "ADMIN" || rol === "MASTER";
+}
+
+function perfilRolRequiresCentro(rol: Rol): boolean {
+  return rol === "SECRETARIA" || rol === "DIRECCION" || rol === "PROFESOR";
+}
+
+function resolvePerfilFormCentro(rol: Rol, idCentro: string): string {
+  return perfilRolSinCentroEnPerfil(rol) ? "" : idCentro;
 }
 
 function buildPerfilFormRecord(
@@ -271,6 +295,7 @@ function PerfilDetailOverlay({
   canMutate,
   isMaster,
   submitting,
+  centroNombreById,
   onClose,
   onEdit,
   onCancelEdit,
@@ -282,6 +307,7 @@ function PerfilDetailOverlay({
   canMutate: boolean;
   isMaster: boolean;
   submitting: boolean;
+  centroNombreById: Map<string, string>;
   onClose: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -456,6 +482,10 @@ function PerfilDetailOverlay({
                 <dd>{formatRol(perfil.ROL)}</dd>
               </div>
               <div>
+                <dt className="text-muted-foreground">Centro</dt>
+                <dd>{formatCentroNombre(perfil.ID_CENTRO, centroNombreById)}</dd>
+              </div>
+              <div>
                 <dt className="text-muted-foreground">Estado</dt>
                 <dd>{formatEstado(perfil.ESTADO)}</dd>
               </div>
@@ -478,6 +508,15 @@ function UsuariosPage() {
   const canMutate = canManageUsuarios(rol);
   const canView = canViewUsuariosYMensajes(rol);
   const { list, create, update, remove } = usePerfiles();
+  const { list: centrosList } = useCentros();
+
+  const centroNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centrosList.data ?? []) {
+      map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO);
+    }
+    return map;
+  }, [centrosList.data]);
 
   const [query, setQuery] = useState("");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
@@ -545,7 +584,7 @@ function UsuariosPage() {
     );
   }
 
-  const colSpan = isMaster ? 8 : canMutate ? 6 : 5;
+  const colSpan = isMaster ? 9 : canMutate ? 7 : 6;
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -586,6 +625,7 @@ function UsuariosPage() {
                 <TableHead>NOMBRE</TableHead>
                 <TableHead>EMAIL</TableHead>
                 <TableHead>ROL</TableHead>
+                <TableHead>Centro</TableHead>
                 <TableHead>ESTADO</TableHead>
                 {isMaster && <TableHead>ID_PROFESOR</TableHead>}
                 <TableHead>Fecha de alta</TableHead>
@@ -619,12 +659,11 @@ function UsuariosPage() {
                     )}
                     <TableCell className="font-medium">{p.NOMBRE}</TableCell>
                     <TableCell>{p.EMAIL}</TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>{formatRol(p.ROL)}</TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {formatEstado(p.ESTADO)}
-                    </TableCell>
+                    <TableCell>{formatRol(p.ROL)}</TableCell>
+                    <TableCell>{formatCentroNombre(p.ID_CENTRO, centroNombreById)}</TableCell>
+                    <TableCell>{formatEstado(p.ESTADO)}</TableCell>
                     {isMaster && (
-                      <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="font-mono text-xs">
                         {p.ID_PROFESOR ? (
                           <EntityLink type="profesor" id={p.ID_PROFESOR}>
                             {p.ID_PROFESOR}
@@ -684,6 +723,7 @@ function UsuariosPage() {
         canMutate={canMutate}
         isMaster={isMaster}
         submitting={update.isPending}
+        centroNombreById={centroNombreById}
         onClose={handleCloseOverlay}
         onEdit={handleEditOverlay}
         onCancelEdit={handleCancelEditOverlay}
@@ -782,6 +822,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   const initial = "initial" in props ? props.initial : undefined;
   const { tenantId } = useActiveTenant();
   const { list: clientesList } = useClientes();
+  const { list: centrosList } = useCentros();
   const { list: profesoresList } = useProfesores();
   const isEdit = initial != null;
   const dirtyFieldsRef = useRef<Set<PerfilEditField>>(new Set());
@@ -893,6 +934,23 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
     dirtyFieldsRef.current.add("ID_CLIENTE");
     setIdCliente(clienteId);
     clearTrabajador();
+    dirtyFieldsRef.current.add("ID_CENTRO");
+    setIdCentro("");
+  };
+
+  const centrosFiltrados = useMemo(() => {
+    if (!effectiveIdCliente) return [];
+    return (centrosList.data ?? []).filter((c) => c.ID_CLIENTE === effectiveIdCliente);
+  }, [centrosList.data, effectiveIdCliente]);
+
+  const showCentroSelector =
+    centrosFiltrados.length >= 1 && !perfilRolSinCentroEnPerfil(rolValue);
+  const staffNeedsCentro =
+    perfilRolRequiresCentro(rolValue) && showCentroSelector && !idCentro.trim();
+
+  const handleCentroChange = (centroId: string) => {
+    dirtyFieldsRef.current.add("ID_CENTRO");
+    setIdCentro(centroId);
   };
 
   useEffect(() => {
@@ -939,15 +997,24 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           toast.error("El trabajador seleccionado no tiene email registrado");
           return;
         }
+        if (staffNeedsCentro) {
+          toast.error("Debes seleccionar un centro para este rol");
+          return;
+        }
+
+        const formCentro = resolvePerfilFormCentro(rolValue, idCentro);
 
         if (isEdit && initial) {
+          if (perfilRolSinCentroEnPerfil(rolValue)) {
+            dirtyFieldsRef.current.add("ID_CENTRO");
+          }
           const baseline = buildPerfilEditSnapshot(initial, isMaster);
           const current: PerfilEditSnapshot = {
             NOMBRE: nombre.trim(),
             ROL: rolValue,
             ESTADO: estado,
             ID_PROFESOR: selectedProfesorId,
-            ID_CENTRO: idCentro,
+            ID_CENTRO: formCentro,
             ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
           };
 
@@ -973,7 +1040,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           ESTADO: estado,
           ID_PROFESOR: selectedProfesorId,
           ID_CLIENTE: isMaster ? idCliente : tenantId,
-          ID_CENTRO: idCentro || null,
+          ID_CENTRO: formCentro || null,
         };
         (props as PerfilFormDialogCreateProps).onSubmit(payload);
       }}
@@ -1055,7 +1122,12 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           value={rolValue}
           onValueChange={(v) => {
             dirtyFieldsRef.current.add("ROL");
-            setRolValue(v as Rol);
+            const nextRol = v as Rol;
+            setRolValue(nextRol);
+            if (perfilRolSinCentroEnPerfil(nextRol)) {
+              dirtyFieldsRef.current.add("ID_CENTRO");
+              setIdCentro("");
+            }
           }}
         >
           <SelectTrigger>
@@ -1070,6 +1142,39 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
           </SelectContent>
         </Select>
       </div>
+
+      {showCentroSelector ? (
+        <div className="space-y-2">
+          <Label>{perfilRolRequiresCentro(rolValue) ? "Centro *" : "Centro"}</Label>
+          {masterNeedsCliente ? (
+            <Select disabled>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona un cliente primero..." />
+              </SelectTrigger>
+            </Select>
+          ) : (
+            <Select
+              key={`perfil-centro-${initial?.ID_PERFIL ?? "new"}-${idCentro}`}
+              value={idCentro || CENTRO_NONE_VALUE}
+              onValueChange={(v) => handleCentroChange(v === CENTRO_NONE_VALUE ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar centro" />
+              </SelectTrigger>
+              <SelectContent>
+                {!perfilRolRequiresCentro(rolValue) && (
+                  <SelectItem value={CENTRO_NONE_VALUE}>Sin centro</SelectItem>
+                )}
+                {centrosFiltrados.map((centro) => (
+                  <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                    {centro.NOMBRE_CENTRO}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <Label>ESTADO</Label>
@@ -1113,7 +1218,8 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
               !selectedProfesorId ||
               !nombre.trim() ||
               !email.trim() ||
-              trabajadorOptions.length === 0
+              trabajadorOptions.length === 0 ||
+              staffNeedsCentro
             }
           >
             {submitting ? "Guardando..." : submitLabel}

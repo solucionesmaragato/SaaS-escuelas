@@ -72,7 +72,15 @@ import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { toast } from "sonner";
 
+type TarifasSearch = {
+  tarifaId?: string;
+};
+
 export const Route = createFileRoute("/_authenticated/tarifas")({
+  validateSearch: (search: Record<string, unknown>): TarifasSearch => {
+    const tarifaId = search.tarifaId;
+    return typeof tarifaId === "string" && tarifaId ? { tarifaId } : {};
+  },
   component: TarifasPage,
 });
 
@@ -299,6 +307,8 @@ function TarifasPage() {
   const isReadOnly = isDireccionRole(rol);
 
   const { list, create, update, remove } = useTarifas();
+  const { tarifaId } = Route.useSearch();
+  const navigate = Route.useNavigate();
 
   const tarifas = useMemo(() => list.data ?? [], [list.data]);
 
@@ -313,7 +323,10 @@ function TarifasPage() {
     [tarifas, overlay?.id],
   );
 
-  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleCloseOverlay = useCallback(() => {
+    setOverlay(null);
+    navigate({ search: (prev) => ({ ...prev, tarifaId: undefined }), replace: true });
+  }, [navigate]);
   const handleEditOverlay = useCallback(() => {
     setOverlay((prev) => (prev ? { ...prev, mode: "edit" } : null));
   }, []);
@@ -344,6 +357,12 @@ function TarifasPage() {
         t.DETALLES?.toLowerCase().includes(q),
     );
   }, [tarifas, query]);
+
+  useEffect(() => {
+    if (!tarifaId || tarifas.length === 0) return;
+    const target = tarifas.find((t) => t.ID_TARIFA === tarifaId);
+    if (target) setOverlay({ id: tarifaId, mode: "detail" });
+  }, [tarifaId, tarifas]);
 
   if (isProfesorRole(rol)) {
     return (

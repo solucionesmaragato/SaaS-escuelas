@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import { appendCenterFilter } from "@/lib/centroFilter";
+import { resolveMatriculaCenterId } from "@/lib/alumnoSchema";
 import {
   isAdminRole,
   isSecretariaRole,
@@ -128,7 +129,32 @@ export function useAlumnosTree(filterCenterId?: string | null) {
         {} as Record<string, any>,
       );
 
-      const payload = { ...sanitizedInput, ...workspaceScopeFields(tenantId, centerId) };
+      let alumnoCenterId = sanitizedInput.ID_CENTRO as string | null | undefined;
+      const alumnoId = sanitizedInput.ID_ALUMNO as string | undefined;
+
+      if (!alumnoCenterId?.trim() && alumnoId) {
+        const { data: alumno, error: alumnoError } = await supabase
+          .from("ALUMNOS")
+          .select("ID_CENTRO")
+          .eq("ID_ALUMNO", alumnoId)
+          .eq("ID_CLIENTE", tenantId)
+          .single();
+        if (alumnoError) throw alumnoError;
+        alumnoCenterId = alumno.ID_CENTRO;
+      }
+
+      const idCentro = resolveMatriculaCenterId(alumnoCenterId, centerId);
+      if (!idCentro) {
+        throw new Error(
+          "No se puede crear la matrícula: el alumno no tiene centro asignado.",
+        );
+      }
+
+      const payload = {
+        ...sanitizedInput,
+        ...workspaceScopeFields(tenantId, centerId),
+        ID_CENTRO: idCentro,
+      };
 
       const { data, error } = await supabase
         .from("MATRICULAS")

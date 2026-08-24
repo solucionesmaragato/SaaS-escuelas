@@ -13,7 +13,7 @@ export const MESES_ANIO = [
   "Diciembre",
 ] as const;
 
-export const METODOS_PAGO = ["BIZUM", "Efectivo", "SEPA", "Tarjeta"] as const;
+export const METODOS_PAGO = ["SEPA", "Bizum", "Efectivo", "Tarjeta"] as const;
 
 export function formatPhoneForWhatsApp(phone: string | null | undefined): string {
   if (!phone) return "";

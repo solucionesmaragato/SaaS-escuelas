@@ -9,6 +9,7 @@ import {
   type AulaUpdateInput,
 } from "@/hooks/useAulas";
 import { useClientes } from "@/hooks/useClientes";
+import { useCentros } from "@/hooks/useCentros";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useActiveTenant } from "@/context/AppContext";
 import { canManageUsuarios, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
@@ -86,6 +87,14 @@ function formatCapacidad(value: number | null | undefined): string {
   return String(value);
 }
 
+function formatCentroNombre(
+  idCentro: string | null | undefined,
+  centroNombreById: Map<string, string>,
+): string {
+  if (!idCentro) return "—";
+  return centroNombreById.get(idCentro) ?? idCentro;
+}
+
 function parseCapacidadInput(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed === "") return null;
@@ -105,6 +114,7 @@ function AulaDetailOverlay({
   isMaster,
   submitting,
   especialidadNombreById,
+  centroNombreById,
   onClose,
   onEdit,
   onCancelEdit,
@@ -117,6 +127,7 @@ function AulaDetailOverlay({
   isMaster: boolean;
   submitting: boolean;
   especialidadNombreById: Map<string, string>;
+  centroNombreById: Map<string, string>;
   onClose: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -274,6 +285,10 @@ function AulaDetailOverlay({
                 </>
               )}
               <div>
+                <dt className="text-muted-foreground">Centro</dt>
+                <dd>{formatCentroNombre(aula.ID_CENTRO, centroNombreById)}</dd>
+              </div>
+              <div>
                 <dt className="text-muted-foreground">Nombre aula</dt>
                 <dd className="font-semibold">{aula.NOMBRE_AULA}</dd>
               </div>
@@ -302,6 +317,7 @@ function AulasPage() {
   const canMutate = canManageUsuarios(rol);
   const { list, create, update, remove } = useAulas();
   const { list: especialidadesList } = useEspecialidades();
+  const { list: centrosList } = useCentros();
 
   const especialidadNombreById = useMemo(() => {
     const map = new Map<string, string>();
@@ -310,6 +326,14 @@ function AulasPage() {
     }
     return map;
   }, [especialidadesList.data]);
+
+  const centroNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centrosList.data ?? []) {
+      map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO);
+    }
+    return map;
+  }, [centrosList.data]);
 
   const [query, setQuery] = useState("");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
@@ -387,7 +411,7 @@ function AulasPage() {
     );
   }
 
-  const colSpan = isMaster ? 6 : canMutate ? 4 : 3;
+  const colSpan = isMaster ? 7 : canMutate ? 5 : 4;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -427,6 +451,7 @@ function AulasPage() {
                 {isMaster && <TableHead>ID_AULA</TableHead>}
                 {isMaster && <TableHead>ID_CLIENTE</TableHead>}
                 <TableHead>Nombre aula</TableHead>
+                <TableHead>Centro</TableHead>
                 <TableHead>Capacidad</TableHead>
                 <TableHead>Especialidad</TableHead>
                 {canMutate && <TableHead className="w-12" />}
@@ -459,6 +484,7 @@ function AulasPage() {
                       <TableCell className="font-mono text-xs">{a.ID_CLIENTE}</TableCell>
                     )}
                     <TableCell className="font-medium">{a.NOMBRE_AULA}</TableCell>
+                    <TableCell>{formatCentroNombre(a.ID_CENTRO, centroNombreById)}</TableCell>
                     <TableCell className="tabular-nums">{formatCapacidad(a.CAPACIDAD)}</TableCell>
                     <TableCell>
                       {formatEspecialidadNombres(a.ESPECIALIDAD, especialidadNombreById)}
@@ -511,6 +537,7 @@ function AulasPage() {
         isMaster={isMaster}
         submitting={update.isPending}
         especialidadNombreById={especialidadNombreById}
+        centroNombreById={centroNombreById}
         onClose={handleCloseOverlay}
         onEdit={handleEditOverlay}
         onCancelEdit={handleCancelEditOverlay}
@@ -616,14 +643,24 @@ function AulaFormDialog(props: AulaFormDialogProps) {
   const { tenantId } = useActiveTenant();
   const { list: clientesList } = useClientes();
   const { list: especialidadesList } = useEspecialidades();
+  const { list: centrosList } = useCentros();
   const clientes = useMemo(() => clientesList.data ?? [], [clientesList.data]);
 
   const [nombre, setNombre] = useState("");
   const [capacidad, setCapacidad] = useState("");
   const [idCliente, setIdCliente] = useState("");
+  const [idCentro, setIdCentro] = useState("");
   const [especialidadIds, setEspecialidadIds] = useState<string[]>([]);
 
   const effectiveIdCliente = isMaster ? idCliente : tenantId;
+
+  const centrosFiltrados = useMemo(() => {
+    const rows = centrosList.data ?? [];
+    if (!effectiveIdCliente) return [];
+    return rows
+      .filter((c) => c.ID_CLIENTE === effectiveIdCliente)
+      .sort((a, b) => a.NOMBRE_CENTRO.localeCompare(b.NOMBRE_CENTRO, "es", { sensitivity: "base" }));
+  }, [centrosList.data, effectiveIdCliente]);
 
   const especialidadesFiltradas = useMemo(() => {
     const rows = especialidadesList.data ?? [];
@@ -640,12 +677,14 @@ function AulaFormDialog(props: AulaFormDialogProps) {
         initial?.CAPACIDAD != null && initial.CAPACIDAD !== 0 ? String(initial.CAPACIDAD) : "",
       );
       setIdCliente(initial?.ID_CLIENTE ?? "");
+      setIdCentro(initial?.ID_CENTRO ?? "");
       setEspecialidadIds(initial?.ESPECIALIDAD ?? []);
     }
   }, [open, initial]);
 
   const handleClienteChange = (clienteId: string) => {
     setIdCliente(clienteId);
+    setIdCentro("");
     setEspecialidadIds([]);
   };
 
@@ -656,6 +695,8 @@ function AulaFormDialog(props: AulaFormDialogProps) {
   };
 
   const masterNeedsCliente = isMaster && !isEdit && !idCliente;
+  const needsCentro = centrosFiltrados.length >= 1;
+  const centroMissing = needsCentro && !idCentro.trim();
 
   const formBody = (
     <form
@@ -667,6 +708,10 @@ function AulaFormDialog(props: AulaFormDialogProps) {
           toast.error("Debes seleccionar al menos una especialidad");
           return;
         }
+        if (needsCentro && !idCentro.trim()) {
+          toast.error("Debes seleccionar un centro");
+          return;
+        }
 
         const capacidadParsed = parseCapacidadInput(capacidad);
 
@@ -675,6 +720,7 @@ function AulaFormDialog(props: AulaFormDialogProps) {
             NOMBRE_AULA: nombre.trim(),
             ESPECIALIDAD: especialidadIds,
             CAPACIDAD: capacidadParsed,
+            ID_CENTRO: idCentro.trim(),
           };
           (props as AulaFormDialogEditProps).onSubmit(patch);
           return;
@@ -683,6 +729,7 @@ function AulaFormDialog(props: AulaFormDialogProps) {
         const payload: AulaCreateInput = {
           NOMBRE_AULA: nombre.trim(),
           ESPECIALIDAD: especialidadIds,
+          ID_CENTRO: idCentro.trim(),
           CAPACIDAD: capacidadParsed,
           ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
         };
@@ -720,6 +767,28 @@ function AulaFormDialog(props: AulaFormDialogProps) {
           )}
         </div>
       )}
+
+      {needsCentro ? (
+        <div className="space-y-2">
+          <Label>Centro *</Label>
+          {masterNeedsCliente ? (
+            <p className="text-sm text-muted-foreground">Selecciona un cliente primero...</p>
+          ) : (
+            <Select value={idCentro || undefined} onValueChange={setIdCentro}>
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar centro" />
+              </SelectTrigger>
+              <SelectContent>
+                {centrosFiltrados.map((centro) => (
+                  <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                    {centro.NOMBRE_CENTRO}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <Label>Nombre aula *</Label>
@@ -780,6 +849,7 @@ function AulaFormDialog(props: AulaFormDialogProps) {
             disabled={
               submitting ||
               masterNeedsCliente ||
+              centroMissing ||
               especialidadIds.length === 0 ||
               especialidadesFiltradas.length === 0
             }

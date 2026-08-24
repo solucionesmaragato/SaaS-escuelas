@@ -48,6 +48,7 @@ export type EspecialidadLookup = {
 export type ProfesorData = {
   ID_PROFESOR: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   NOMBRE_PROFESOR: string;
   TELEFONO: string | null;
   ESPECIALIDAD: string[] | null;
@@ -74,6 +75,7 @@ export type ProfesoresQueryData = {
 export type ProfesorCreateInput = {
   NOMBRE_PROFESOR: string;
   ROL?: Rol;
+  ID_CENTRO?: string | null;
   TELEFONO?: string | null;
   ESPECIALIDAD?: string[] | null;
   AULA?: string[] | null;
@@ -119,6 +121,7 @@ function restrictSelfProfilePatch(patch: ProfesorUpdateInput): ProfesorUpdateInp
 type ProfesorRow = {
   ID_PROFESOR: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   NOMBRE_PROFESOR: string;
   TELEFONO: string | null;
   ESPECIALIDAD: unknown;
@@ -214,6 +217,9 @@ function sanitizeProfesorPayload(
   if ("NACIMIENTO" in input) {
     payload.NACIMIENTO = nullIfEmpty(input.NACIMIENTO);
   }
+  if ("ID_CENTRO" in input) {
+    payload.ID_CENTRO = nullIfEmpty(input.ID_CENTRO);
+  }
   if ("FECHA_BAJA" in input) {
     payload.FECHA_BAJA = nullIfEmpty(input.FECHA_BAJA);
   }
@@ -256,6 +262,7 @@ function mapProfesores(
     return {
       ID_PROFESOR: row.ID_PROFESOR,
       ID_CLIENTE: row.ID_CLIENTE,
+      ID_CENTRO: row.ID_CENTRO ?? null,
       NOMBRE_PROFESOR: row.NOMBRE_PROFESOR,
       TELEFONO: row.TELEFONO,
       ESPECIALIDAD: espIds.length > 0 ? espIds : null,
@@ -276,7 +283,7 @@ function mapProfesores(
 }
 
 export function useProfesores() {
-  const { tenantId, centerId, rol, perfil } = useActiveTenant();
+  const { tenantId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = isProfesorRole(rol)
     ? ([...tenantListKey("profesores", rol, tenantId), perfil?.ID_PROFESOR ?? "none"] as const)
@@ -367,7 +374,7 @@ export function useProfesores() {
         ROL: selectedRol,
         ID_PROFESOR: profesor.ID_PROFESOR,
         ID_CLIENTE: tenantId,
-        ID_CENTRO: centerId ?? null,
+        ID_CENTRO: nullIfEmpty(input.ID_CENTRO),
         ESTADO: "ACTIVO",
       });
 

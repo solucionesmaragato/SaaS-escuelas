@@ -95,6 +95,8 @@ export interface Alumno {
   TLF_PADRE: string | null;
   DIRECCION: string | null;
   CP: string | null;
+  MUNICIPIO: string | null;
+  PROVINCIA: string | null;
   NACIMIENTO: ISODate | null;
   DTO_HERMANOS_PORCENTAJE: number | null;
   ESTADO_MATRICULA: string | null;
@@ -109,7 +111,7 @@ export interface Alumno {
   MANDATO: string | null;
   TARJETA: string | null;
   STRIPE_ID: string | null;
-  HOLDED_ID: string | null;
+  KOREFACTU_ID: string | null;
   TOTAL_MENSUAL: number | null;
   NOTAS: string | null;
   AUT_MEDIOS: boolean | null;
@@ -124,6 +126,7 @@ export interface Alumno {
 export interface Profesor {
   ID_PROFESOR: UUID;
   ID_CLIENTE: UUID;
+  ID_CENTRO: UUID | null;
   NOMBRE_PROFESOR: string;
   TELEFONO: string | null;
   ESPECIALIDAD: string | null;
@@ -142,6 +145,7 @@ export interface Profesor {
 export interface Aula {
   ID_AULA: UUID;
   ID_CLIENTE: UUID;
+  ID_CENTRO: UUID | null;
   NOMBRE_AULA: string;
   CAPACIDAD: number | null;
   ESPECIALIDAD: string | null;
@@ -313,11 +317,12 @@ export interface ReciboMensual {
   DESCUENTO: number | null;
   TOTAL_IVA: number | null;
   TOTAL_DOC: number;
-  NUM_FACTURA_HOLDED: string | null;
-  LINK_FACTURA_HOLDED: string | null;
+  NUM_FACTURA_KOREFACTU: string | null;
+  LINK_FACTURA_KOREFACTU: string | null;
   HUELLA_HASH: string | null;
   URL_QR: string | null;
   LINK_PDF_RECIBO: string | null;
+  LINK_PDF_BORRADOR: string | null;
   ESTADO_PAGO: string | null;
 }
 

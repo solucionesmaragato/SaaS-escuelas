@@ -36,6 +36,8 @@ export interface AlumnoGrupo {
   TITULO_CALENDARIO: string | null;
   COLOR_INCIDENCIA: ColorIncidencia;
   ID_HORARIO: string | null;
+  ID_SESION: string | null;
+  ID_MATRICULA: string | null;
   ID_GRUPO: string | null;
   ID_CENTRO: string | null;
 }
@@ -205,6 +207,8 @@ function groupSesiones(
       TITULO_CALENDARIO: s.TITULO_CALENDARIO,
       COLOR_INCIDENCIA: s.COLOR_INCIDENCIA,
       ID_HORARIO: s.ID_HORARIO,
+      ID_SESION: s.ID_SESION,
+      ID_MATRICULA: s.ID_MATRICULA,
       ID_GRUPO: s.ID_HORARIO ? (horarioGrupoById.get(s.ID_HORARIO) ?? null) : null,
       ID_CENTRO: s.ID_ALUMNO ? (alumnoCentroById.get(s.ID_ALUMNO) ?? null) : null,
     }));

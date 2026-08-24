@@ -34,6 +34,9 @@ export function ProfesorDetailOverlay({
   profesor,
   aulas,
   especialidades,
+  centros = [],
+  showCentroSelector = false,
+  assignedCenterId = null,
   submitting,
   onClose,
   onEdit,
@@ -45,6 +48,9 @@ export function ProfesorDetailOverlay({
   profesor: ProfesorData | null;
   aulas: AulaLookup[];
   especialidades: EspecialidadLookup[];
+  centros?: Array<{ ID_CENTRO: string; NOMBRE_CENTRO: string }>;
+  showCentroSelector?: boolean;
+  assignedCenterId?: string | null;
   submitting: boolean;
   onClose: () => void;
   onEdit: () => void;
@@ -143,6 +149,9 @@ export function ProfesorDetailOverlay({
               initial={profesor}
               aulas={aulas}
               especialidades={especialidades}
+              centros={centros}
+              showCentroSelector={showCentroSelector}
+              assignedCenterId={assignedCenterId}
               submitting={submitting}
               onSubmit={onSubmit}
             />

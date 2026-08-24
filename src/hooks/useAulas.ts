@@ -12,13 +12,14 @@ import {
 } from "@/lib/tenantQuery";
 
 const AULA_SELECT_COLUMNS =
-  "ID_AULA, ID_CLIENTE, NOMBRE_AULA, CAPACIDAD, ESPECIALIDAD" as const;
+  "ID_AULA, ID_CLIENTE, ID_CENTRO, NOMBRE_AULA, CAPACIDAD, ESPECIALIDAD" as const;
 
 const ESPECIALIDAD_LOOKUP_COLUMNS = "ID_ESPECIALIDAD, ESPECIALIDAD" as const;
 
 export interface AulaData {
   ID_AULA: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   NOMBRE_AULA: string;
   CAPACIDAD: number | null;
   ESPECIALIDAD: string[];
@@ -28,17 +29,19 @@ export interface AulaData {
 export type AulaCreateInput = {
   NOMBRE_AULA: string;
   ESPECIALIDAD: string[];
+  ID_CENTRO: string;
   CAPACIDAD?: number | null;
   ID_CLIENTE?: string;
 };
 
 export type AulaUpdateInput = Partial<
-  Pick<AulaData, "NOMBRE_AULA" | "ID_CLIENTE" | "CAPACIDAD" | "ESPECIALIDAD">
+  Pick<AulaData, "NOMBRE_AULA" | "ID_CLIENTE" | "ID_CENTRO" | "CAPACIDAD" | "ESPECIALIDAD">
 >;
 
 type AulaRow = {
   ID_AULA: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   NOMBRE_AULA: string;
   CAPACIDAD: number | string | null;
   ESPECIALIDAD: string[] | string | null;
@@ -97,6 +100,7 @@ function mapAulasWithEspecialidad(
     return {
       ID_AULA: row.ID_AULA,
       ID_CLIENTE: row.ID_CLIENTE,
+      ID_CENTRO: row.ID_CENTRO ?? null,
       NOMBRE_AULA: row.NOMBRE_AULA,
       CAPACIDAD: normalizeCapacidad(row.CAPACIDAD),
       ESPECIALIDAD: ids,
@@ -150,9 +154,14 @@ export function useAulas() {
       if (!input.ESPECIALIDAD.length) {
         throw new Error("Debes seleccionar al menos una especialidad.");
       }
+      const idCentro = input.ID_CENTRO?.trim();
+      if (!idCentro) {
+        throw new Error("Debes seleccionar un centro para el aula.");
+      }
       const payload = {
         NOMBRE_AULA: input.NOMBRE_AULA,
         ID_CLIENTE: idCliente,
+        ID_CENTRO: idCentro,
         ESPECIALIDAD: input.ESPECIALIDAD,
         CAPACIDAD: input.CAPACIDAD ?? null,
       };
@@ -184,6 +193,7 @@ export function useAulas() {
             NOMBRE_AULA: patch.NOMBRE_AULA,
             ESPECIALIDAD: patch.ESPECIALIDAD,
             CAPACIDAD: patch.CAPACIDAD,
+            ID_CENTRO: patch.ID_CENTRO,
           };
 
       let query = supabase.from("AULA").update(finalPatch).eq("ID_AULA", id);

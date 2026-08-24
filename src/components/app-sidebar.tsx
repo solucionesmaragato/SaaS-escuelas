@@ -5,7 +5,7 @@ import {
   CalendarDays, ClipboardList, AlertTriangle, UserPlus,
   Tags, Banknote, Clock, CalendarOff, FileText, CalendarClock,
   Building2, LogOut, UserCog, MessageSquare, UsersRound, UserCircle, Package,
-  ClipboardCheck, ScrollText, HardDrive,
+  ClipboardCheck, ScrollText, HardDrive, ShoppingCart,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -15,6 +15,7 @@ import {
   SidebarMenuItem, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApp, useActiveTenant } from "@/context/AppContext";
 import { useGrupos, canViewGruposNav } from "@/hooks/useGrupos";
@@ -25,8 +26,10 @@ import {
   canViewAlumnosModule,
   canViewMiPerfilNav,
   canViewUsuariosYMensajes,
+  isDireccionRole,
   isMasterRole,
   isProfesorRole,
+  isSecretariaRole,
 } from "@/lib/tenantQuery";
 
 interface NavItem {
@@ -42,6 +45,8 @@ interface NavItem {
   alumnosModuleAccess?: boolean;
   /** Hidden from PROFESOR navigation (e.g. Avisos). */
   hideForProfesor?: boolean;
+  /** Hidden from DIRECCION navigation (e.g. Avisos). */
+  hideForDireccion?: boolean;
   /** Visible only to PROFESOR. */
   profesorOnly?: boolean;
 }
@@ -83,7 +88,7 @@ const NAV: NavGroup[] = [
   {
     label: "Panel",
     items: [
-      { title: "Avisos", to: "/dashboard", icon: Bell, hideForProfesor: true },
+      { title: "Avisos", to: "/dashboard", icon: Bell, hideForProfesor: true, hideForDireccion: true },
       {
         title: "Mis datos personales",
         to: "/app/datos-personales",
@@ -120,6 +125,12 @@ const NAV: NavGroup[] = [
     label: "Facturación",
     items: [
       { title: "Facturas", to: "/facturas", icon: ScrollText, perms: ["recibos:read"] },
+      {
+        title: "Compras internas",
+        to: "/comprasInternas",
+        icon: ShoppingCart,
+        perms: ["recibos:read"],
+      },
       { title: "Recibos Mensuales", to: "/remesas", icon: Banknote, perms: ["remesas:write"] },
       { title: "Tarifas", to: "/tarifas", icon: Tags, perms: ["tarifas:read"] },
     ],
@@ -193,11 +204,16 @@ const PROFESOR_NAV: NavGroup[] = [
 ];
 
 function AvisosNavIcon({ baseColorClass }: { baseColorClass: string }) {
+  const { rol, centerId } = useActiveTenant();
   const { list } = useAvisosInternos();
-  const pendingCount = useMemo(
-    () => (list.data ?? []).filter((aviso) => aviso.LEIDO === false).length,
-    [list.data],
-  );
+  const pendingCount = useMemo(() => {
+    const centerFilter = isSecretariaRole(rol) ? centerId?.trim() || null : null;
+    return (list.data ?? []).filter((aviso) => {
+      if (aviso.LEIDO !== false) return false;
+      if (!centerFilter) return true;
+      return aviso.ID_CENTRO === centerFilter;
+    }).length;
+  }, [list.data, rol, centerId]);
 
   return (
     <Bell
@@ -214,6 +230,7 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const { rol, cliente, perfil } = useActiveTenant();
   const { activePerfil, signOut } = useApp();
+  const isDemoTenant = (activePerfil?.ID_CLIENTE ?? "").startsWith("DEMO-");
   const { list: gruposList } = useGrupos();
   const grupos = gruposList.data?.grupos ?? [];
   const showGruposNav = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
@@ -223,6 +240,7 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
   const filterVisibleItems = (items: NavItem[]) =>
     items.filter((i) => {
       if (isProfesor && i.hideForProfesor) return false;
+      if (i.hideForDireccion && isDireccionRole(rol)) return false;
       if (i.profesorOnly) return isProfesorRole(rol);
       if (i.masterOnly) return isMasterRole(rol);
       if (i.miPerfilAccess) return canViewMiPerfilNav(rol, perfil.ID_PROFESOR);
@@ -249,6 +267,11 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
             <div className="truncate text-xs text-muted-foreground">
               {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
             </div>
+            {isDemoTenant ? (
+              <Badge variant="secondary" className="mt-1 text-[10px] font-normal">
+                Entorno de prueba {activePerfil?.ID_CLIENTE}
+              </Badge>
+            ) : null}
           </div>
         </div>
       </SidebarHeader>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet, Navigate, createFileRoute, Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { Outlet, Navigate, createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { PanelLeft, Home, CalendarDays, Clock } from "lucide-react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -29,17 +29,7 @@ function AuthenticatedLayout() {
     return <Navigate to="/select-tenant" />;
   }
   if (!activePerfil) {
-    // signed in but has zero PERFILES — bad data state
-    return (
-      <div className="flex min-h-screen items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-semibold">Sin escuela asignada</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Tu cuenta no está vinculada a ninguna escuela. Contacta con tu administrador.
-          </p>
-        </div>
-      </div>
-    );
+    return <Navigate to="/registro" replace />;
   }
 
   return <AuthenticatedAppShell />;

@@ -22,6 +22,7 @@ import {
 } from "@/lib/alumnoSchema";
 import { AlumnoDetailOverlay } from "@/components/alumnos/AlumnoDetailOverlay";
 import { AlumnoFormDialog, type DraftMatriculaInput } from "@/components/alumnos/AlumnoFormDialog";
+import { isBankRemittancePaymentMethod, normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
 import { AlumnoQuickActions } from "@/components/alumnos/AlumnoQuickActions";
 import { PersonAvatar } from "@/components/PersonAvatar";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -279,14 +280,18 @@ function AlumnosPage() {
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Todos" | "Activo" | "Inactivo">("Todos");
-  const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
+  const [overlay, setOverlay] = useState<{
+    id: string;
+    mode: "detail" | "edit";
+    initialTab?: "resumen" | "pago";
+  } | null>(null);
   const [creating, setCreating] = useState(false);
   const [statusConfirming, setStatusConfirming] = useState<AlumnoTree | null>(null);
 
   const showCentroSelector = shouldShowAlumnoCentroSelector(rol, centrosOrdenados.length);
   const assignedCenterId = centerId ?? null;
   const defaultCreateCenterId =
-    selectedCentros[0] ?? centrosOrdenados[0]?.ID_CENTRO ?? null;
+    selectedCentros.length === 1 ? selectedCentros[0] : null;
 
   const alumnos = asArray<AlumnoTree>(list.data);
 
@@ -387,8 +392,12 @@ function AlumnosPage() {
   }, [navigate]);
 
   const handleOpenAlumnoOverlay = useCallback(
-    (id: string, mode: "detail" | "edit" = "detail") => {
-      setOverlay({ id, mode });
+    (
+      id: string,
+      mode: "detail" | "edit" = "detail",
+      initialTab?: "resumen" | "pago",
+    ) => {
+      setOverlay({ id, mode, initialTab });
       navigate({
         search: (prev) => ({ ...prev, alumnoId: id, studentId: undefined }),
         replace: true,
@@ -498,7 +507,11 @@ function AlumnosPage() {
         }
         toast.success("Alumno creado");
         setCreating(false);
-        handleOpenAlumnoOverlay(created.ID_ALUMNO, "detail");
+        if (isBankRemittancePaymentMethod(normalizeMetodoPago(values.METODO_PAGO))) {
+          handleOpenAlumnoOverlay(created.ID_ALUMNO, "detail", "pago");
+        } else {
+          handleOpenAlumnoOverlay(created.ID_ALUMNO, "detail");
+        }
       } else {
         const alumnoId = editAlumnoId ?? overlay?.id;
         if (!alumnoId) return;
@@ -697,11 +710,15 @@ function AlumnosPage() {
       <AlumnoDetailOverlay
         open={!!overlay}
         mode={overlay?.mode ?? "detail"}
+        initialTab={overlay?.initialTab}
         alumno={overlayAlumno}
         lookups={lookups}
         selectOptions={selectOptions}
         tarifaSesionesById={tarifaSesionesById}
         grupoSlots={grupoSlots}
+        centros={centrosOrdenados}
+        showCentroSelector={showCentroSelector}
+        assignedCenterId={assignedCenterId}
         patching={update.isPending}
         editSubmitting={update.isPending}
         horarioSaving={horarioSaving}

@@ -1,6 +1,7 @@
 import { Calendar, CreditCard } from "lucide-react";
-import { useRecibos, normalizeEstadoPago, estadoPagoStatus, type ReciboRow } from "@/hooks/useRecibos";
-import { FacturaPdfDownloadButton, formatFacturaReferencia } from "@/components/facturas/FacturaTableCells";
+import { useRecibos, normalizeEstadoPago, estadoPagoStatus, reciboTieneFacturaOficial, type ReciboRow } from "@/hooks/useRecibos";
+import { FacturaPdfDownloadButton, FacturaOficialPdfButton, formatFacturaReferencia } from "@/components/facturas/FacturaTableCells";
+import { normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
 import { formatCurrency } from "@/lib/format";
 import type { OnNavigateToEntity } from "@/lib/entityNavigation";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const TABLE_COLS = 7;
+const TABLE_COLS = 8;
 
 function FacturaReferenciaReadOnly({ row }: { row: ReciboRow }) {
   const ref = formatFacturaReferencia(row);
@@ -62,6 +63,7 @@ export function AlumnoFacturasTable({
             <TableHead>Método</TableHead>
             <TableHead>Total Doc</TableHead>
             <TableHead className="text-center">Factura</TableHead>
+            <TableHead className="text-center">Borrador</TableHead>
             <TableHead>Estado</TableHead>
           </TableRow>
         </TableHeader>
@@ -130,16 +132,28 @@ export function AlumnoFacturasTable({
                 </TableCell>
                 <TableCell className="text-xs">
                   <span className="inline-flex items-center gap-1 text-muted-foreground">
-                    <CreditCard className="h-3 w-3" /> {r.METODO_PAGO || "Remesa"}
+                    <CreditCard className="h-3 w-3" /> {normalizeMetodoPago(r.METODO_PAGO) || "—"}
                   </span>
                 </TableCell>
                 <TableCell className="font-mono text-sm font-bold text-blue-950">
                   {formatCurrency(r.TOTAL_DOC)}
                 </TableCell>
-                <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
-                  {r.LINK_PDF_RECIBO ? (
+                <TableCell className="text-center">
+                  {reciboTieneFacturaOficial(r) ? (
                     <div className="flex justify-center">
-                      <FacturaPdfDownloadButton link={r.LINK_PDF_RECIBO} />
+                      <FacturaOficialPdfButton
+                        idRecibo={r.ID_RECIBO}
+                        linkPdfRecibo={r.LINK_PDF_RECIBO}
+                        linkFacturaKorefactu={r.LINK_FACTURA_KOREFACTU}
+                        onPdfResolved={() => void list.refetch()}
+                      />
+                    </div>
+                  ) : null}
+                </TableCell>
+                <TableCell className="text-center">
+                  {r.LINK_PDF_BORRADOR ? (
+                    <div className="flex justify-center">
+                      <FacturaPdfDownloadButton link={r.LINK_PDF_BORRADOR} label="Borrador" />
                     </div>
                   ) : null}
                 </TableCell>

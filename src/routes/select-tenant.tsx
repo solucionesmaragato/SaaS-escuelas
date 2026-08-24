@@ -82,7 +82,7 @@ function SelectTenantPage() {
   }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (perfiles.length === 0) return <UnauthorizedScreen />;
+  if (perfiles.length === 0) return <Navigate to="/registro" replace />;
   if (perfiles.length === 1) {
     return (
       <div className="flex min-h-screen items-center justify-center">

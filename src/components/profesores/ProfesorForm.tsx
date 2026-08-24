@@ -20,6 +20,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { PROFESOR_ROL_OPTIONS, sortLocale, toDateInputValue } from "./profesoresShared";
+import { toast } from "sonner";
+
+const CENTRO_NONE_VALUE = "__none__";
 
 function MultiSelectCheckboxes({
   label,
@@ -72,6 +75,9 @@ export function ProfesorForm({
   selfProfile,
   aulas,
   especialidades,
+  centros = [],
+  showCentroSelector = false,
+  assignedCenterId = null,
   submitting,
   onSubmit,
 }: {
@@ -80,6 +86,9 @@ export function ProfesorForm({
   selfProfile?: boolean;
   aulas: AulaLookup[];
   especialidades: EspecialidadLookup[];
+  centros?: Array<{ ID_CENTRO: string; NOMBRE_CENTRO: string }>;
+  showCentroSelector?: boolean;
+  assignedCenterId?: string | null;
   submitting: boolean;
   onSubmit: (values: ProfesorCreateInput | ProfesorUpdateInput) => void;
 }) {
@@ -96,7 +105,9 @@ export function ProfesorForm({
   const [saldoAp, setSaldoAp] = useState("");
   const [especialidadIds, setEspecialidadIds] = useState<string[]>([]);
   const [aulaIds, setAulaIds] = useState<string[]>([]);
+  const [idCentro, setIdCentro] = useState("");
   const [rol, setRol] = useState<Rol>("PROFESOR");
+  const showCentroField = showCentroSelector && !selfProfile;
   const showRolField = isCreate || (!selfProfile && !!initial);
   const rolQuery = useProfesorRol(showRolField && !isCreate ? initial?.ID_PROFESOR : null);
   const rolLoading = showRolField && !isCreate && rolQuery.isLoading;
@@ -128,10 +139,11 @@ export function ProfesorForm({
     setSaldoAp(initial?.SALDO_AP != null ? String(initial.SALDO_AP) : "");
     setEspecialidadIds(Array.isArray(initial?.ESPECIALIDAD) ? initial.ESPECIALIDAD : []);
     setAulaIds(Array.isArray(initial?.AULA) ? initial.AULA : []);
+    setIdCentro(initial?.ID_CENTRO ?? assignedCenterId ?? "");
     if (isCreate) {
       setRol("PROFESOR");
     }
-  }, [initial, isCreate]);
+  }, [initial, isCreate, assignedCenterId]);
 
   useEffect(() => {
     if (!showRolField || isCreate) return;
@@ -167,6 +179,10 @@ export function ProfesorForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (!selfProfile && !nombre.trim()) return;
+        if (showCentroField && !idCentro.trim()) {
+          toast.error("Debes seleccionar un centro");
+          return;
+        }
 
         if (selfProfile) {
           onSubmit({
@@ -192,6 +208,9 @@ export function ProfesorForm({
           ESPECIALIDAD: Array.isArray(especialidadIds) ? especialidadIds : [],
           AULA: Array.isArray(aulaIds) ? aulaIds : [],
         };
+        if (showCentroField) {
+          values.ID_CENTRO = idCentro.trim();
+        }
         if (isCreate) {
           values.ROL = rol;
           onSubmit(values);
@@ -205,6 +224,28 @@ export function ProfesorForm({
       }}
       className="space-y-4"
     >
+      {showCentroField ? (
+        <div className="space-y-2">
+          <Label htmlFor="prof-centro">Centro *</Label>
+          <Select
+            value={idCentro || CENTRO_NONE_VALUE}
+            onValueChange={(v) => setIdCentro(v === CENTRO_NONE_VALUE ? "" : v)}
+            disabled={submitting}
+          >
+            <SelectTrigger id="prof-centro">
+              <SelectValue placeholder="Seleccionar centro" />
+            </SelectTrigger>
+            <SelectContent>
+              {centros.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+
       <div className="space-y-2">
         <Label htmlFor="prof-nombre">Nombre completo *</Label>
         <Input

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ChevronDown,
@@ -19,8 +19,17 @@ import type {
   HorarioMatriculaRowInput,
   HorarioMatriculaSyncInput,
   MatriculaRow,
-  ScheduleConflict,
 } from "@/hooks/useMatriculas";
+import {
+  buildScheduleAssignmentContext,
+  checkGrupoPlazasWarning,
+  GRUPO_COMPLETO_PROMPT,
+  validateScheduleAssignmentHard,
+  type ScheduleAssignmentCheck,
+  type ScheduleAssignmentContext,
+  type SesionOccupancyRow,
+} from "@/components/alumnos/AlumnoFormDialog";
+import { useGruposHorarios } from "@/hooks/useGruposHorarios";
 import type { HorarioMatricula } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
@@ -35,12 +44,8 @@ import { useAulas, type AulaData } from "@/hooks/useAulas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useProfesores, type ProfesoresQueryData } from "@/hooks/useProfesores";
 import { useTarifas, type TarifaData } from "@/hooks/useTarifas";
-import {
-  useCentros,
-  getActiveCursoEscolar,
-  type CentroData,
-  type CursoEscolarData,
-} from "@/hooks/useCentros";
+import { useCentros, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
+import { cursosForCentro, resolveCursoIdForCentro } from "@/lib/matriculaCursoUtils";
 import { useActiveTenant } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { canWriteUi, hasPermission } from "@/lib/rbac";
@@ -112,6 +117,16 @@ const DIAS_SEMANA_OPCIONES = [
   "Domingo",
 ] as const;
 type MatriculaEstado = (typeof MATRICULA_ESTADO_OPTIONS)[number];
+
+type MatriculaCursoGroup = {
+  idCurso: string;
+  nombre: string;
+  cursoVigente: boolean;
+  fechaInicio: string | null;
+  matriculas: MatriculaRow[];
+};
+
+const SIN_CURSO_GROUP_KEY = "__sin_curso__";
 
 /** Shared 8-column layout: alert | expand | alumno | especialidad | profesor | estado | fecha | actions */
 const MATRICULA_TABLE_COL_COUNT = 8;
@@ -408,30 +423,6 @@ function resolveHorarioEspecialidad(
   return especialidadById.get(especialidadId) ?? especialidadId;
 }
 
-function sortCursosEscolares(cursos: CursoEscolarData[]): CursoEscolarData[] {
-  return [...cursos].sort((a, b) =>
-    (a.NOMBRE_CURSO ?? "").localeCompare(b.NOMBRE_CURSO ?? "", "es", {
-      sensitivity: "base",
-    }),
-  );
-}
-
-function cursosForCentro(centros: CentroData[], centroId: string): CursoEscolarData[] {
-  const centro = centros.find((c) => c.ID_CENTRO === centroId);
-  return sortCursosEscolares(centro?.CURSO_ESCOLAR ?? []);
-}
-
-function resolveCursoIdForCentro(
-  centros: CentroData[],
-  centroId: string,
-  currentCursoId: string,
-): string {
-  const cursos = cursosForCentro(centros, centroId);
-  if (cursos.some((c) => c.ID_CURSO === currentCursoId)) return currentCursoId;
-  const active = getActiveCursoEscolar(cursos);
-  return active?.ID_CURSO ?? cursos[0]?.ID_CURSO ?? "";
-}
-
 type MatriculaFormSelectState = {
   idAlumno: string;
   idCentro: string;
@@ -458,6 +449,59 @@ function matriculaHorariosRows(matricula: MatriculaRow): HorarioMatricula[] {
   if (Array.isArray(raw)) return raw as HorarioMatricula[];
   if (typeof raw === "object") return [raw as HorarioMatricula];
   return [];
+}
+
+function sortMatriculasActivasPrimero(a: MatriculaRow, b: MatriculaRow): number {
+  const aActivo = isMatriculaActiva(a.ESTADO) ? 0 : 1;
+  const bActivo = isMatriculaActiva(b.ESTADO) ? 0 : 1;
+  if (aActivo !== bActivo) return aActivo - bActivo;
+  return (a.ALUMNOS?.NOMBRE_ALUMNO ?? "").localeCompare(
+    b.ALUMNOS?.NOMBRE_ALUMNO ?? "",
+    "es",
+    { sensitivity: "base" },
+  );
+}
+
+function localTodayDateKey(): string {
+  const d = new Date();
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function normalizeCursoDateKey(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+  return match ? match[1] : null;
+}
+
+function findCursoEscolarInCentros(
+  centros: CentroData[],
+  idCentro: string | null | undefined,
+  idCurso: string | null | undefined,
+): CursoEscolarData | null {
+  const cursoId = idCurso?.trim();
+  if (!cursoId) return null;
+
+  const centroId = idCentro?.trim();
+  if (centroId) {
+    const centro = centros.find((c) => c.ID_CENTRO === centroId);
+    const found = centro?.CURSO_ESCOLAR?.find((c) => c.ID_CURSO === cursoId);
+    if (found) return found;
+  }
+
+  for (const centro of centros) {
+    const found = centro.CURSO_ESCOLAR?.find((c) => c.ID_CURSO === cursoId);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function isCursoVigentePorFecha(fechaFin: string | null, todayKey: string): boolean {
+  if (!fechaFin) return false;
+  return fechaFin >= todayKey;
 }
 
 function matriculaMatchesEspecialidadFilter(
@@ -1003,6 +1047,60 @@ function editRowsToHorarioInputs(rows: HorarioEditRow[]): HorarioMatriculaRowInp
   });
 }
 
+function horarioRowToAssignmentCheck(
+  row: HorarioMatriculaRowInput,
+  idAlumno: string,
+): ScheduleAssignmentCheck {
+  const alumnoId = idAlumno.trim();
+  return {
+    idAlumno: alumnoId,
+    idProfesor: row.ID_PROFESOR,
+    idAula: row.ID_AULA?.trim() || null,
+    dia: row.DIA ?? "",
+    horaInicio: row.HORA_INICIO?.slice(0, 5) ?? "",
+    horaFin: row.HORA_FIN?.slice(0, 5) ?? "",
+    idHorarioExcluir: row.ID_HORARIO?.trim() || null,
+    idGrupo: row.ID_GRUPO?.trim() || null,
+    idGrupoHorario: row.ID_GRUPO_HORARIO?.trim() || null,
+    isIndividual: !row.ID_GRUPO_HORARIO?.trim(),
+    extraAlumnoIds: alumnoId ? [alumnoId] : [],
+  };
+}
+
+function validateMatriculaHorarioRows(
+  ctx: ScheduleAssignmentContext,
+  idAlumno: string,
+  rows: HorarioMatriculaRowInput[],
+): string | null {
+  for (const row of rows) {
+    if (!row.DIA?.trim() || !row.HORA_INICIO || !row.HORA_FIN) continue;
+    const hard = validateScheduleAssignmentHard(
+      ctx,
+      horarioRowToAssignmentCheck(row, idAlumno),
+    );
+    if (hard) return hard;
+  }
+  return null;
+}
+
+function matriculaHorarioRowsNeedGrupoPlazasConfirm(
+  ctx: ScheduleAssignmentContext,
+  idAlumno: string,
+  rows: HorarioMatriculaRowInput[],
+): boolean {
+  const alumnoId = idAlumno.trim();
+  if (!alumnoId) return false;
+  const grupoIds = new Set<string>();
+  for (const row of rows) {
+    const grupoId = row.ID_GRUPO?.trim();
+    if (grupoId) grupoIds.add(grupoId);
+  }
+  for (const grupoId of grupoIds) {
+    if (checkGrupoPlazasWarning(ctx, grupoId, [alumnoId])) return true;
+  }
+  return false;
+}
+
 function buildHorariosSyncInput(
   matriculaId: string,
   values: Omit<MatriculaFormValues, "horariosSync">,
@@ -1020,75 +1118,6 @@ function buildHorariosSyncInput(
     rows: syncRows,
     deletedIds,
   };
-}
-
-/**
- * Runs `fn_comprobar_solapamientos` for every schedule row that has a
- * complete day/start/end triplet, aggregating EVERY conflict returned across
- * ALL rows into a single flat array so the caller can dedupe and report them
- * as one complete, coherent batch (never per-row).
- */
-async function collectHorarioConflicts(
-  checkSolapamientos: (params: {
-    idAlumno: string | null;
-    idProfesor: string | null;
-    idAula: string | null;
-    dia: string;
-    horaInicio: string;
-    horaFin: string;
-    idHorarioExcluir?: string | null;
-    idGrupo?: string | null;
-    idGrupoHorario?: string | null;
-  }) => Promise<ScheduleConflict[]>,
-  idAlumno: string,
-  rows: HorarioMatriculaRowInput[],
-): Promise<ScheduleConflict[]> {
-  const conflicts: ScheduleConflict[] = [];
-
-  for (const row of rows) {
-    if (!row.DIA || !row.HORA_INICIO || !row.HORA_FIN) continue;
-
-    const rowConflicts = await checkSolapamientos({
-      idAlumno,
-      idProfesor: row.ID_PROFESOR,
-      idAula: row.ID_AULA?.trim() || null,
-      dia: row.DIA,
-      horaInicio: row.HORA_INICIO,
-      horaFin: row.HORA_FIN,
-      idHorarioExcluir: row.ID_HORARIO ? row.ID_HORARIO.trim() : null,
-      idGrupo: row.ID_GRUPO?.trim() || null,
-      idGrupoHorario: row.ID_GRUPO_HORARIO?.trim() || null,
-    });
-    conflicts.push(...rowConflicts);
-  }
-
-  return conflicts;
-}
-
-function formatScheduleConflict(conflict: ScheduleConflict): string {
-  if (conflict.nivel === "Recurrente") {
-    return `[Clase Fija - ${conflict.tipo}] ${conflict.motivo} (${conflict.dia ?? "—"}, ${conflict.inicio}-${conflict.fin})`;
-  }
-  return `[Evento Puntual - ${conflict.tipo}] Ocupado por: ${conflict.motivo} (Fecha: ${conflict.fecha ?? "—"}, ${conflict.inicio}-${conflict.fin})`;
-}
-
-/**
- * Renders the FULL, already-aggregated batch of conflicts as a single
- * scrollable, dismissible toast body: maps every conflict to its message,
- * deduplicates the whole batch globally (a conflict pair often gets reported
- * once per side, e.g. teacher + classroom, and would otherwise repeat), and
- * renders the unique messages as a bounded-height list so a large batch of
- * conflicts never overflows the screen.
- */
-function renderScheduleConflictsToast(conflicts: ScheduleConflict[]): ReactNode {
-  const messages = Array.from(new Set(conflicts.map(formatScheduleConflict)));
-  return (
-    <ul className="max-h-[50vh] list-disc space-y-1 overflow-y-auto pl-4 pr-1 text-sm">
-      {messages.map((message) => (
-        <li key={message}>{message}</li>
-      ))}
-    </ul>
-  );
 }
 
 function MatriculaHorariosEditableTable({
@@ -1447,7 +1476,6 @@ function MatriculasPage() {
     syncHorarios,
     remove,
     invalidateList,
-    checkSolapamientos,
   } = useMatriculas(filterCenterId);
   const { list: tarifasList } = useTarifas();
 
@@ -1472,9 +1500,51 @@ function MatriculasPage() {
   } | null>(null);
   const [togglingHorarioId, setTogglingHorarioId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const [expandedCursoIds, setExpandedCursoIds] = useState<Set<string>>(() => new Set());
   const [bulkCursoId, setBulkCursoId] = useState("");
   const [bulkNuevoEstado, setBulkNuevoEstado] = useState<MatriculaEstado>("Inactivo");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [grupoCompletoConfirmOpen, setGrupoCompletoConfirmOpen] = useState(false);
+  const grupoCompletoProceedRef = useRef<(() => Promise<void>) | null>(null);
+
+  const allMatriculasQuery = useMatriculas(null);
+  const { list: grupoHorariosList } = useGruposHorarios();
+  const occupancyMetaQuery = useQuery({
+    queryKey: ["schedule-assignment-meta", tenantId],
+    enabled: Boolean(tenantId),
+    queryFn: async () => {
+      const [sesionesRes, aulasRes] = await Promise.all([
+        supabase
+          .from("SESIONES")
+          .select(
+            "ID_SESION,ID_ALUMNO,ID_AULA,ID_PROFESOR,ID_HORARIO,ID_GRUPO_HORARIO,FECHA_EXACTA,HORA_INICIO,HORA_FIN,ESTADO",
+          )
+          .eq("ID_CLIENTE", tenantId!),
+        supabase.from("AULA").select("ID_AULA,CAPACIDAD").eq("ID_CLIENTE", tenantId!),
+      ]);
+      if (sesionesRes.error) throw sesionesRes.error;
+      if (aulasRes.error) throw aulasRes.error;
+      return {
+        sesiones: (sesionesRes.data ?? []) as SesionOccupancyRow[],
+        aulaCapacidadById: new Map(
+          (aulasRes.data ?? []).map((aula) => [aula.ID_AULA, aula.CAPACIDAD as number | null]),
+        ),
+      };
+    },
+  });
+
+  const scheduleAssignmentContext = useMemo((): ScheduleAssignmentContext | null => {
+    if (!occupancyMetaQuery.data) return null;
+    const tenantHorarios = (allMatriculasQuery.list.data?.rows ?? []).flatMap(
+      (mat) => mat.HORARIOS_MATRICULAS ?? [],
+    );
+    return buildScheduleAssignmentContext(
+      grupoHorariosList.data ?? [],
+      tenantHorarios,
+      occupancyMetaQuery.data.sesiones,
+      occupancyMetaQuery.data.aulaCapacidadById,
+    );
+  }, [allMatriculasQuery.list.data, grupoHorariosList.data, occupancyMetaQuery.data]);
 
   const matriculas = useMemo(() => list.data?.rows ?? [], [list.data?.rows]);
   const especialidadById = useMemo(
@@ -1487,6 +1557,15 @@ function MatriculasPage() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleCursoGroup = (idCurso: string) => {
+    setExpandedCursoIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(idCurso)) next.delete(idCurso);
+      else next.add(idCurso);
       return next;
     });
   };
@@ -1572,6 +1651,66 @@ function MatriculasPage() {
     );
   }, [matriculas, query, filtroCurso, filtroEspecialidad, filtroEstado, filterIncomplete]);
 
+  const matriculasGrouped = useMemo((): MatriculaCursoGroup[] => {
+    const todayKey = localTodayDateKey();
+    const byCurso = new Map<string, MatriculaRow[]>();
+    for (const matricula of filtered) {
+      const key = matricula.ID_CURSO?.trim() || SIN_CURSO_GROUP_KEY;
+      const rows = byCurso.get(key) ?? [];
+      rows.push(matricula);
+      byCurso.set(key, rows);
+    }
+
+    const groups: MatriculaCursoGroup[] = [];
+    for (const [idCurso, rows] of byCurso) {
+      const sample = rows[0];
+      const nombre =
+        idCurso === SIN_CURSO_GROUP_KEY
+          ? "Sin curso asignado"
+          : (sample.CURSO_ESCOLAR?.NOMBRE_CURSO ?? idCurso);
+
+      let cursoVigente = false;
+      let fechaInicio: string | null = null;
+
+      if (idCurso !== SIN_CURSO_GROUP_KEY) {
+        const cursoData = findCursoEscolarInCentros(
+          centrosOrdenados,
+          sample.ID_CENTRO,
+          idCurso,
+        );
+        const fechaFin = normalizeCursoDateKey(cursoData?.FECHA_FIN);
+        fechaInicio = normalizeCursoDateKey(cursoData?.FECHA_INICIO);
+        cursoVigente = isCursoVigentePorFecha(fechaFin, todayKey);
+      }
+
+      groups.push({
+        idCurso,
+        nombre,
+        cursoVigente,
+        fechaInicio,
+        matriculas: [...rows].sort(sortMatriculasActivasPrimero),
+      });
+    }
+
+    return groups.sort((a, b) => {
+      if (a.cursoVigente !== b.cursoVigente) return a.cursoVigente ? -1 : 1;
+      const aStart = a.fechaInicio ?? "";
+      const bStart = b.fechaInicio ?? "";
+      if (aStart !== bStart) return bStart.localeCompare(aStart);
+      return a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
+    });
+  }, [filtered, centrosOrdenados]);
+
+  const matriculasGroupedOrderKey = useMemo(
+    () => matriculasGrouped.map((group) => group.idCurso).join("\0"),
+    [matriculasGrouped],
+  );
+
+  useEffect(() => {
+    const firstId = matriculasGroupedOrderKey.split("\0")[0];
+    setExpandedCursoIds(firstId ? new Set([firstId]) : new Set());
+  }, [matriculasGroupedOrderKey]);
+
   const hasActiveFilters =
     Boolean(query.trim()) ||
     Boolean(filtroCurso) ||
@@ -1634,6 +1773,39 @@ function MatriculasPage() {
     } finally {
       setTogglingHorarioId(null);
     }
+  };
+
+  const runValidatedHorariosSave = async (
+    idAlumno: string,
+    rows: HorarioMatriculaRowInput[],
+    execute: () => Promise<void>,
+  ): Promise<void> => {
+    if (rows.length === 0) {
+      await execute();
+      return;
+    }
+    const horarioValidationError = validateHorarioRowsForSync(rows);
+    if (horarioValidationError) {
+      toast.error(horarioValidationError);
+      return;
+    }
+    if (!scheduleAssignmentContext) {
+      toast.error("Cargando datos de ocupación. Inténtalo de nuevo.");
+      return;
+    }
+    const hard = validateMatriculaHorarioRows(scheduleAssignmentContext, idAlumno, rows);
+    if (hard) {
+      toast.error(hard);
+      return;
+    }
+    if (
+      matriculaHorarioRowsNeedGrupoPlazasConfirm(scheduleAssignmentContext, idAlumno, rows)
+    ) {
+      grupoCompletoProceedRef.current = execute;
+      setGrupoCompletoConfirmOpen(true);
+      return;
+    }
+    await execute();
   };
 
   const handleCloseViewing = () => {
@@ -1699,54 +1871,55 @@ function MatriculasPage() {
       />
 
       {canWrite && (
-        <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-end">
-          <div className="min-w-0 flex-1 space-y-2">
-            <Label htmlFor="matriculas-bulk-curso-select">Curso escolar</Label>
-            <Select
-              value={bulkCursoId || NONE_VALUE}
-              onValueChange={(v) => setBulkCursoId(v === NONE_VALUE ? "" : v)}
-              disabled={cursoFilterOptions.length === 0 || bulkUpdateEstadoByCurso.isPending}
+        <div className="flex flex-col gap-2 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
+          <Select
+            value={bulkCursoId || NONE_VALUE}
+            onValueChange={(v) => setBulkCursoId(v === NONE_VALUE ? "" : v)}
+            disabled={cursoFilterOptions.length === 0 || bulkUpdateEstadoByCurso.isPending}
+          >
+            <SelectTrigger
+              id="matriculas-bulk-curso-select"
+              className="h-8 w-full min-w-0 text-sm sm:min-w-[10rem] sm:flex-1 [&>span]:truncate"
             >
-              <SelectTrigger id="matriculas-bulk-curso-select" className="h-10 w-full">
-                <SelectValue placeholder="Seleccionar curso escolar" />
-              </SelectTrigger>
-              <SelectContent>
-                {cursoFilterOptions.length === 0 ? (
-                  <SelectItem value={NONE_VALUE} disabled>
-                    No hay cursos con matrículas
+              <SelectValue placeholder="Curso escolar" />
+            </SelectTrigger>
+            <SelectContent>
+              {cursoFilterOptions.length === 0 ? (
+                <SelectItem value={NONE_VALUE} disabled>
+                  No hay cursos con matrículas
+                </SelectItem>
+              ) : (
+                cursoFilterOptions.map((curso) => (
+                  <SelectItem key={curso.id} value={curso.id}>
+                    {curso.nombre}
                   </SelectItem>
-                ) : (
-                  cursoFilterOptions.map((curso) => (
-                    <SelectItem key={curso.id} value={curso.id}>
-                      {curso.nombre}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="min-w-0 flex-1 space-y-2">
-            <Label htmlFor="matriculas-bulk-estado-select">Nuevo estado</Label>
-            <Select
-              value={bulkNuevoEstado}
-              onValueChange={(v) => setBulkNuevoEstado(v as MatriculaEstado)}
-              disabled={bulkUpdateEstadoByCurso.isPending}
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <Select
+            value={bulkNuevoEstado}
+            onValueChange={(v) => setBulkNuevoEstado(v as MatriculaEstado)}
+            disabled={bulkUpdateEstadoByCurso.isPending}
+          >
+            <SelectTrigger
+              id="matriculas-bulk-estado-select"
+              className="h-8 w-full min-w-0 text-sm sm:min-w-[8rem] sm:max-w-[10rem] [&>span]:truncate"
             >
-              <SelectTrigger id="matriculas-bulk-estado-select" className="h-10 w-full">
-                <SelectValue placeholder="Seleccionar estado" />
-              </SelectTrigger>
-              <SelectContent>
-                {MATRICULA_ESTADO_OPTIONS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <SelectValue placeholder="Nuevo estado" />
+            </SelectTrigger>
+            <SelectContent>
+              {MATRICULA_ESTADO_OPTIONS.map((opt) => (
+                <SelectItem key={opt} value={opt}>
+                  {opt}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             type="button"
-            className="shrink-0"
+            size="sm"
+            className="h-8 shrink-0 px-3 text-xs"
             disabled={
               !bulkCursoId ||
               bulkAffectedCount === 0 ||
@@ -1757,7 +1930,7 @@ function MatriculasPage() {
           >
             {bulkUpdateEstadoByCurso.isPending ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Modificando...
               </>
             ) : (
@@ -1768,73 +1941,92 @@ function MatriculasPage() {
       )}
 
       <Card className="p-4">
-        <div className="mb-4 grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <div className="relative sm:col-span-2 lg:col-span-2 xl:col-span-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-nowrap lg:items-center lg:overflow-x-auto">
+          <div className="relative min-w-0 lg:min-w-[12rem] lg:flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por alumno, especialidad, profesor o estado..."
+              id="matriculas-search"
+              placeholder="Buscar alumno, especialidad..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-10 pl-9"
+              className="h-8 min-w-0 pl-8 text-sm"
             />
           </div>
           {showCentroFilter && (
-            <CentroTableFilter
-              id="matriculas-centro-filter"
-              centros={centrosOrdenados}
-              value={selectedCenterId}
-              onChange={setSelectedCenterId}
-            />
+            <div className="min-w-0 lg:w-[140px] lg:shrink-0">
+              <CentroTableFilter
+                id="matriculas-centro-filter"
+                centros={centrosOrdenados}
+                value={selectedCenterId}
+                onChange={setSelectedCenterId}
+                hideLabel
+              />
+            </div>
           )}
-          <Select
-            value={filtroCurso || "__all__"}
-            onValueChange={(v) => setFiltroCurso(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger className="h-10 w-full">
-              <SelectValue placeholder="Curso" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Curso</SelectItem>
-              {cursoFilterOptions.map((curso) => (
-                <SelectItem key={curso.id} value={curso.id}>
-                  {curso.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filtroEspecialidad || "__all__"}
-            onValueChange={(v) => setFiltroEspecialidad(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger className="h-10 w-full">
-              <SelectValue placeholder="Especialidad" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Especialidad</SelectItem>
-              {especialidadFilterOptions.map((especialidad) => (
-                <SelectItem key={especialidad.id} value={especialidad.id}>
-                  {especialidad.nombre}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={filtroEstado || "__all__"}
-            onValueChange={(v) => setFiltroEstado(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger className="h-10 w-full">
-              <SelectValue placeholder="Estado" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Estado</SelectItem>
-              {MATRICULA_ESTADO_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-md border border-input bg-background px-3 py-2 shadow-sm sm:col-span-2 xl:col-span-2">
+          <div className="min-w-0 lg:w-[9.5rem] lg:shrink-0">
+            <Select
+              value={filtroCurso || "__all__"}
+              onValueChange={(v) => setFiltroCurso(v === "__all__" ? "" : v)}
+            >
+              <SelectTrigger
+                id="matriculas-filtro-curso"
+                className="h-8 w-full min-w-0 text-sm [&>span]:truncate"
+              >
+                <SelectValue placeholder="Curso" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todos los cursos</SelectItem>
+                {cursoFilterOptions.map((curso) => (
+                  <SelectItem key={curso.id} value={curso.id}>
+                    {curso.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0 lg:w-[10rem] lg:shrink-0">
+            <Select
+              value={filtroEspecialidad || "__all__"}
+              onValueChange={(v) => setFiltroEspecialidad(v === "__all__" ? "" : v)}
+            >
+              <SelectTrigger
+                id="matriculas-filtro-especialidad"
+                className="h-8 w-full min-w-0 text-sm [&>span]:truncate"
+              >
+                <SelectValue placeholder="Especialidad" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todas las especialidades</SelectItem>
+                {especialidadFilterOptions.map((especialidad) => (
+                  <SelectItem key={especialidad.id} value={especialidad.id}>
+                    {especialidad.nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-0 lg:w-[8.5rem] lg:shrink-0">
+            <Select
+              value={filtroEstado || "__all__"}
+              onValueChange={(v) => setFiltroEstado(v === "__all__" ? "" : v)}
+            >
+              <SelectTrigger
+                id="matriculas-filtro-estado"
+                className="h-8 w-full min-w-0 text-sm [&>span]:truncate"
+              >
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Todos los estados</SelectItem>
+                {MATRICULA_ESTADO_OPTIONS.map((opt) => (
+                  <SelectItem key={opt} value={opt}>
+                    {opt}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex min-w-0 items-center gap-2 sm:col-span-2 lg:w-auto lg:shrink-0 lg:whitespace-nowrap">
             <Switch
               id="matriculas-filter-incomplete"
               checked={filterIncomplete}
@@ -1843,11 +2035,11 @@ function MatriculasPage() {
             />
             <Label
               htmlFor="matriculas-filter-incomplete"
-              className="min-w-0 flex-1 cursor-pointer select-none text-sm font-medium leading-snug text-foreground"
+              className="min-w-0 cursor-pointer select-none truncate text-xs font-medium leading-none text-foreground"
             >
-              <span className="inline-flex items-start gap-1.5">
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
-                <span>Ver horarios incompletos</span>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden />
+                <span className="truncate">Horarios incompletos</span>
               </span>
             </Label>
           </div>
@@ -1891,7 +2083,44 @@ function MatriculasPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((m) => {
+                matriculasGrouped.map((group) => {
+                  const isCursoExpanded = expandedCursoIds.has(group.idCurso);
+
+                  return (
+                    <Fragment key={group.idCurso}>
+                      <TableRow
+                        className="cursor-pointer bg-muted/30 hover:bg-muted/40"
+                        onClick={() => toggleCursoGroup(group.idCurso)}
+                      >
+                        <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <ChevronDown
+                                className={cn(
+                                  "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                                  isCursoExpanded && "rotate-180",
+                                )}
+                                aria-hidden
+                              />
+                              <span className="font-semibold">{group.nombre}</span>
+                              <span className="text-sm text-muted-foreground">
+                                {group.matriculas.length}{" "}
+                                {group.matriculas.length === 1 ? "matrícula" : "matrículas"}
+                              </span>
+                              {!group.cursoVigente ? (
+                                <span className="rounded-full border border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground">
+                                  Curso acabado
+                                </span>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {isCursoExpanded ? "Ocultar" : "Expandir"}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {isCursoExpanded &&
+                        group.matriculas.map((m) => {
                   const isExpanded = expandedIds.has(m.ID_MATRICULA);
                   const horarios = matriculaHorariosRows(m);
 
@@ -1917,10 +2146,7 @@ function MatriculasPage() {
                             aria-hidden
                           />
                         </TableCell>
-                        <TableCell
-                          className={MATRICULA_LIST_COL.alumno}
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <TableCell className={MATRICULA_LIST_COL.alumno}>
                           {m.ALUMNOS?.NOMBRE_ALUMNO ? (
                             <EntityLink type="alumno" id={m.ID_ALUMNO}>
                               {m.ALUMNOS.NOMBRE_ALUMNO}
@@ -1938,10 +2164,7 @@ function MatriculasPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell
-                          className={MATRICULA_LIST_COL.profesor}
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <TableCell className={MATRICULA_LIST_COL.profesor}>
                           {m.PROFESOR?.NOMBRE_PROFESOR ? (
                             <EntityLink type="profesor" id={m.ID_PROFESOR}>
                               {m.PROFESOR.NOMBRE_PROFESOR}
@@ -2026,6 +2249,9 @@ function MatriculasPage() {
                         ))}
                     </Fragment>
                   );
+                        })}
+                    </Fragment>
+                  );
                 })
               )}
             </TableBody>
@@ -2057,50 +2283,31 @@ function MatriculasPage() {
           submitLabel="Matricular"
           submitting={create.isPending || syncHorarios.isPending}
           onSubmit={async (values) => {
-            try {
-              const { horariosSync, ...patch } = values;
-
-              if (horariosSync && horariosSync.rows.length > 0) {
-                const horarioValidationError = validateHorarioRowsForSync(
-                  horariosSync.rows,
-                );
-                if (horarioValidationError) {
-                  toast.error(horarioValidationError);
-                  return;
+            const { horariosSync, ...patch } = values;
+            await runValidatedHorariosSave(
+              values.ID_ALUMNO,
+              horariosSync?.rows ?? [],
+              async () => {
+                try {
+                  const created = await create.mutateAsync(patch);
+                  const matriculaId = created?.ID_MATRICULA;
+                  if (!matriculaId) {
+                    throw new Error("No se pudo obtener el ID de la matrícula creada.");
+                  }
+                  if (horariosSync) {
+                    await syncHorarios.mutateAsync({
+                      ...horariosSync,
+                      matriculaId,
+                    });
+                  }
+                  invalidateList();
+                  toast.success("Matrícula creada con éxito");
+                  setCreating(false);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Error al guardar");
                 }
-
-                const conflicts = await collectHorarioConflicts(
-                  checkSolapamientos,
-                  values.ID_ALUMNO,
-                  horariosSync.rows,
-                );
-                if (conflicts.length > 0) {
-                  toast.error("No se puede guardar: horario en conflicto", {
-                    description: renderScheduleConflictsToast(conflicts),
-                    duration: Infinity,
-                    closeButton: true,
-                  });
-                  return;
-                }
-              }
-
-              const created = await create.mutateAsync(patch);
-              const matriculaId = created?.ID_MATRICULA;
-              if (!matriculaId) {
-                throw new Error("No se pudo obtener el ID de la matrícula creada.");
-              }
-              if (horariosSync) {
-                await syncHorarios.mutateAsync({
-                  ...horariosSync,
-                  matriculaId,
-                });
-              }
-              invalidateList();
-              toast.success("Matrícula creada con éxito");
-              setCreating(false);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Error al guardar");
-            }
+              },
+            );
           }}
         />
       ) : null}
@@ -2116,43 +2323,24 @@ function MatriculasPage() {
           initial={editing}
           submitting={update.isPending || syncHorarios.isPending}
           onSubmit={async (values) => {
-            try {
-              const { horariosSync, ...patch } = values;
-
-              if (horariosSync && horariosSync.rows.length > 0) {
-                const horarioValidationError = validateHorarioRowsForSync(
-                  horariosSync.rows,
-                );
-                if (horarioValidationError) {
-                  toast.error(horarioValidationError);
-                  return;
+            const { horariosSync, ...patch } = values;
+            await runValidatedHorariosSave(
+              values.ID_ALUMNO,
+              horariosSync?.rows ?? [],
+              async () => {
+                try {
+                  await update.mutateAsync({ id: editing.ID_MATRICULA, patch });
+                  if (horariosSync) {
+                    await syncHorarios.mutateAsync(horariosSync);
+                  }
+                  invalidateList();
+                  toast.success("Matrícula actualizada correctamente");
+                  setEditing(null);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Error al actualizar");
                 }
-
-                const conflicts = await collectHorarioConflicts(
-                  checkSolapamientos,
-                  values.ID_ALUMNO,
-                  horariosSync.rows,
-                );
-                if (conflicts.length > 0) {
-                  toast.error("No se puede guardar: horario en conflicto", {
-                    description: renderScheduleConflictsToast(conflicts),
-                    duration: Infinity,
-                    closeButton: true,
-                  });
-                  return;
-                }
-              }
-
-              await update.mutateAsync({ id: editing.ID_MATRICULA, patch });
-              if (horariosSync) {
-                await syncHorarios.mutateAsync(horariosSync);
-              }
-              invalidateList();
-              toast.success("Matrícula actualizada correctamente");
-              setEditing(null);
-            } catch (err) {
-              toast.error(err instanceof Error ? err.message : "Error al actualizar");
-            }
+              },
+            );
           }}
         />
       ) : null}
@@ -2206,6 +2394,43 @@ function MatriculasPage() {
               ) : (
                 "Modificar matrículas"
               )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={grupoCompletoConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            grupoCompletoProceedRef.current = null;
+            setGrupoCompletoConfirmOpen(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Grupo completo</AlertDialogTitle>
+            <AlertDialogDescription>{GRUPO_COMPLETO_PROMPT}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={create.isPending || update.isPending || syncHorarios.isPending}
+            >
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={create.isPending || update.isPending || syncHorarios.isPending}
+              onClick={() => {
+                void (async () => {
+                  const proceed = grupoCompletoProceedRef.current;
+                  grupoCompletoProceedRef.current = null;
+                  setGrupoCompletoConfirmOpen(false);
+                  if (proceed) await proceed();
+                })();
+              }}
+            >
+              Asignar de todos modos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
