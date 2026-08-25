@@ -267,11 +267,6 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
             <div className="truncate text-xs text-muted-foreground">
               {SIDEBAR_ROLE_LABEL[rol] ?? ROLE_LABEL[rol] ?? rol}
             </div>
-            {isDemoTenant ? (
-              <Badge variant="secondary" className="mt-1 text-[10px] font-normal">
-                Entorno de prueba {activePerfil?.ID_CLIENTE}
-              </Badge>
-            ) : null}
           </div>
         </div>
       </SidebarHeader>

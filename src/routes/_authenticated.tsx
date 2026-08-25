@@ -3,6 +3,8 @@ import { Outlet, Navigate, createFileRoute, Link, useRouterState } from "@tansta
 import { PanelLeft, Home, CalendarDays, Clock } from "lucide-react";
 import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { DemoCalComBanner } from "@/components/DemoCalComBanner";
+import { DemoExpiredWall } from "@/components/DemoExpiredWall";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
@@ -14,10 +16,20 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  const { loading, perfilesLoading, isAuthenticated, needsTenantSelection, activePerfil, perfiles } =
-    useApp();
+  const {
+    loading,
+    perfilesLoading,
+    isAuthenticated,
+    needsTenantSelection,
+    activePerfil,
+    perfiles,
+    demoTrialBlocked,
+    demoTrialChecking,
+    demoTrialError,
+    refreshDemoTrialGate,
+  } = useApp();
 
-  if (loading || perfilesLoading) {
+  if (loading || perfilesLoading || demoTrialChecking) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -30,6 +42,21 @@ function AuthenticatedLayout() {
   }
   if (!activePerfil) {
     return <Navigate to="/registro" replace />;
+  }
+  if (demoTrialError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <p className="max-w-md text-center text-sm text-destructive">{demoTrialError}</p>
+      </div>
+    );
+  }
+  if (demoTrialBlocked) {
+    return (
+      <DemoExpiredWall
+        activePerfil={activePerfil}
+        onReactivated={refreshDemoTrialGate}
+      />
+    );
   }
 
   return <AuthenticatedAppShell />;
@@ -104,11 +131,13 @@ function AuthenticatedShellContent({
   showMobileShell: boolean;
 }) {
   const { toggleSidebar } = useSidebar();
+  const { activePerfil, session } = useApp();
 
   return (
-    <div className="flex h-full min-h-0 w-full bg-muted/30">
-      {!showMobileShell && <AppSidebar isOpen={isSidebarOpen} />}
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-col bg-muted/30">
+      <div className="flex min-h-0 flex-1">
+        {!showMobileShell && <AppSidebar isOpen={isSidebarOpen} />}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
           {!showMobileShell && (
             <Button
@@ -124,7 +153,12 @@ function AuthenticatedShellContent({
             </Button>
           )}
           <WorkspaceSwitcher />
-          <div className="flex-1" />
+          {activePerfil ? (
+            <DemoCalComBanner
+              activePerfil={activePerfil}
+              sessionAccessToken={session?.access_token}
+            />
+          ) : null}
         </header>
         <main
           className={cn(
@@ -135,6 +169,7 @@ function AuthenticatedShellContent({
           <Outlet />
         </main>
         {showMobileShell && <ProfesorBottomNav />}
+        </div>
       </div>
     </div>
   );

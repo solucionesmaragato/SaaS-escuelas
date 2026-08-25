@@ -17,6 +17,7 @@ import {
   type WorkspaceOption,
 } from "@/lib/workspaceProfiles";
 import type { Perfil } from "@/types/database";
+import { enforceDemoTrial, isDemoTenantId } from "@/lib/demoTrial";
 
 export type { WorkspaceOption };
 
@@ -34,6 +35,10 @@ interface AppContextValue {
   activateWorkspace: (perfilId: string) => Promise<void>;
   isAuthenticated: boolean;
   needsTenantSelection: boolean;
+  demoTrialBlocked: boolean;
+  demoTrialChecking: boolean;
+  demoTrialError: string | null;
+  refreshDemoTrialGate: () => Promise<boolean>;
   signOut: () => Promise<void>;
 }
 
@@ -51,11 +56,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeCliente, setActiveCliente] = useState<WorkspaceClienteSummary | null>(null);
   const [activeCentro, setActiveCentro] = useState<WorkspaceCentroSummary | null>(null);
   const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([]);
+  const [demoTrialBlocked, setDemoTrialBlocked] = useState(false);
+  const [demoTrialChecking, setDemoTrialChecking] = useState(false);
+  const [demoTrialError, setDemoTrialError] = useState<string | null>(null);
 
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
+      if (typeof window !== "undefined") {
+        if (event === "SIGNED_IN") {
+          window.sessionStorage.setItem("demo_cal_real_login", "1");
+        } else if (event === "SIGNED_OUT") {
+          window.sessionStorage.removeItem("demo_cal_real_login");
+        }
+      }
       setSession(s);
       if (!s) {
         setPerfiles([]);
@@ -63,6 +78,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setActiveCliente(null);
         setActiveCentro(null);
         setWorkspaceOptions([]);
+        setDemoTrialBlocked(false);
+        setDemoTrialChecking(false);
+        setDemoTrialError(null);
       }
     });
     supabase.auth.getSession().then(({ data }) => {
@@ -78,6 +96,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       setPerfilesLoading(true);
+      let profilesLoadedOk = false;
       try {
         await supabase.rpc("ensure_my_profiles_single_center");
         const options = await fetchUserWorkspaceProfiles(session.user.id);
@@ -86,24 +105,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const rows = options.map((o) => o.perfil);
         setWorkspaceOptions(options);
         setPerfiles(rows);
+        profilesLoadedOk = true;
 
         const stored =
           typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
         const storedValid = stored ? rows.find((p) => p.ID_PERFIL === stored) : null;
 
+        let chosenPerfilId: string | null = null;
         if (storedValid) {
-          setActivePerfilIdState(stored);
+          chosenPerfilId = storedValid.ID_PERFIL;
         } else if (rows.length === 1) {
-          setActivePerfilIdState(rows[0].ID_PERFIL);
+          chosenPerfilId = rows[0].ID_PERFIL;
           if (typeof window !== "undefined") {
             window.localStorage.setItem(STORAGE_KEY, rows[0].ID_PERFIL);
           }
+        }
+
+        if (chosenPerfilId) {
+          const perfil = rows.find((p) => p.ID_PERFIL === chosenPerfilId);
+          if (perfil) {
+            try {
+              await syncWorkspaceMetadata(perfil);
+            } catch (syncError) {
+              console.error("Failed to sync workspace metadata (JWT refresh)", syncError);
+            }
+            if (cancelled) return;
+          }
+          setActivePerfilIdState(chosenPerfilId);
         } else {
           setActivePerfilIdState(null);
         }
       } catch (error) {
         console.error("Failed to load PERFILES", error);
-        if (!cancelled) {
+        if (!cancelled && !profilesLoadedOk) {
           setPerfiles([]);
           setWorkspaceOptions([]);
         }
@@ -129,15 +163,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setActiveCentro(option?.centro ?? null);
   }, [activePerfilId, workspaceOptions]);
 
-  useEffect(() => {
-    if (!session?.user?.id || !activePerfilId) return;
-    const perfil = perfiles.find((p) => p.ID_PERFIL === activePerfilId);
-    if (!perfil) return;
+  const refreshDemoTrialGate = useCallback(async (): Promise<boolean> => {
+    const perfil = perfiles.find((p) => p.ID_PERFIL === activePerfilId) ?? null;
+    if (!perfil || !isDemoTenantId(perfil.ID_CLIENTE)) {
+      setDemoTrialBlocked(false);
+      setDemoTrialError(null);
+      return true;
+    }
 
-    syncWorkspaceMetadata(perfil).catch((err) => {
-      console.error("Failed to sync workspace metadata", err);
-    });
-  }, [activePerfilId, perfiles, session?.user?.id]);
+    try {
+      const result = await enforceDemoTrial(perfil.ID_CLIENTE);
+      setDemoTrialBlocked(result.expired);
+      setDemoTrialError(null);
+      return !result.expired;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo comprobar la prueba demo";
+      setDemoTrialError(message);
+      throw error;
+    }
+  }, [activePerfilId, perfiles]);
+
+  useEffect(() => {
+    if (!activePerfilId || perfilesLoading) return;
+
+    const perfil = perfiles.find((p) => p.ID_PERFIL === activePerfilId);
+    if (!perfil || !isDemoTenantId(perfil.ID_CLIENTE)) {
+      setDemoTrialBlocked(false);
+      setDemoTrialError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setDemoTrialChecking(true);
+      try {
+        const result = await enforceDemoTrial(perfil.ID_CLIENTE);
+        if (cancelled) return;
+        setDemoTrialBlocked(result.expired);
+        setDemoTrialError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setDemoTrialError(
+          error instanceof Error ? error.message : "No se pudo comprobar la prueba demo",
+        );
+      } finally {
+        if (!cancelled) setDemoTrialChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePerfilId, perfiles, perfilesLoading]);
 
   const setActivePerfilId = useCallback((id: string) => {
     setActivePerfilIdState(id);
@@ -183,6 +261,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activateWorkspace,
     isAuthenticated: !!session,
     needsTenantSelection: !!session && hasMultipleProfiles && !activePerfil,
+    demoTrialBlocked,
+    demoTrialChecking,
+    demoTrialError,
+    refreshDemoTrialGate,
     signOut,
   };
 

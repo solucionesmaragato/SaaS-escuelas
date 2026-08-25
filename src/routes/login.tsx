@@ -14,7 +14,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { loading, perfilesLoading, isAuthenticated, needsTenantSelection, activePerfil } =
+  const { loading, perfilesLoading, isAuthenticated, needsTenantSelection, activePerfil, perfiles } =
     useApp();
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,6 +27,9 @@ function LoginPage() {
   }
   if (isAuthenticated && needsTenantSelection) {
     return <Navigate to="/select-tenant" replace />;
+  }
+  if (isAuthenticated && perfiles.length === 0) {
+    return <Navigate to="/registro" replace />;
   }
   if (isAuthenticated) return <Navigate to={homePathForRole(activePerfil?.ROL)} replace />;
 

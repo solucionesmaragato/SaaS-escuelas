@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Music4 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
@@ -11,7 +11,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  clearDemoRegistroForm,
   normalizeEmail,
+  readDemoRegistroForm,
   saveDemoRegistroForm,
   validateDemoRegistroForm,
   type DemoRegistroForm,
@@ -35,14 +37,49 @@ function RegistroPage() {
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const autoProvisionStartedRef = useRef(false);
 
   const sessionEmail = session?.user?.email ? normalizeEmail(session.user.email) : "";
   const hasSessionNoPerfil = isAuthenticated && !activePerfil && !needsTenantSelection;
 
   useEffect(() => {
+    const stored = readDemoRegistroForm();
+    if (!stored) return;
+    setNombre(stored.nombre);
+    setTelefono(stored.telefono);
+    setEmail(stored.email);
+  }, []);
+
+  useEffect(() => {
     if (!hasSessionNoPerfil || !sessionEmail || email.trim()) return;
     setEmail(sessionEmail);
   }, [hasSessionNoPerfil, sessionEmail, email]);
+
+  useEffect(() => {
+    if (loading || perfilesLoading || !hasSessionNoPerfil || autoProvisionStartedRef.current) {
+      return;
+    }
+
+    const form = readDemoRegistroForm();
+    if (!form || validateDemoRegistroForm(form)) return;
+    if (form.email !== sessionEmail) return;
+
+    autoProvisionStartedRef.current = true;
+    setSubmitting(true);
+
+    (async () => {
+      try {
+        const data = await invokeProvisionDemo(form);
+        clearDemoRegistroForm();
+        toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
+        window.location.replace("/dashboard");
+      } catch (err) {
+        autoProvisionStartedRef.current = false;
+        setSubmitting(false);
+        toast.error(err instanceof Error ? err.message : "Error al crear el entorno demo.");
+      }
+    })();
+  }, [hasSessionNoPerfil, loading, perfilesLoading, sessionEmail]);
 
   if (loading || (isAuthenticated && perfilesLoading)) {
     return (
@@ -58,6 +95,15 @@ function RegistroPage() {
 
   if (isAuthenticated && activePerfil) {
     return <Navigate to={homePathForRole(activePerfil.ROL)} replace />;
+  }
+
+  if (submitting && hasSessionNoPerfil) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-muted px-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Creando tu entorno demo con datos de Madrid…</p>
+      </div>
+    );
   }
 
   const buildForm = (): DemoRegistroForm => ({
@@ -89,13 +135,8 @@ function RegistroPage() {
     setSubmitting(true);
     try {
       const data = await invokeProvisionDemo(form);
-      if (data.clone && !data.clone.ok) {
-        toast.warning(
-          "Entorno demo creado, pero el seed de Madrid falló parcialmente. Puedes seguir explorando.",
-        );
-      } else {
-        toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
-      }
+      clearDemoRegistroForm();
+      toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
       window.location.replace("/dashboard");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al crear el entorno demo.");

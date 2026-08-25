@@ -7,11 +7,11 @@ export interface DemoRegistroForm {
 }
 
 export function saveDemoRegistroForm(form: DemoRegistroForm): void {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
 }
 
 export function readDemoRegistroForm(): DemoRegistroForm | null {
-  const raw = sessionStorage.getItem(STORAGE_KEY);
+  const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as DemoRegistroForm;
@@ -27,7 +27,7 @@ export function readDemoRegistroForm(): DemoRegistroForm | null {
 }
 
 export function clearDemoRegistroForm(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
 }
 
 export function validateDemoRegistroForm(form: DemoRegistroForm): string | null {

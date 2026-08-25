@@ -1351,12 +1351,12 @@ export function CalendarWidget({
   );
 
   const dashboardToolbarControls = (
-    <div className="flex flex-nowrap items-center gap-1">
+    <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-1">
       <ToggleGroup
         type="single"
         value={calendarView}
         onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
-        className="border rounded-md p-0.5"
+        className="shrink-0 border rounded-md p-0.5"
       >
         <ToggleGroupItem value="day" aria-label="Vista día" className="h-7 px-2 text-xs">
           Día
@@ -1371,7 +1371,7 @@ export function CalendarWidget({
       <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={navigatePrev}>
         <ChevronLeft className="h-3.5 w-3.5" />
       </Button>
-      <div className="min-w-0 max-w-[140px] truncate text-center text-xs font-medium capitalize">
+      <div className="min-w-0 flex-1 truncate text-center text-xs font-medium capitalize">
         {tituloCalendario}
       </div>
       <Button variant="outline" size="icon" className="h-7 w-7 shrink-0" onClick={navigateNext}>
@@ -1636,15 +1636,15 @@ export function CalendarWidget({
             </div>
             <div
               className={cn(
-                "hidden w-full shrink-0 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:items-center lg:gap-2 lg:overflow-x-auto",
+                "hidden w-full shrink-0 lg:flex lg:items-center lg:gap-2",
                 !embedded && "mb-2",
               )}
             >
-              <div className="min-w-0 justify-self-start">{typeToggleButtons}</div>
-              <div className="shrink-0 justify-self-center">{dashboardToolbarControls}</div>
-              <div className="shrink-0 justify-self-end">
-                {toolbarRight ?? <span className="inline-block w-0" aria-hidden="true" />}
+              <div className="shrink-0">{typeToggleButtons}</div>
+              <div className="flex min-w-0 flex-1 justify-center">
+                {dashboardToolbarControls}
               </div>
+              {toolbarRight ? <div className="shrink-0">{toolbarRight}</div> : null}
             </div>
           </>
         ) : (

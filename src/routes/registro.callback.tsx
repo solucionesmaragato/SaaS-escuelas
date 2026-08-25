@@ -12,6 +12,7 @@ import {
   readDemoRegistroForm,
 } from "@/lib/demoRegistroStorage";
 import { invokeProvisionDemo } from "@/lib/provisionDemo";
+import { isDemoTenantId } from "@/lib/demoTrial";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/registro/callback")({
@@ -37,19 +38,16 @@ function RegistroCallbackPage() {
         return;
       }
 
-      if (perfiles.length > 0 && !perfilesLoading) {
+      const demoPerfil = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
+      if (demoPerfil) {
         clearDemoRegistroForm();
-        const perfil = activePerfil ?? perfiles[0];
-        navigate({ to: homePathForRole(perfil?.ROL), replace: true });
+        navigate({ to: homePathForRole(demoPerfil.ROL), replace: true });
         return;
       }
 
       const form = readDemoRegistroForm();
       if (!form) {
-        setPhase("error");
-        setErrorMessage(
-          "No encontramos los datos del formulario. Vuelve a /registro y completa el alta.",
-        );
+        navigate({ to: "/registro", replace: true });
         return;
       }
 
@@ -75,19 +73,10 @@ function RegistroCallbackPage() {
         });
 
         clearDemoRegistroForm();
-
-        if (data.clone && !data.clone.ok) {
-          toast.warning(
-            "Entorno demo creado, pero el seed de Madrid falló parcialmente. Puedes seguir explorando.",
-          );
-        } else {
-          toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
-        }
+        toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
 
         window.location.replace("/dashboard");
       } catch (err) {
-        clearDemoRegistroForm();
-        await signOut();
         setPhase("error");
         setErrorMessage(err instanceof Error ? err.message : "Error al crear el entorno demo.");
       }

@@ -14,6 +14,12 @@ export async function syncWorkspaceMetadata(perfil: Perfil): Promise<void> {
     },
   });
   if (error) throw error;
+
+  const { data, error: refreshError } = await supabase.auth.refreshSession();
+  if (refreshError) throw refreshError;
+  if (!data.session) {
+    throw new Error("No se pudo refrescar la sesión tras cambiar el workspace.");
+  }
 }
 
 const AVATAR_PALETTES = [
