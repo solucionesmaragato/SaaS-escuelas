@@ -15,7 +15,7 @@ import { invokeProvisionDemo } from "@/lib/provisionDemo";
 import { isDemoTenantId } from "@/lib/demoTrial";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/registro/callback")({
+export const Route = createFileRoute("/registro_/callback")({
   component: RegistroCallbackPage,
 });
 

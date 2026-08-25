@@ -15,7 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as RegistroCallbackRouteImport } from './routes/registro.callback'
+import { Route as RegistroCallbackRouteImport } from './routes/registro_.callback'
 import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AuthenticatedTurnosRouteImport } from './routes/_authenticated/turnos'
 import { Route as AuthenticatedTarifasRouteImport } from './routes/_authenticated/tarifas'
@@ -88,9 +88,9 @@ const IndexRoute = IndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegistroCallbackRoute = RegistroCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => RegistroRoute,
+  id: '/registro_/callback',
+  path: '/registro/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
   id: '/usuarios',
@@ -319,7 +319,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
-  '/registro': typeof RegistroRouteWithChildren
+  '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
   '/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
@@ -368,7 +368,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
-  '/registro': typeof RegistroRouteWithChildren
+  '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
   '/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
@@ -418,7 +418,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
-  '/registro': typeof RegistroRouteWithChildren
+  '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/_authenticated/alumnos': typeof AuthenticatedAlumnosRoute
   '/_authenticated/alumnosMatriculas': typeof AuthenticatedAlumnosMatriculasRoute
@@ -447,7 +447,7 @@ export interface FileRoutesById {
   '/_authenticated/tarifas': typeof AuthenticatedTarifasRoute
   '/_authenticated/turnos': typeof AuthenticatedTurnosRoute
   '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
-  '/registro/callback': typeof RegistroCallbackRoute
+  '/registro_/callback': typeof RegistroCallbackRoute
   '/_authenticated/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/_authenticated/app/archivos': typeof AuthenticatedAppArchivosRoute
   '/_authenticated/app/datos-personales': typeof AuthenticatedAppDatosPersonalesRoute
@@ -596,7 +596,7 @@ export interface FileRouteTypes {
     | '/_authenticated/tarifas'
     | '/_authenticated/turnos'
     | '/_authenticated/usuarios'
-    | '/registro/callback'
+    | '/registro_/callback'
     | '/_authenticated/app/alumnos'
     | '/_authenticated/app/archivos'
     | '/_authenticated/app/datos-personales'
@@ -618,8 +618,9 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   FirmarSepaRoute: typeof FirmarSepaRoute
   LoginRoute: typeof LoginRoute
-  RegistroRoute: typeof RegistroRouteWithChildren
+  RegistroRoute: typeof RegistroRoute
   SelectTenantRoute: typeof SelectTenantRoute
+  RegistroCallbackRoute: typeof RegistroCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -666,12 +667,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/registro/callback': {
-      id: '/registro/callback'
-      path: '/callback'
+    '/registro_/callback': {
+      id: '/registro_/callback'
+      path: '/registro/callback'
       fullPath: '/registro/callback'
       preLoaderRoute: typeof RegistroCallbackRouteImport
-      parentRoute: typeof RegistroRoute
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/usuarios': {
       id: '/_authenticated/usuarios'
@@ -1076,25 +1077,14 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
-interface RegistroRouteChildren {
-  RegistroCallbackRoute: typeof RegistroCallbackRoute
-}
-
-const RegistroRouteChildren: RegistroRouteChildren = {
-  RegistroCallbackRoute: RegistroCallbackRoute,
-}
-
-const RegistroRouteWithChildren = RegistroRoute._addFileChildren(
-  RegistroRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   FirmarSepaRoute: FirmarSepaRoute,
   LoginRoute: LoginRoute,
-  RegistroRoute: RegistroRouteWithChildren,
+  RegistroRoute: RegistroRoute,
   SelectTenantRoute: SelectTenantRoute,
+  RegistroCallbackRoute: RegistroCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
