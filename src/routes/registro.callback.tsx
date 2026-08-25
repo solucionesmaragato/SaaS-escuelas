@@ -21,7 +21,7 @@ export const Route = createFileRoute("/registro/callback")({
 
 function RegistroCallbackPage() {
   const navigate = useNavigate();
-  const { signOut, perfilesLoading, activePerfil, isAuthenticated, loading, perfiles } = useApp();
+  const { signOut, perfilesLoading, isAuthenticated, loading, perfiles } = useApp();
   const [phase, setPhase] = useState<"waiting" | "provisioning" | "error">("waiting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const startedRef = useRef(false);
@@ -81,10 +81,17 @@ function RegistroCallbackPage() {
         setErrorMessage(err instanceof Error ? err.message : "Error al crear el entorno demo.");
       }
     })();
-  }, [loading, perfilesLoading, perfiles, activePerfil, navigate, signOut]);
+  }, [loading, perfilesLoading, perfiles, navigate, signOut]);
 
-  if (!loading && !perfilesLoading && isAuthenticated && activePerfil && phase === "waiting") {
-    return <Navigate to={homePathForRole(activePerfil.ROL)} replace />;
+  const demoPerfilRedirect = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
+  if (
+    !loading &&
+    !perfilesLoading &&
+    isAuthenticated &&
+    demoPerfilRedirect &&
+    phase === "waiting"
+  ) {
+    return <Navigate to={homePathForRole(demoPerfilRedirect.ROL)} replace />;
   }
 
   if (phase === "error") {

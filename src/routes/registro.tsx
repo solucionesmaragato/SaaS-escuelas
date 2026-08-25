@@ -18,6 +18,7 @@ import {
   validateDemoRegistroForm,
   type DemoRegistroForm,
 } from "@/lib/demoRegistroStorage";
+import { isDemoTenantId } from "@/lib/demoTrial";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/registro")({
@@ -31,6 +32,7 @@ function RegistroPage() {
     isAuthenticated,
     needsTenantSelection,
     activePerfil,
+    perfiles,
     session,
   } = useApp();
   const [nombre, setNombre] = useState("");
@@ -93,8 +95,9 @@ function RegistroPage() {
     return <Navigate to="/select-tenant" replace />;
   }
 
-  if (isAuthenticated && activePerfil) {
-    return <Navigate to={homePathForRole(activePerfil.ROL)} replace />;
+  const demoPerfil = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
+  if (isAuthenticated && demoPerfil) {
+    return <Navigate to={homePathForRole(demoPerfil.ROL)} replace />;
   }
 
   if (submitting && hasSessionNoPerfil) {
