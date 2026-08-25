@@ -1,7 +1,6 @@
 import { createFileRoute, Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Music4 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { Button } from "@/components/ui/button";
@@ -21,23 +20,27 @@ export const Route = createFileRoute("/registro_/callback")({
 
 function RegistroCallbackPage() {
   const navigate = useNavigate();
-  const { signOut, perfilesLoading, isAuthenticated, loading, perfiles } = useApp();
+  const { signOut, perfilesLoading, isAuthenticated, loading, perfiles, session } = useApp();
   const [phase, setPhase] = useState<"waiting" | "provisioning" | "error">("waiting");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const startedRef = useRef(false);
 
   useEffect(() => {
-    if (loading || perfilesLoading || startedRef.current) return;
+    if (loading || session?.user) return;
+
+    const timeout = window.setTimeout(() => {
+      if (startedRef.current) return;
+      setPhase("error");
+      setErrorMessage("No se completó el inicio de sesión. Vuelve a intentarlo.");
+    }, 12_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [loading, session]);
+
+  useEffect(() => {
+    if (loading || perfilesLoading || startedRef.current || !session?.user) return;
 
     (async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
-      if (!session?.user) {
-        setPhase("error");
-        setErrorMessage("No se completó el inicio de sesión. Vuelve a intentarlo.");
-        return;
-      }
-
       const demoPerfil = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
       if (demoPerfil) {
         clearDemoRegistroForm();
@@ -81,7 +84,7 @@ function RegistroCallbackPage() {
         setErrorMessage(err instanceof Error ? err.message : "Error al crear el entorno demo.");
       }
     })();
-  }, [loading, perfilesLoading, perfiles, navigate, signOut]);
+  }, [loading, perfilesLoading, perfiles, navigate, signOut, session]);
 
   const demoPerfilRedirect = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
   if (
