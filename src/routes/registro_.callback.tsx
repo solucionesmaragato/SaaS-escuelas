@@ -43,6 +43,7 @@ function RegistroCallbackPage() {
     (async () => {
       const demoPerfil = perfiles.find((p) => isDemoTenantId(p.ID_CLIENTE));
       if (demoPerfil) {
+        startedRef.current = true;
         clearDemoRegistroForm();
         navigate({ to: homePathForRole(demoPerfil.ROL), replace: true });
         return;
@@ -77,7 +78,6 @@ function RegistroCallbackPage() {
 
         clearDemoRegistroForm();
         toast.success(`Entorno ${data.id_cliente ?? "demo"} listo. ¡Bienvenido!`);
-
         window.location.replace("/dashboard");
       } catch (err) {
         setPhase("error");

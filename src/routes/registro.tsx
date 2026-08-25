@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { OAuthProviderButtons } from "@/components/auth/OAuthProviderButtons";
-import { invokeProvisionDemo } from "@/lib/provisionDemo";
+import { invokePreProvisionDemo, invokeProvisionDemo } from "@/lib/provisionDemo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -109,6 +109,15 @@ function RegistroPage() {
     );
   }
 
+  if (submitting) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-muted px-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Preparando entorno demo…</p>
+      </div>
+    );
+  }
+
   const buildForm = (): DemoRegistroForm => ({
     nombre: nombre.trim(),
     telefono: telefono.trim(),
@@ -157,6 +166,14 @@ function RegistroPage() {
 
     saveDemoRegistroForm(form);
     setSubmitting(true);
+
+    try {
+      await invokePreProvisionDemo(form);
+    } catch (err) {
+      setSubmitting(false);
+      toast.error(err instanceof Error ? err.message : "No se pudo preparar el entorno demo.");
+      return;
+    }
 
     try {
       const { error } = await supabase.auth.signInWithOAuth({

@@ -9,6 +9,13 @@ export interface ProvisionDemoResult {
   error?: string;
 }
 
+export interface PreProvisionDemoResult {
+  ok: boolean;
+  id_cliente?: string;
+  already_exists?: boolean;
+  error?: string;
+}
+
 async function readFunctionsInvokeError(error: unknown): Promise<string | null> {
   const context = (error as { context?: Response | { json?: () => Promise<unknown> } })?.context;
   if (!context) return null;
@@ -45,6 +52,30 @@ export async function invokeProvisionDemo(body: {
   }
   if (!data?.ok) {
     throw new Error(data?.error ?? "No se pudo provisionar el entorno demo.");
+  }
+
+  return data;
+}
+
+export async function invokePreProvisionDemo(body: {
+  nombre: string;
+  telefono: string;
+  email: string;
+}): Promise<PreProvisionDemoResult> {
+  const { data, error } = await supabase.functions.invoke<PreProvisionDemoResult>(
+    "pre-provisionar-demo",
+    { body },
+  );
+
+  if (error) {
+    const fromBody = await readFunctionsInvokeError(error);
+    throw new Error(
+      fromBody ||
+        (error instanceof Error ? error.message : "No se pudo preparar el entorno demo."),
+    );
+  }
+  if (!data?.ok) {
+    throw new Error(data?.error ?? "No se pudo preparar el entorno demo.");
   }
 
   return data;
