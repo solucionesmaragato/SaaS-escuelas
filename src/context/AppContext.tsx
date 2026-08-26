@@ -239,7 +239,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem("mobile_bouncer_dismissed");
+    }
     queryClient.clear();
     await supabase.auth.signOut();
   }, [queryClient]);

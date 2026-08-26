@@ -5,6 +5,7 @@ import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DemoCalComBanner } from "@/components/DemoCalComBanner";
 import { DemoExpiredWall } from "@/components/DemoExpiredWall";
+import { MobileBouncer } from "@/components/MobileBouncer";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
@@ -171,6 +172,7 @@ function AuthenticatedShellContent({
         {showMobileShell && <ProfesorBottomNav />}
         </div>
       </div>
+      <MobileBouncer />
     </div>
   );
 }

@@ -1,11 +1,10 @@
 const KOREFACTU_FORMAS_DE_PAGO = [
-  "No establecido",
-  "Efectivo",
-  "Tarjeta",
-  "Transferencia",
-  "Giro bancario",
-  "Cheque",
-  "Otro",
+  "EFECTIVO",
+  "TARJETA",
+  "TRANSFERENCIA",
+  "GIRO_BANCARIO",
+  "CHEQUE",
+  "OTRO",
 ] as const;
 
 export type KorefactuFormaDePago = (typeof KOREFACTU_FORMAS_DE_PAGO)[number];
@@ -14,7 +13,9 @@ export function mapMetodoPagoToKorefactuFormaDePago(
   metodo: string | null | undefined,
 ): KorefactuFormaDePago {
   const normalized = metodo?.trim().toLowerCase() ?? "";
-  if (!normalized) return "No establecido";
+  if (!normalized) {
+    throw new Error("Método de pago no definido para Verifactu.");
+  }
 
   if (
     normalized === "sepa" ||
@@ -25,11 +26,11 @@ export function mapMetodoPagoToKorefactuFormaDePago(
     normalized.includes("remesa") ||
     normalized.includes("giro bancario")
   ) {
-    return "Giro bancario";
+    return "GIRO_BANCARIO";
   }
 
   if (normalized === "efectivo" || normalized === "cash") {
-    return "Efectivo";
+    return "EFECTIVO";
   }
 
   if (
@@ -38,19 +39,19 @@ export function mapMetodoPagoToKorefactuFormaDePago(
     normalized === "tpv" ||
     normalized.includes("stripe")
   ) {
-    return "Tarjeta";
+    return "TARJETA";
   }
 
   if (normalized === "transferencia" || normalized === "transfer") {
-    return "Transferencia";
+    return "TRANSFERENCIA";
   }
 
   if (normalized === "bizum") {
-    return "Otro";
+    return "OTRO";
   }
 
   if (normalized === "cheque") {
-    return "Cheque";
+    return "CHEQUE";
   }
 
   throw new Error(`Método de pago no soportado para Verifactu: ${metodo?.trim() ?? ""}`);
