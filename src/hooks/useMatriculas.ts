@@ -110,7 +110,7 @@ export function formatMatriculaEstadoError(
       partialCount > 0
         ? `Se actualizaron ${partialCount} matrículas antes del error. `
         : "";
-    return `${prefix}El backend falló al cambiar el estado. Revisa los triggers de MATRICULAS en Supabase.`;
+    return `${prefix}Fallo interno al cambiar el estado. Consulte con el desarrollador.`;
   }
   if (error instanceof Error && error.message.trim()) return error.message;
   return "No se pudo cambiar el estado de la matrícula.";

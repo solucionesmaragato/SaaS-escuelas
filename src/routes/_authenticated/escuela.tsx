@@ -839,10 +839,10 @@ function EmpresaDatosDialog({
               <Input
                 id="URL_WEB"
                 name="URL_WEB"
-                type="url"
+                type="text"
                 value={form.URL_WEB}
                 onChange={setField("URL_WEB")}
-                placeholder="https://"
+                placeholder="ej. miempresa.com"
                 required
               />
             </div>

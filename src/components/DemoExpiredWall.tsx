@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Music4 } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoCalBookingPanel } from "@/components/DemoCalComBanner";
 import { enforceDemoTrial } from "@/lib/demoTrial";
@@ -38,8 +38,8 @@ export function DemoExpiredWall({ activePerfil, onReactivated }: DemoExpiredWall
     <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-muted px-4 py-8">
       <Card className="flex w-full max-w-5xl flex-col shadow-xl">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Music4 className="h-6 w-6" />
+          <div className="mx-auto mb-3 flex justify-center">
+            <AppLogo onLight className="max-h-20" />
           </div>
           <CardTitle className="text-2xl">Tu prueba ha caducado</CardTitle>
           <CardDescription>

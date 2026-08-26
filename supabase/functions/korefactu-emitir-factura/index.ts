@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@^2";
 import { regenerarExcelControlRemesa } from "../_shared/remesaExcelControl.ts";
+import { mapMetodoPagoToKorefactuFormaDePago } from "../_shared/korefactuFormaDePago.ts";
 
 interface RequestBody {
   id_recibo?: string;
@@ -363,15 +364,6 @@ function redactSecrets(text: string, apiKey: string): string {
   }
   out = out.replace(/(Authorization:\s*)\S+/gi, "$1[redacted]");
   return out.replace(/(X-API-KEY:\s*)\S+/gi, "$1[redacted]");
-}
-
-function formaDePagoKorefactu(metodo: string | null | undefined): string {
-  const m = metodo?.trim().toLowerCase() ?? "";
-  if (m === "efectivo" || m === "cash") return "EFECTIVO";
-  if (m === "tarjeta" || m === "card" || m === "tpv" || m.includes("stripe")) return "TARJETA";
-  if (m === "bizum") return "BIZUM";
-  if (m === "transferencia" || m === "transfer") return "TRANSFERENCIA";
-  return "TRANSFERENCIA";
 }
 
 function lineTipoImpositivo(iva: number | null | undefined): number {
@@ -787,6 +779,9 @@ export default {
       if (!destinatario) {
         return jsonError(destinatarioValidationError(missing), 400);
       }
+      if (!destinatario.direccion?.trim()) {
+        return jsonError("Falta la dirección del destinatario (calle).", 400);
+      }
 
       const fecha = formatReciboFechaDdMmYyyy(reciboRow.FECHA);
       const escuela = clienteRow.NOMBRE_ESCUELA?.trim() || "Escuela";
@@ -797,7 +792,7 @@ export default {
         fechaExpedicion: fecha,
         fechaVencimiento: fecha,
         tipoFactura: "F1",
-        formaDePago: formaDePagoKorefactu(reciboRow.METODO_PAGO),
+        formaDePago: mapMetodoPagoToKorefactuFormaDePago(reciboRow.METODO_PAGO),
         descripcionOperacion: [escuela, reciboRow.MES_PERIODO?.trim(), reciboRow.REF_RECIBO?.trim()]
           .filter(Boolean)
           .join(" - "),
@@ -810,6 +805,8 @@ export default {
           tipoImpositivo: lineTipoImpositivo(row.IVA_PORCENTAJE),
         })),
       };
+
+      console.log("[korefactu-emitir-factura] payload", JSON.stringify(korefactuBody));
 
       const createRes = await fetch(`${root}/api/v1/key/facturas`, {
         method: "POST",

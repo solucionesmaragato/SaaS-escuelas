@@ -72,11 +72,18 @@ export type EmpresaClientePatch = {
   DIRECCION: string;
 };
 
+export function normalizeUrlWeb(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 function buildEmpresaPatch(form: EmpresaClienteFormInput): EmpresaClientePatch {
   return {
     NOMBRE_ESCUELA: form.NOMBRE_ESCUELA.trim(),
     TLF_REAL: form.TLF_REAL.trim(),
-    URL_WEB: form.URL_WEB.trim(),
+    URL_WEB: normalizeUrlWeb(form.URL_WEB),
     EMAIL_CLIENTE: form.EMAIL_CLIENTE.trim(),
     APP_LOGO: form.APP_LOGO.trim(),
     CIF: form.CIF.trim(),

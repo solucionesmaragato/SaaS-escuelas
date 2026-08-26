@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Music4 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
 import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { Button } from "@/components/ui/button";
@@ -102,8 +103,8 @@ function RegistroCallbackPage() {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-muted px-4">
         <Card className="w-full max-w-md shadow-xl">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-              <Music4 className="h-6 w-6" />
+            <div className="mx-auto mb-3 flex justify-center">
+              <AppLogo onLight className="max-h-16" />
             </div>
             <CardTitle className="text-xl">No se pudo completar el registro</CardTitle>
             <CardDescription>{errorMessage}</CardDescription>
@@ -123,6 +124,7 @@ function RegistroCallbackPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-muted px-4">
+      <AppLogo onLight className="mb-2 max-h-16" />
       <Loader2 className="h-10 w-10 animate-spin text-primary" />
       <p className="text-sm text-muted-foreground">
         {phase === "provisioning"

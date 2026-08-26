@@ -1,12 +1,12 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Music4 } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { OAuthProviderButtons } from "@/components/auth/OAuthProviderButtons";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
@@ -74,10 +74,9 @@ function LoginPage() {
       </div>
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Music4 className="h-6 w-6" />
+          <div className="mx-auto mb-3 flex justify-center">
+            <AppLogo onLight className="max-h-20" />
           </div>
-          <CardTitle className="text-2xl">MySincoppa</CardTitle>
           <CardDescription>Accede a tu escuela con tu cuenta corporativa o personal</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

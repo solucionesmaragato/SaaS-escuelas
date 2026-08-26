@@ -466,7 +466,7 @@ export function DemoCalComBanner({ activePerfil, sessionAccessToken: _sessionAcc
 
   return (
     <>
-      <div className="ml-auto flex shrink-0 items-center">
+      <div className="ml-auto flex min-w-0 max-w-full shrink items-center">
         {hasBooking && meetingAt ? (
           <span className="inline-flex max-w-[min(100%,28rem)] shrink-0 items-center gap-2 rounded-md border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800">
             <Clock className="h-4 w-4 shrink-0" aria-hidden />
@@ -478,12 +478,20 @@ export function DemoCalComBanner({ activePerfil, sessionAccessToken: _sessionAcc
         ) : (
           <button
             type="button"
-            className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-md border-2 border-red-600 bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:border-red-700 hover:bg-red-700"
+            className="flex min-w-0 max-w-full cursor-pointer items-center gap-3 rounded-lg border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-2 text-left shadow-sm transition-colors hover:from-amber-100 hover:to-orange-100"
             onClick={() => setBookingModalOpen(true)}
           >
-            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
-            Agenda tu llamada
-            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+              <AlertTriangle className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-amber-950 sm:text-base">
+                Reserva una llamada con Sincoppa
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-amber-900/80 sm:text-sm">
+                Estás en el entorno de prueba. Conócenos y te explicamos todo.
+              </span>
+            </span>
           </button>
         )}
       </div>

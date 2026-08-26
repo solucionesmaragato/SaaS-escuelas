@@ -165,7 +165,7 @@ function getFacturaConfirmCopy(action: FacturaConfirmAction): {
       return {
         title: "Marcar cobro TPV",
         description:
-          "Indica el nº de ticket emitido en el TPV. El recibo pasará a Cobrado sin enviar a Korefactu.",
+          "Indica el nº de ticket emitido en el TPV. El recibo pasará a Cobrado sin enviar a Verifactu.",
       };
     }
     return {
@@ -186,7 +186,7 @@ function getFacturaConfirmCopy(action: FacturaConfirmAction): {
     return {
       title: "Marcar cobro TPV",
       description:
-        "Indica el nº de ticket emitido en el TPV. El recibo pasará a Cobrado sin enviar a Korefactu.",
+        "Indica el nº de ticket emitido en el TPV. El recibo pasará a Cobrado sin enviar a Verifactu.",
     };
   }
   return {
@@ -999,10 +999,10 @@ function FacturasPage() {
       verifactu.notification !== "success" &&
       verifactu.notification !== "pdf_missing"
     ) {
-      throw new Error("Korefactu no emitió la factura. El recibo sigue en Borrador.");
+      throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
     }
     if (!verifactu.LINK_FACTURA_KOREFACTU?.trim()) {
-      throw new Error("Korefactu no emitió la factura. El recibo sigue en Borrador.");
+      throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
     }
     await update.mutateAsync({
       id: row.ID_RECIBO,
@@ -1036,7 +1036,7 @@ function FacturasPage() {
       }
       toast.success(
         isFacturaAnulado(row)
-          ? "Anulación reenviada a Korefactu correctamente."
+          ? "Anulación reenviada a Verifactu correctamente."
           : "Anulación registrada en Verifactu correctamente.",
       );
       return;
@@ -1247,7 +1247,7 @@ function FacturasPage() {
 
         {list.isError && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-4">
-            Error en la lectura financiera de Supabase: {(list.error as Error)?.message}
+            Error al cargar las facturas: {(list.error as Error)?.message}
           </div>
         )}
 
@@ -1814,7 +1814,7 @@ function FacturaFormDialog({
             placeholder="Ticket emitido en el TPV"
           />
           <p className="text-[11px] text-muted-foreground">
-            Se guarda en Nº factura del Excel. No se emite de nuevo en Korefactu.
+            Se guarda en Nº factura del Excel. No se emite de nuevo con Verifactu.
           </p>
         </div>
       ) : null}

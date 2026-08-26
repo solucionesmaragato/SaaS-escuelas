@@ -51,22 +51,70 @@ function TipoBadge({ tipo }: { tipo: string | null | undefined }) {
   );
 }
 
+function parseFichajeSesionId(mensaje: string | null | undefined): string | null {
+  if (!mensaje) return null;
+  const match = mensaje.match(/\[FICHAJE_ALERT:([^:]+):(?:entrada|salida)\]/);
+  return match?.[1]?.trim() || null;
+}
+
 function navigateFromAviso(aviso: AvisoInterno, navigate: ReturnType<typeof useNavigate>) {
   if (aviso.ID_ALUMNO?.trim()) {
     navigate({ to: "/alumnos", search: { alumnoId: aviso.ID_ALUMNO } });
     return;
   }
-  if (aviso.ID_PROFESOR?.trim()) {
-    navigate({ to: "/profesores", search: { profesorId: aviso.ID_PROFESOR } });
+
+  const tipo = aviso.TIPO?.trim() ?? "";
+  const profesorId = aviso.ID_PROFESOR?.trim();
+
+  if (tipo === "URGENTE" && aviso.MENSAJE?.includes("[FICHAJE_ALERT:")) {
+    const sesionId = parseFichajeSesionId(aviso.MENSAJE);
+    if (sesionId) {
+      navigate({ to: "/sesiones", search: { sesionId } });
+      return;
+    }
+    if (profesorId) {
+      navigate({ to: "/fichajes", search: { profesorId } });
+      return;
+    }
+  }
+
+  if (tipo === "Solicitud fichaje externo" && profesorId) {
+    navigate({ to: "/fichajes", search: { profesorId } });
     return;
   }
+
+  if (tipo === "Documento firmado por profesor" && profesorId) {
+    navigate({ to: "/profesores", search: { profesorId } });
+    return;
+  }
+
+  if (profesorId) {
+    navigate({ to: "/profesores", search: { profesorId } });
+    return;
+  }
+
   if (aviso.ID_HORARIO?.trim()) {
     navigate({ to: "/sesiones", search: { horarioId: aviso.ID_HORARIO } });
   }
 }
 
 function isAvisoNavigable(aviso: AvisoInterno): boolean {
-  return !!(aviso.ID_ALUMNO?.trim() || aviso.ID_PROFESOR?.trim() || aviso.ID_HORARIO?.trim());
+  if (aviso.ID_ALUMNO?.trim()) return true;
+
+  const tipo = aviso.TIPO?.trim() ?? "";
+  const profesorId = aviso.ID_PROFESOR?.trim();
+
+  if (tipo === "URGENTE" && aviso.MENSAJE?.includes("[FICHAJE_ALERT:")) {
+    if (parseFichajeSesionId(aviso.MENSAJE)) return true;
+    if (profesorId) return true;
+  }
+
+  if (tipo === "Solicitud fichaje externo" && profesorId) return true;
+  if (tipo === "Documento firmado por profesor" && profesorId) return true;
+  if (profesorId) return true;
+  if (aviso.ID_HORARIO?.trim()) return true;
+
+  return false;
 }
 
 export function AvisosWidget({ filterCenterId }: { filterCenterId?: string | null }) {
@@ -161,7 +209,11 @@ export function AvisosWidget({ filterCenterId }: { filterCenterId?: string | nul
                   className={`flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-start sm:justify-between${
                     isAvisoNavigable(aviso) ? " cursor-pointer" : ""
                   }`}
-                  onClick={() => navigateFromAviso(aviso, navigate)}
+                  onClick={() => {
+                    if (!isAvisoNavigable(aviso)) return;
+                    setDialogOpen(false);
+                    navigateFromAviso(aviso, navigate);
+                  }}
                 >
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">

@@ -265,7 +265,7 @@ function AdminLiveDashboard() {
       : undefined;
 
   return (
-    <div className="mx-auto flex h-[calc(100svh-3.5rem-2rem)] max-h-[calc(100svh-3.5rem-2rem)] w-full max-w-6xl flex-col overflow-hidden sm:h-[calc(100svh-3.5rem-3rem)] sm:max-h-[calc(100svh-3.5rem-3rem)]">
+    <div className="-m-4 flex h-full min-h-0 flex-1 w-full flex-col overflow-hidden p-4 sm:-m-6 sm:p-6">
       <div className="mb-2 grid shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {showAvisosWidget && (
           <AvisosWidget filterCenterId={avisosFilterCenterId} />

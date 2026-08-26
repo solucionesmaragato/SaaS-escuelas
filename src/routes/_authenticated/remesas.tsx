@@ -487,13 +487,13 @@ function RemesasPage() {
       }
 
       if (cobradosConUuid.length === 0) {
-        toast.error("Ningún recibo pudo emitirse en Korefactu. La remesa sigue Generada.");
+        toast.error("Ningún recibo pudo emitirse con Verifactu. La remesa sigue Generada.");
         return;
       }
 
       if (failures.length > 0) {
         toast.warning(
-          `${failures.length} recibo(s) no se emitieron en Korefactu y no pasarán a Cobrado.`,
+          `${failures.length} recibo(s) no se emitieron con Verifactu y no pasarán a Cobrado.`,
         );
       }
 
@@ -517,7 +517,7 @@ function RemesasPage() {
         toast.success(VERIFACTU_EXITO_TOAST);
       } else {
         toast.success(
-          `Remesa enviada. ${cobradosConUuid.length} recibo(s) Cobrados con factura Korefactu.`,
+          `Remesa enviada. ${cobradosConUuid.length} recibo(s) Cobrados con factura Verifactu.`,
         );
       }
     } catch (err) {
@@ -642,7 +642,7 @@ function RemesasPage() {
 
         {list.isError && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive mb-4">
-            Error en la lectura de remesas de Supabase: {(list.error as Error)?.message}
+            Error al cargar las remesas: {(list.error as Error)?.message}
           </div>
         )}
 

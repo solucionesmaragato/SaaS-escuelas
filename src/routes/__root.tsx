@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { AppProvider } from "@/context/AppContext";
 import { Toaster } from "@/components/ui/sonner";
+import { MYSINCOPPA_ICON_URL } from "@/lib/brand";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -96,8 +97,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "manifest", href: "/manifest.webmanifest" },
-      { rel: "icon", href: "/icons/favicon-32.png", type: "image/png" },
-      { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
+      { rel: "icon", href: MYSINCOPPA_ICON_URL, type: "image/png" },
+      { rel: "apple-touch-icon", href: MYSINCOPPA_ICON_URL },
     ],
   }),
   shellComponent: RootShell,

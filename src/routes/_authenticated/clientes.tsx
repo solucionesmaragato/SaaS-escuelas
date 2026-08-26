@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MoreHorizontal, Plus, Search, Trash2, Pencil } from "lucide-react";
 import { useClientes, type ClienteData } from "@/hooks/useClientes";
+import { normalizeUrlWeb } from "@/hooks/useEmpresaCliente";
 import { useActiveTenant } from "@/context/AppContext";
 import { isMasterRole } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
@@ -344,6 +345,7 @@ function ClienteFormDialog({
               ...form,
               ID_CLIENTE: form.ID_CLIENTE.trim(),
               NOMBRE_ESCUELA: form.NOMBRE_ESCUELA.trim(),
+              URL_WEB: form.URL_WEB?.trim() ? normalizeUrlWeb(form.URL_WEB) : form.URL_WEB,
             });
           }}
         >
@@ -384,7 +386,11 @@ function ClienteFormDialog({
                 />
               </FormField>
               <FormField label="URL_WEB">
-                <Input value={form.URL_WEB ?? ""} onChange={setStr("URL_WEB")} />
+                <Input
+                  value={form.URL_WEB ?? ""}
+                  onChange={setStr("URL_WEB")}
+                  placeholder="ej. miempresa.com"
+                />
               </FormField>
               <FormField label="APP_LOGO">
                 <Input value={form.APP_LOGO ?? ""} onChange={setStr("APP_LOGO")} />

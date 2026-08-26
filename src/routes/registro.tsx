@@ -1,13 +1,14 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Music4 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { OAuthProviderButtons } from "@/components/auth/OAuthProviderButtons";
 import { invokePreProvisionDemo, invokeProvisionDemo } from "@/lib/provisionDemo";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -199,14 +200,13 @@ function RegistroPage() {
 
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Music4 className="h-6 w-6" />
+          <div className="mx-auto mb-3 flex justify-center">
+            <AppLogo onLight className="max-h-20" />
           </div>
-          <CardTitle className="text-2xl">Prueba MySincoppa</CardTitle>
           <CardDescription>
             {hasSessionNoPerfil
-              ? "Completa tus datos para crear tu entorno demo con datos de Madrid."
-              : "Crea tu entorno demo gratuito. Solo Madrid, datos de ejemplo incluidos."}
+              ? "Prueba gratuita: completa tus datos para crear tu entorno demo con datos de Madrid."
+              : "Prueba gratuita: crea tu entorno demo. Solo Madrid, datos de ejemplo incluidos."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Download, Loader2, Music4, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Download, Loader2, ShieldCheck } from "lucide-react";
+import { AppLogo } from "@/components/AppLogo";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -225,8 +226,8 @@ function FirmarSepaPage() {
       <div className="mx-auto w-full max-w-lg">
         <Card className="overflow-hidden border-slate-200 bg-white shadow-lg shadow-slate-200/60">
           <CardHeader className="space-y-4 border-b border-slate-100 bg-white px-5 pb-5 pt-6 text-center sm:px-8 sm:pt-8">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-sm">
-              <Music4 className="h-7 w-7" aria-hidden />
+            <div className="mx-auto flex justify-center">
+              <AppLogo onLight className="max-h-20" />
             </div>
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">

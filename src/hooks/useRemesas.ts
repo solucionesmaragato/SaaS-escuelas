@@ -13,6 +13,7 @@ import {
   type CobradoVerifactuEmisionResult,
 } from "@/hooks/useRecibos";
 import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import { sanitizeUserFacingError } from "@/lib/sanitizeUserFacingError";
 
 export type GenerarRemesaMensualInput = {
   p_id_cliente: string;
@@ -220,20 +221,26 @@ async function invokeKorefactuEmitirFacturaRemesa(
     | null;
 
   if (payload?.error?.trim()) {
-    throw new Error(payload.error.trim());
+    throw new Error(sanitizeUserFacingError(payload.error.trim()));
   }
   if (error) {
+    const fromBody = await readFunctionsInvokeError(error);
+    if (fromBody) throw new Error(sanitizeUserFacingError(fromBody));
     const status = (error as { context?: { status?: number } })?.context?.status;
     if (status === 401) {
       throw new Error("No autorizado para emitir la factura.");
     }
-    throw new Error(error instanceof Error ? error.message : "Error al emitir la factura con Korefactu.");
+    throw new Error(
+      sanitizeUserFacingError(
+        error instanceof Error ? error.message : "Error al emitir la factura con Verifactu.",
+      ),
+    );
   }
 
   const link = payload?.link?.trim() || null;
   const hasEmission = payload?.LINK_FACTURA_KOREFACTU?.trim() || null;
   if (!hasEmission) {
-    throw new Error("Korefactu no emitió la factura. El recibo sigue en Borrador.");
+    throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
   }
 
   const pdfDownloaded = payload?.pdfDownloaded ?? Boolean(link);
@@ -284,7 +291,7 @@ export async function emitKorefactuForRemesaRecibos(
     if (normalizeEstadoPago(recibo.ESTADO_PAGO) !== "Borrador") {
       failures.push({
         idRecibo,
-        message: `Recibo ${recibo.REF_RECIBO?.trim() || idRecibo}: no está en Borrador y no tiene factura Korefactu.`,
+        message: `Recibo ${recibo.REF_RECIBO?.trim() || idRecibo}: no está en Borrador y no tiene factura Verifactu.`,
       });
       continue;
     }
@@ -292,7 +299,7 @@ export async function emitKorefactuForRemesaRecibos(
     try {
       const verifactu = await invokeKorefactuEmitirFacturaRemesa(idRecibo);
       if (!verifactu.LINK_FACTURA_KOREFACTU?.trim()) {
-        throw new Error("Korefactu no emitió la factura. El recibo sigue en Borrador.");
+        throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
       }
       if (verifactu.excelError) {
         excelErrorSet.add(verifactu.excelError);
@@ -308,8 +315,8 @@ export async function emitKorefactuForRemesaRecibos(
         idRecibo,
         message:
           err instanceof Error
-            ? err.message
-            : `Error al emitir factura Korefactu (${recibo.REF_RECIBO?.trim() || idRecibo}).`,
+            ? sanitizeUserFacingError(err.message)
+            : `Error al emitir factura Verifactu (${recibo.REF_RECIBO?.trim() || idRecibo}).`,
       });
     }
   }

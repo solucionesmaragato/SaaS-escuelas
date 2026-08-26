@@ -10,6 +10,7 @@ import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import { compareAlphabetic, MESES_ANIO } from "@/lib/alumnosMatriculasUtils";
 import { calcVentaLineaSubtotal, invokeGenerarPdfBorradorRecibo } from "@/hooks/useVentasLineas";
 import { normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
+import { sanitizeUserFacingError } from "@/lib/sanitizeUserFacingError";
 
 export const RECIBOS_PAGE_SIZE = 25;
 
@@ -419,10 +420,10 @@ async function readFunctionsInvokeError(error: unknown): Promise<string | null> 
 }
 
 export const VERIFACTU_EMITIDA_SIN_PDF_TOAST =
-  "Factura emitida en Korefactu, pero no se pudo descargar el PDF oficial. El recibo queda Cobrado con número y QR.";
+  "Factura emitida con Verifactu, pero no se pudo descargar el PDF oficial. El recibo queda Cobrado con número y QR.";
 
 export const KOREFACTU_PDF_NO_DISPONIBLE_TOAST =
-  "Korefactu no permite descargar el PDF en este momento. La factura sigue registrada.";
+  "Verifactu no permite descargar el PDF en este momento. La factura sigue registrada.";
 
 export function reciboTieneFacturaOficial(
   row: Pick<ReciboRow, "LINK_FACTURA_KOREFACTU" | "LINK_PDF_RECIBO">,
@@ -446,11 +447,11 @@ export async function resolveDescargarPdfFacturaKorefactu(
 
   const payload = data as { error?: string; link?: string | null } | null;
   if (payload?.error?.trim()) {
-    throw new Error(payload.error.trim());
+    throw new Error(sanitizeUserFacingError(payload.error.trim()));
   }
   if (error) {
     const fromBody = await readFunctionsInvokeError(error);
-    throw new Error(fromBody || KOREFACTU_PDF_NO_DISPONIBLE_TOAST);
+    throw new Error(sanitizeUserFacingError(fromBody || KOREFACTU_PDF_NO_DISPONIBLE_TOAST));
   }
 
   const link = payload?.link?.trim();
@@ -495,22 +496,22 @@ export async function resolveCobradoVerifactuEmision(
     | null;
 
   if (payload?.error?.trim()) {
-    throw new Error(payload.error.trim());
+    throw new Error(sanitizeUserFacingError(payload.error.trim()));
   }
   if (error) {
     const fromBody = await readFunctionsInvokeError(error);
-    if (fromBody) throw new Error(fromBody);
+    if (fromBody) throw new Error(sanitizeUserFacingError(fromBody));
     const status = (error as { context?: { status?: number } })?.context?.status;
     if (status === 401) {
       throw new Error("No autorizado para emitir la factura.");
     }
-    throw new Error(error instanceof Error ? error.message : "Error al emitir la factura con Korefactu.");
+    throw new Error(sanitizeUserFacingError(error instanceof Error ? error.message : "Error al emitir la factura con Verifactu."));
   }
 
   const link = payload?.link?.trim() || null;
   const hasEmission = payload?.LINK_FACTURA_KOREFACTU?.trim() || null;
   if (!hasEmission) {
-    throw new Error("Korefactu no emitió la factura. El recibo sigue en Borrador.");
+    throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
   }
 
   const pdfDownloaded = payload?.pdfDownloaded ?? Boolean(link);
@@ -598,16 +599,16 @@ export async function resolveAnulacionVerifactu(
       }
     | null;
   if (payload?.error?.trim()) {
-    throw new Error(payload.error.trim());
+    throw new Error(sanitizeUserFacingError(payload.error.trim()));
   }
   if (error) {
     const fromBody = await readFunctionsInvokeError(error);
-    if (fromBody) throw new Error(fromBody);
+    if (fromBody) throw new Error(sanitizeUserFacingError(fromBody));
     const status = (error as { context?: { status?: number } })?.context?.status;
     if (status === 401) {
       throw new Error("No autorizado para anular la factura.");
     }
-    throw new Error(error instanceof Error ? error.message : "Error al anular la factura en Korefactu.");
+    throw new Error(sanitizeUserFacingError(error instanceof Error ? error.message : "Error al anular la factura con Verifactu."));
   }
 
   return {
