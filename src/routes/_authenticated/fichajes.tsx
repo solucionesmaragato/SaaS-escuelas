@@ -165,15 +165,6 @@ function localMonthStartDateKey(): string {
   return `${y}-${m}-01`;
 }
 
-function subtractYearsFromDateKey(dateKey: string, years: number): string {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const date = new Date(y - years, (m ?? 1) - 1, d ?? 1);
-  const yy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
 async function computeDatasetHashSeal(records: unknown): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(JSON.stringify(records));
@@ -204,7 +195,10 @@ type AuditSealedPayload = {
  * first forces the client to validate (and refresh, if needed) that token
  * before the invocation ever leaves the browser.
  */
-async function requestAuditPdfAndDownload(payload: AuditSealedPayload): Promise<void> {
+async function requestAuditPdfAndDownload(
+  payload: AuditSealedPayload | AuditSealedPayload[],
+  options?: { downloadFilename?: string },
+): Promise<void> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -232,11 +226,14 @@ async function requestAuditPdfAndDownload(payload: AuditSealedPayload): Promise<
     throw new Error("La función de auditoría no devolvió ningún documento.");
   }
 
-  const filenameSafeProfesor = payload.nombreProfesor.trim().replace(/\s+/g, "_");
+  const referencePayload = Array.isArray(payload) ? payload[0] : payload;
+  const filenameSafeProfesor = referencePayload.nombreProfesor.trim().replace(/\s+/g, "_");
   const url = URL.createObjectURL(pdfBlob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `Auditoria_Horaria_${filenameSafeProfesor}_${payload.rangoHasta}.pdf`;
+  anchor.download =
+    options?.downloadFilename ??
+    `Auditoria_Horaria_${filenameSafeProfesor}_${referencePayload.rangoHasta}.pdf`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -516,6 +513,46 @@ function conciliacionProfesorNombre(
   profById: Map<string, string>,
 ): string {
   return row.NOMBRE_PROFESOR ?? profById.get(row.ID_PROFESOR) ?? row.ID_PROFESOR;
+}
+
+type FilterConciliacionRowsOptions = {
+  allowedProfIds: Set<string>;
+  filtroProfesor: string;
+  query: string;
+  profById: Map<string, string>;
+  filterCenterId?: string | null;
+};
+
+function filterConciliacionRows(
+  rows: FichajeConciliacionAdminRow[],
+  {
+    allowedProfIds,
+    filtroProfesor,
+    query,
+    profById,
+    filterCenterId,
+  }: FilterConciliacionRowsOptions,
+): FichajeConciliacionAdminRow[] {
+  let result = rows.filter((r) => allowedProfIds.has(r.ID_PROFESOR));
+  if (filterCenterId) {
+    result = result.filter((r) => r.ID_CENTRO === filterCenterId);
+  }
+  if (filtroProfesor) {
+    result = result.filter((r) => r.ID_PROFESOR === filtroProfesor);
+  }
+  if (query.trim()) {
+    const q = query.toLowerCase();
+    result = result.filter((r) => {
+      const nombre = conciliacionProfesorNombre(r, profById);
+      return (
+        nombre.toLowerCase().includes(q) ||
+        r.TIPO_MOVIMIENTO.toLowerCase().includes(q) ||
+        r.ESTADO_TOLERANCIA.toLowerCase().includes(q) ||
+        r.ESTADO_LEGAL.toLowerCase().includes(q)
+      );
+    });
+  }
+  return result;
 }
 
 function formatConciliacionMarkDetail(mark: FichajeConciliacionAdminRow) {
@@ -1582,11 +1619,14 @@ function ControlHorarioView({
   const handleGenerarAuditoria = useCallback(async () => {
     setAuditGenerating(true);
     try {
-      const auditToDate = localTodayDateKey();
-      const auditFromDate = subtractYearsFromDateKey(auditToDate, 4);
-      
-      // 1. Recuperar los datos crudos agregados del rango legal
-      const rows = await fetchConciliacionAdminRange(tenantId, auditFromDate, auditToDate);
+      const rows = await fetchConciliacionAdminRange(tenantId, fromDate, toDate);
+      const auditRows = filterConciliacionRows(rows, {
+        allowedProfIds,
+        filtroProfesor,
+        query,
+        profById,
+        filterCenterId,
+      });
 
       const buildSealedPayload = async (idProfesor: string, records: FichajeConciliacionAdminRow[]) => {
         // 2. Ordenar cronológicamente en el cliente
@@ -1613,8 +1653,8 @@ function ControlHorarioView({
         return {
           idProfesor,
           nombreProfesor: conciliacionProfesorNombre(registrosEnriquecidos[0], profById),
-          rangoDesde: auditFromDate,
-          rangoHasta: auditToDate,
+          rangoDesde: fromDate,
+          rangoHasta: toDate,
           totalRegistros: registrosEnriquecidos.length,
           registros: registrosEnriquecidos,
           hashSello,
@@ -1623,12 +1663,11 @@ function ControlHorarioView({
 
       // Flujo de generación para un único profesor seleccionado en el filtro
       if (filtroProfesor) {
-        const registrosProfesor = rows.filter((r) => r.ID_PROFESOR === filtroProfesor);
-        if (registrosProfesor.length === 0) {
-          toast.error("No hay fichajes en los últimos 4 años para este profesor.");
+        if (auditRows.length === 0) {
+          toast.error(`No hay fichajes del ${fromDate} al ${toDate} para este profesor con los filtros aplicados.`);
           return;
         }
-        const payload = await buildSealedPayload(filtroProfesor, registrosProfesor);
+        const payload = await buildSealedPayload(filtroProfesor, auditRows);
         await requestAuditPdfAndDownload(payload);
         toast.success("Auditoría sellada y totalizada generada para el profesor.");
         return;
@@ -1636,60 +1675,59 @@ function ControlHorarioView({
 
       // Flujo masivo por lotes si no hay filtro de profesor seleccionado
       const byProfesor = new Map<string, FichajeConciliacionAdminRow[]>();
-      for (const row of rows) {
+      for (const row of auditRows) {
         const group = byProfesor.get(row.ID_PROFESOR) ?? [];
         group.push(row);
         byProfesor.set(row.ID_PROFESOR, group);
       }
 
       if (byProfesor.size === 0) {
-        toast.error("No se hallaron asientos en la base de datos.");
+        toast.error(`No hay fichajes del ${fromDate} al ${toDate} con los filtros aplicados.`);
         return;
       }
 
-      let fallidos = 0;
+      const tenantSafe = tenantId.replace(/[^\w-]+/g, "_");
+      const payloads: AuditSealedPayload[] = [];
       for (const [idProfesor, records] of byProfesor) {
-        const payload = await buildSealedPayload(idProfesor, records);
-        try {
-          await requestAuditPdfAndDownload(payload);
-        } catch (err) {
-          fallidos += 1;
-          console.error(`Fallo en bloque auditor para profesor: ${idProfesor}`, err);
-        }
+        payloads.push(await buildSealedPayload(idProfesor, records));
       }
 
-      const exitosos = byProfesor.size - fallidos;
-      if (fallidos === 0) {
-        toast.success(`Libros de registro descargados con éxito para ${exitosos} profesores.`);
-      } else {
-        toast.error(`Procesados ${exitosos} reportes horaria. ${fallidos} errores de red detectados.`);
-      }
+      await requestAuditPdfAndDownload(payloads, {
+        downloadFilename: `Auditoria_Horaria_${tenantSafe}_${toDate}.pdf`,
+      });
+      toast.success(
+        payloads.length === 1
+          ? "Auditoría sellada y totalizada generada para el profesor."
+          : `Auditoría combinada descargada para ${payloads.length} profesores.`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error crítico de extracción.");
     } finally {
       setAuditGenerating(false);
     }
-  }, [tenantId, filtroProfesor, profById, fichajesHistorial]);
+  }, [
+    tenantId,
+    fromDate,
+    toDate,
+    filtroProfesor,
+    profById,
+    fichajesHistorial,
+    allowedProfIds,
+    query,
+    filterCenterId,
+  ]);
 
-  const filtered = useMemo(() => {
-    let rows = conciliacionRows.filter((r) => allowedProfIds.has(r.ID_PROFESOR));
-    if (filtroProfesor) {
-      rows = rows.filter((r) => r.ID_PROFESOR === filtroProfesor);
-    }
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      rows = rows.filter((r) => {
-        const nombre = conciliacionProfesorNombre(r, profById);
-        return (
-          nombre.toLowerCase().includes(q) ||
-          r.TIPO_MOVIMIENTO.toLowerCase().includes(q) ||
-          r.ESTADO_TOLERANCIA.toLowerCase().includes(q) ||
-          r.ESTADO_LEGAL.toLowerCase().includes(q)
-        );
-      });
-    }
-    return rows;
-  }, [conciliacionRows, filtroProfesor, query, profById, allowedProfIds]);
+  const filtered = useMemo(
+    () =>
+      filterConciliacionRows(conciliacionRows, {
+        allowedProfIds,
+        filtroProfesor,
+        query,
+        profById,
+        filterCenterId,
+      }),
+    [conciliacionRows, filtroProfesor, query, profById, allowedProfIds, filterCenterId],
+  );
 
   const formatConciliacionHoraReal = (fechaHoraReal: string) => {
     const date = parseServerDate(fechaHoraReal);
