@@ -9,9 +9,18 @@ import {
   type EspecialidadUpdateInput,
 } from "@/hooks/useEspecialidades";
 import { useClientes } from "@/hooks/useClientes";
+import { useCentros } from "@/hooks/useCentros";
+import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import { hasPermission } from "@/lib/rbac";
-import { canManageUsuarios, isMasterRole } from "@/lib/tenantQuery";
+import { canManageUsuarios, isAdminRole, isMasterRole } from "@/lib/tenantQuery";
+import {
+  CATALOG_ALL_CENTROS_LABEL,
+  filterCatalogByCenter,
+  formatCatalogCentroLabel,
+} from "@/lib/catalogCenterFilter";
+import { ALL_CENTROS_FILTER_VALUE } from "@/lib/centroFilter";
+import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -56,6 +65,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ModalBackdrop } from "@/components/ui/modal-overlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -75,6 +85,10 @@ function EspecialidadDetailOverlay({
   canMutate,
   isMaster,
   submitting,
+  centroNombreById,
+  canChooseCentro,
+  centrosOrdenados,
+  profileCenterId,
   onClose,
   onEdit,
   onCancelEdit,
@@ -86,6 +100,10 @@ function EspecialidadDetailOverlay({
   canMutate: boolean;
   isMaster: boolean;
   submitting: boolean;
+  centroNombreById: Map<string, string>;
+  canChooseCentro: boolean;
+  centrosOrdenados: { ID_CENTRO: string; NOMBRE_CENTRO: string }[];
+  profileCenterId: string | null;
   onClose: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -112,12 +130,7 @@ function EspecialidadDetailOverlay({
   if (!especialidad) {
     return createPortal(
       <>
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/10"
-          aria-label="Cerrar"
-          onClick={onClose}
-        />
+        <ModalBackdrop ariaLabel="Cerrar" onClose={onClose} />
         <div
           className={cn(
             ALUMNO_OVERLAY_PANEL_CLASS,
@@ -133,12 +146,7 @@ function EspecialidadDetailOverlay({
 
   return createPortal(
     <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 bg-black/10"
-        aria-label="Cerrar detalle de la especialidad"
-        onClick={onClose}
-      />
+      <ModalBackdrop ariaLabel="Cerrar detalle de la especialidad" onClose={onClose} />
       <div
         role="dialog"
         aria-modal="true"
@@ -181,6 +189,9 @@ function EspecialidadDetailOverlay({
               isMaster={isMaster}
               initial={especialidad}
               submitting={submitting}
+              canChooseCentro={canChooseCentro}
+              centrosOrdenados={centrosOrdenados}
+              profileCenterId={profileCenterId}
               onClose={onCancelEdit}
               onSubmit={onRequestSave}
             />
@@ -225,7 +236,7 @@ function EspecialidadDetailOverlay({
                 </Button>
               </div>
             </header>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>*]:min-w-0">
               {isMaster && (
                 <>
                   <div>
@@ -242,6 +253,10 @@ function EspecialidadDetailOverlay({
                 <dt className="text-muted-foreground">Especialidad</dt>
                 <dd className="font-semibold">{especialidad.ESPECIALIDAD}</dd>
               </div>
+              <div className={isMaster ? "" : "col-span-2"}>
+                <dt className="text-muted-foreground">Centro</dt>
+                <dd>{formatCatalogCentroLabel(especialidad.ID_CENTRO, centroNombreById)}</dd>
+              </div>
             </dl>
           </>
         )}
@@ -252,10 +267,24 @@ function EspecialidadDetailOverlay({
 }
 
 function EspecialidadesPage() {
-  const { rol } = useActiveTenant();
+  const { rol, centerId: profileCenterId } = useActiveTenant();
   const isMaster = isMasterRole(rol);
+  const isAdminOrMaster = isMaster || isAdminRole(rol);
   const canMutate = canManageUsuarios(rol);
+  const canChooseCentro = isMaster || (isAdminRole(rol) && !profileCenterId);
   const { list, create, update, remove } = useEspecialidades();
+  const { list: centrosList } = useCentros();
+  const { centrosOrdenados, showCentroFilter, selectedCenterId, setSelectedCenterId } =
+    useAdminCentroFilter();
+  const showAdminCentroFilter = isAdminOrMaster && showCentroFilter;
+
+  const centroNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centrosList.data ?? []) {
+      map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO);
+    }
+    return map;
+  }, [centrosList.data]);
 
   const [query, setQuery] = useState("");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
@@ -302,18 +331,22 @@ function EspecialidadesPage() {
   };
 
   const filtered = useMemo(() => {
-    const rows = especialidades;
+    let rows = especialidades;
+    if (showAdminCentroFilter && selectedCenterId) {
+      rows = filterCatalogByCenter(rows, selectedCenterId);
+    }
     if (!query.trim()) return rows;
     const q = query.toLowerCase();
     return rows.filter(
       (e) =>
         e.ESPECIALIDAD?.toLowerCase().includes(q) ||
+        formatCatalogCentroLabel(e.ID_CENTRO, centroNombreById).toLowerCase().includes(q) ||
         (isMaster && e.ID_CLIENTE?.toLowerCase().includes(q)) ||
         (isMaster && e.ID_ESPECIALIDAD?.toLowerCase().includes(q)),
     );
-  }, [especialidades, query, isMaster]);
+  }, [especialidades, query, isMaster, showAdminCentroFilter, selectedCenterId, centroNombreById]);
 
-  const colSpan = isMaster ? 4 : canMutate ? 2 : 1;
+  const colSpan = isMaster ? 5 : canMutate ? 3 : 2;
 
   if (!hasPermission(rol, "especialidades:write")) {
     return (
@@ -327,7 +360,7 @@ function EspecialidadesPage() {
     <div className="mx-auto max-w-4xl space-y-4">
       <PageHeader
         title="Especialidades"
-        description={`${especialidades.length} registradas en el sistema`}
+        description={`${filtered.length} registradas en el sistema`}
         actions={
           canMutate && (
             <Button onClick={() => setCreating(true)}>
@@ -338,14 +371,24 @@ function EspecialidadesPage() {
       />
 
       <Card className="p-4">
-        <div className="relative mb-4 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar especialidad..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="relative flex-1 max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar especialidad..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {showAdminCentroFilter && (
+            <CentroTableFilter
+              id="especialidades-centro-filter"
+              centros={centrosOrdenados}
+              value={selectedCenterId}
+              onChange={setSelectedCenterId}
+            />
+          )}
         </div>
 
         {list.isError && (
@@ -361,6 +404,7 @@ function EspecialidadesPage() {
                 {isMaster && <TableHead>ID_ESPECIALIDAD</TableHead>}
                 {isMaster && <TableHead>ID_CLIENTE</TableHead>}
                 <TableHead>Especialidad</TableHead>
+                <TableHead>Centro</TableHead>
                 {canMutate && <TableHead className="w-12" />}
               </TableRow>
             </TableHeader>
@@ -393,11 +437,18 @@ function EspecialidadesPage() {
                       <TableCell className="font-mono text-xs">{e.ID_CLIENTE}</TableCell>
                     )}
                     <TableCell className="font-medium">{e.ESPECIALIDAD}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatCatalogCentroLabel(e.ID_CENTRO, centroNombreById)}
+                    </TableCell>
                     {canMutate && (
-                      <TableCell onClick={(ev) => ev.stopPropagation()}>
+                      <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -427,6 +478,9 @@ function EspecialidadesPage() {
           submitLabel="Crear"
           isMaster={isMaster}
           submitting={create.isPending}
+          canChooseCentro={canChooseCentro}
+          centrosOrdenados={centrosOrdenados}
+          profileCenterId={profileCenterId}
           onSubmit={(values) => {
             setPendingSave({ kind: "create", values });
           }}
@@ -440,6 +494,10 @@ function EspecialidadesPage() {
         canMutate={canMutate}
         isMaster={isMaster}
         submitting={update.isPending}
+        centroNombreById={centroNombreById}
+        canChooseCentro={canChooseCentro}
+        centrosOrdenados={centrosOrdenados}
+        profileCenterId={profileCenterId}
         onClose={handleCloseOverlay}
         onEdit={handleEditOverlay}
         onCancelEdit={handleCancelEditOverlay}
@@ -520,6 +578,9 @@ type EspecialidadFormDialogCreateProps = {
   initial?: undefined;
   submitting: boolean;
   embedded?: boolean;
+  canChooseCentro: boolean;
+  centrosOrdenados: { ID_CENTRO: string; NOMBRE_CENTRO: string }[];
+  profileCenterId: string | null;
   onSubmit: (values: EspecialidadCreateInput) => void;
 };
 
@@ -532,6 +593,9 @@ type EspecialidadFormDialogEditProps = {
   initial: EspecialidadData;
   submitting: boolean;
   embedded?: boolean;
+  canChooseCentro: boolean;
+  centrosOrdenados: { ID_CENTRO: string; NOMBRE_CENTRO: string }[];
+  profileCenterId: string | null;
   onSubmit: (values: EspecialidadUpdateInput) => void;
 };
 
@@ -540,7 +604,18 @@ type EspecialidadFormDialogProps =
   | EspecialidadFormDialogEditProps;
 
 function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
-  const { open, onClose, title, submitLabel, isMaster, submitting, embedded } = props;
+  const {
+    open,
+    onClose,
+    title,
+    submitLabel,
+    isMaster,
+    submitting,
+    embedded,
+    canChooseCentro,
+    centrosOrdenados,
+    profileCenterId,
+  } = props;
   const initial = "initial" in props ? props.initial : undefined;
   const isEdit = initial != null;
 
@@ -549,13 +624,19 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
 
   const [nombre, setNombre] = useState("");
   const [idCliente, setIdCliente] = useState("");
+  const [idCentro, setIdCentro] = useState(ALL_CENTROS_FILTER_VALUE);
 
   useEffect(() => {
     if (open) {
       setNombre(initial?.ESPECIALIDAD ?? "");
       setIdCliente(initial?.ID_CLIENTE ?? "");
+      if (canChooseCentro) {
+        setIdCentro(initial?.ID_CENTRO ?? ALL_CENTROS_FILTER_VALUE);
+      } else {
+        setIdCentro(profileCenterId ?? ALL_CENTROS_FILTER_VALUE);
+      }
     }
-  }, [open, initial]);
+  }, [open, initial, canChooseCentro, profileCenterId]);
 
   const formBody = (
     <form
@@ -565,7 +646,14 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
         if (!nombre.trim()) return;
 
         if (isEdit && initial) {
-          const patch: EspecialidadUpdateInput = { ESPECIALIDAD: nombre.trim() };
+          const patch: EspecialidadUpdateInput = {
+            ESPECIALIDAD: nombre.trim(),
+            ...(canChooseCentro
+              ? {
+                  ID_CENTRO: idCentro === ALL_CENTROS_FILTER_VALUE ? null : idCentro,
+                }
+              : {}),
+          };
           (props as EspecialidadFormDialogEditProps).onSubmit(patch);
           return;
         }
@@ -573,6 +661,11 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
         const payload: EspecialidadCreateInput = {
           ESPECIALIDAD: nombre.trim(),
           ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
+          ...(canChooseCentro
+            ? {
+                ID_CENTRO: idCentro === ALL_CENTROS_FILTER_VALUE ? null : idCentro,
+              }
+            : {}),
         };
         (props as EspecialidadFormDialogCreateProps).onSubmit(payload);
       }}
@@ -608,6 +701,37 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
           )}
         </div>
       )}
+
+      {canChooseCentro ? (
+        <div className="space-y-2">
+          <Label htmlFor="especialidad-centro">Centro</Label>
+          <Select value={idCentro} onValueChange={setIdCentro}>
+            <SelectTrigger id="especialidad-centro">
+              <SelectValue placeholder="Seleccionar centro" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CENTROS_FILTER_VALUE}>{CATALOG_ALL_CENTROS_LABEL}</SelectItem>
+              {centrosOrdenados.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : profileCenterId ? (
+        <div className="space-y-2">
+          <Label>Centro</Label>
+          <Input
+            value={
+              centrosOrdenados.find((c) => c.ID_CENTRO === profileCenterId)?.NOMBRE_CENTRO ??
+              profileCenterId
+            }
+            readOnly
+            disabled
+          />
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <Label>Especialidad *</Label>

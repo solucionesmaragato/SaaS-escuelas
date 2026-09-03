@@ -1,9 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
+import { appendCatalogCenterOrFilter } from "@/lib/catalogCenterFilter";
 import {
   isAdminRole,
+  isDireccionRole,
   isMasterRole,
+  isProfesorRole,
+  isSecretariaRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
@@ -11,6 +15,7 @@ import {
 export type TarifaData = {
   ID_TARIFA: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   SERVICIO: string;
   PRECIO: number | null;
   FORMATO_VENTA: string | null;
@@ -23,6 +28,7 @@ export type TarifaData = {
 
 export type TarifaCreateInput = {
   SERVICIO: string;
+  ID_CENTRO?: string | null;
   PRECIO?: number | null;
   FORMATO_VENTA?: string | null;
   TIPO_COBRO?: string | null;
@@ -37,6 +43,7 @@ export type TarifaUpdateInput = Partial<TarifaCreateInput>;
 type TarifaRow = {
   ID_TARIFA: string;
   ID_CLIENTE: string;
+  ID_CENTRO: string | null;
   SERVICIO: string;
   PRECIO: number | string | null;
   FORMATO_VENTA: string | null;
@@ -74,6 +81,32 @@ function nullIfEmptyInt(value: number | string | null | undefined): number | nul
   return Number.isNaN(n) ? null : n;
 }
 
+function sanitizeIdCentro(value: string | null | undefined): string | null {
+  if (value === null) return null;
+  return nullIfEmpty(value);
+}
+
+function resolveCreateIdCentro(
+  rol: string | null | undefined,
+  profileCenterId: string | null | undefined,
+  inputIdCentro: string | null | undefined,
+): string | null {
+  if (isMasterRole(rol)) {
+    if (inputIdCentro !== undefined) return sanitizeIdCentro(inputIdCentro);
+    return sanitizeIdCentro(profileCenterId);
+  }
+  if (isAdminRole(rol)) {
+    if (profileCenterId) return profileCenterId;
+    if (inputIdCentro !== undefined) return sanitizeIdCentro(inputIdCentro);
+    return null;
+  }
+  return sanitizeIdCentro(profileCenterId);
+}
+
+function shouldScopeCatalogByCenter(rol: string | null | undefined): boolean {
+  return isSecretariaRole(rol) || isDireccionRole(rol) || isProfesorRole(rol);
+}
+
 function sanitizeTarifaPayload(
   input: TarifaCreateInput | TarifaUpdateInput,
 ): Record<string, unknown> {
@@ -81,6 +114,9 @@ function sanitizeTarifaPayload(
 
   if ("SERVICIO" in input && input.SERVICIO !== undefined) {
     payload.SERVICIO = input.SERVICIO.trim();
+  }
+  if ("ID_CENTRO" in input) {
+    payload.ID_CENTRO = sanitizeIdCentro(input.ID_CENTRO);
   }
   if ("PRECIO" in input) {
     payload.PRECIO = nullIfEmptyNumber(input.PRECIO);
@@ -111,6 +147,7 @@ function mapTarifaRow(row: TarifaRow): TarifaData {
   return {
     ID_TARIFA: row.ID_TARIFA,
     ID_CLIENTE: row.ID_CLIENTE,
+    ID_CENTRO: sanitizeIdCentro(row.ID_CENTRO),
     SERVICIO: row.SERVICIO,
     PRECIO: nullIfEmptyNumber(row.PRECIO),
     FORMATO_VENTA: row.FORMATO_VENTA,
@@ -123,15 +160,20 @@ function mapTarifaRow(row: TarifaRow): TarifaData {
 }
 
 export function useTarifas() {
-  const { tenantId, rol } = useActiveTenant();
+  const { tenantId, rol, centerId } = useActiveTenant();
   const qc = useQueryClient();
-  const queryKey = tenantListKey("tarifas", rol, tenantId);
+  const catalogScopeKey =
+    isMasterRole(rol) || isAdminRole(rol) ? "tenant-wide" : (centerId ?? "no-center");
+  const queryKey = [...tenantListKey("tarifas", rol, tenantId), catalogScopeKey];
 
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<TarifaData[]> => {
       let query = supabase.from("TARIFAS").select("*");
       query = scopeTenantQuery(query, rol, tenantId);
+      if (shouldScopeCatalogByCenter(rol)) {
+        query = appendCatalogCenterOrFilter(query, centerId);
+      }
       const { data, error } = await query.order("SERVICIO", { ascending: true });
       if (error) throw error;
       return ((data ?? []) as TarifaRow[]).map(mapTarifaRow);
@@ -142,11 +184,8 @@ export function useTarifas() {
     mutationFn: async (input: TarifaCreateInput) => {
       assertCanWrite(rol);
       const payload = sanitizeTarifaPayload(input);
-      const { data, error } = await supabase
-        .from("TARIFAS")
-        .insert(payload)
-        .select()
-        .single();
+      payload.ID_CENTRO = resolveCreateIdCentro(rol, centerId, input.ID_CENTRO);
+      const { data, error } = await supabase.from("TARIFAS").insert(payload).select().single();
       if (error) throw error;
       return mapTarifaRow(data as TarifaRow);
     },
@@ -157,6 +196,9 @@ export function useTarifas() {
     mutationFn: async ({ id, patch }: { id: string; patch: TarifaUpdateInput }) => {
       assertCanWrite(rol);
       const payload = sanitizeTarifaPayload(patch);
+      if (isAdminRole(rol) && centerId && "ID_CENTRO" in payload) {
+        delete payload.ID_CENTRO;
+      }
       const { data, error } = await supabase
         .from("TARIFAS")
         .update(payload)

@@ -18,8 +18,17 @@ import {
   type TarifaCreateInput,
   type TarifaUpdateInput,
 } from "@/hooks/useTarifas";
+import { useCentros } from "@/hooks/useCentros";
+import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import { isAdminRole, isDireccionRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
+import {
+  CATALOG_ALL_CENTROS_LABEL,
+  filterCatalogByCenter,
+  formatCatalogCentroLabel,
+} from "@/lib/catalogCenterFilter";
+import { ALL_CENTROS_FILTER_VALUE } from "@/lib/centroFilter";
+import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -67,6 +76,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ModalBackdrop } from "@/components/ui/modal-overlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
@@ -102,7 +112,7 @@ function formatPrecio(precio: number | null): string {
   return formatCurrency(precio);
 }
 
-const TABLE_COLS = 6;
+const TABLE_COLS = 7;
 
 type PendingTarifaUpdate = { id: string; values: TarifaUpdateInput };
 
@@ -112,6 +122,10 @@ function TarifaDetailOverlay({
   tarifa,
   canWrite,
   submitting,
+  centroNombreById,
+  canChooseCentro,
+  centrosOrdenados,
+  profileCenterId,
   onClose,
   onEdit,
   onCancelEdit,
@@ -122,6 +136,10 @@ function TarifaDetailOverlay({
   tarifa: TarifaData | null;
   canWrite: boolean;
   submitting: boolean;
+  centroNombreById: Map<string, string>;
+  canChooseCentro: boolean;
+  centrosOrdenados: { ID_CENTRO: string; NOMBRE_CENTRO: string }[];
+  profileCenterId: string | null;
   onClose: () => void;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -148,12 +166,7 @@ function TarifaDetailOverlay({
   if (!tarifa) {
     return createPortal(
       <>
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/10"
-          aria-label="Cerrar"
-          onClick={onClose}
-        />
+        <ModalBackdrop ariaLabel="Cerrar" onClose={onClose} />
         <div
           className={cn(
             ALUMNO_OVERLAY_PANEL_CLASS,
@@ -169,12 +182,7 @@ function TarifaDetailOverlay({
 
   return createPortal(
     <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 bg-black/10"
-        aria-label="Cerrar detalle de la tarifa"
-        onClick={onClose}
-      />
+      <ModalBackdrop ariaLabel="Cerrar detalle de la tarifa" onClose={onClose} />
       <div
         role="dialog"
         aria-modal="true"
@@ -216,6 +224,9 @@ function TarifaDetailOverlay({
               submitLabel="Guardar"
               initial={tarifa}
               submitting={submitting}
+              canChooseCentro={canChooseCentro}
+              centrosOrdenados={centrosOrdenados}
+              profileCenterId={profileCenterId}
               onClose={onCancelEdit}
               onSubmit={onSubmit}
             />
@@ -260,10 +271,14 @@ function TarifaDetailOverlay({
                 </Button>
               </div>
             </header>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 [&>*]:min-w-0">
               <div className="col-span-2">
                 <dt className="text-muted-foreground">Servicio / concepto</dt>
                 <dd className="font-semibold">{tarifa.SERVICIO}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Centro</dt>
+                <dd>{formatCatalogCentroLabel(tarifa.ID_CENTRO, centroNombreById)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Precio</dt>
@@ -301,12 +316,27 @@ function TarifaDetailOverlay({
 }
 
 function TarifasPage() {
-  const { rol } = useActiveTenant();
+  const { rol, centerId: profileCenterId } = useActiveTenant();
   const canWrite = isMasterRole(rol) || isAdminRole(rol);
   const canDelete = isMasterRole(rol);
   const isReadOnly = isDireccionRole(rol);
+  const isAdminOrMaster = canWrite;
+  const canChooseCentro = isMasterRole(rol) || (isAdminRole(rol) && !profileCenterId);
 
   const { list, create, update, remove } = useTarifas();
+  const { list: centrosList } = useCentros();
+  const { centrosOrdenados, showCentroFilter, selectedCenterId, setSelectedCenterId } =
+    useAdminCentroFilter();
+  const showAdminCentroFilter = isAdminOrMaster && showCentroFilter;
+
+  const centroNombreById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const centro of centrosList.data ?? []) {
+      map.set(centro.ID_CENTRO, centro.NOMBRE_CENTRO);
+    }
+    return map;
+  }, [centrosList.data]);
+
   const { tarifaId } = Route.useSearch();
   const navigate = Route.useNavigate();
 
@@ -347,16 +377,21 @@ function TarifasPage() {
   };
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return tarifas;
+    let rows = tarifas;
+    if (showAdminCentroFilter && selectedCenterId) {
+      rows = filterCatalogByCenter(rows, selectedCenterId);
+    }
+    if (!query.trim()) return rows;
     const q = query.toLowerCase();
-    return tarifas.filter(
+    return rows.filter(
       (t) =>
         t.SERVICIO?.toLowerCase().includes(q) ||
         t.FORMATO_VENTA?.toLowerCase().includes(q) ||
         t.TIPO_COBRO?.toLowerCase().includes(q) ||
-        t.DETALLES?.toLowerCase().includes(q),
+        t.DETALLES?.toLowerCase().includes(q) ||
+        formatCatalogCentroLabel(t.ID_CENTRO, centroNombreById).toLowerCase().includes(q),
     );
-  }, [tarifas, query]);
+  }, [tarifas, query, showAdminCentroFilter, selectedCenterId, centroNombreById]);
 
   useEffect(() => {
     if (!tarifaId || tarifas.length === 0) return;
@@ -381,7 +416,7 @@ function TarifasPage() {
         title="Estructura de Tarifas"
         description={
           <>
-            {tarifas.length} planes de cobro · ordenados alfabéticamente
+            {filtered.length} planes de cobro · ordenados alfabéticamente
             {isReadOnly && " · solo lectura"}
           </>
         }
@@ -396,14 +431,24 @@ function TarifasPage() {
       />
 
       <Card className="p-4">
-        <div className="relative mb-4 max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por servicio, formato, tipo de cobro..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="relative flex-1 max-w-md">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por servicio, formato, tipo de cobro..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {showAdminCentroFilter && (
+            <CentroTableFilter
+              id="tarifas-centro-filter"
+              centros={centrosOrdenados}
+              value={selectedCenterId}
+              onChange={setSelectedCenterId}
+            />
+          )}
         </div>
 
         {list.isError && (
@@ -417,6 +462,7 @@ function TarifasPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="h-9 text-xs font-semibold">Servicio</TableHead>
+                <TableHead className="h-9 text-xs font-semibold">Centro</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Precio</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Formato</TableHead>
                 <TableHead className="h-9 text-xs font-semibold">Tipo cobro</TableHead>
@@ -450,13 +496,13 @@ function TarifasPage() {
                     onClick={() => setOverlay({ id: t.ID_TARIFA, mode: "detail" })}
                   >
                     <TableCell className="py-2 font-medium text-sm">{t.SERVICIO}</TableCell>
-                    <TableCell
-                      className="py-2 text-sm font-mono tabular-nums"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <TableCell className="py-2 text-xs text-muted-foreground">
+                      {formatCatalogCentroLabel(t.ID_CENTRO, centroNombreById)}
+                    </TableCell>
+                    <TableCell className="py-2 text-sm font-mono tabular-nums">
                       {formatPrecio(t.PRECIO)}
                     </TableCell>
-                    <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="py-2">
                       <Badge variant="secondary" className="text-xs font-normal px-1.5 py-0">
                         {t.FORMATO_VENTA ?? "—"}
                       </Badge>
@@ -474,7 +520,7 @@ function TarifasPage() {
                       )}
                       {t.SESIONES_SEMANALES == null && t.TOTAL_HORAS_SEMANALES == null && "—"}
                     </TableCell>
-                    <TableCell className="py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="py-2 text-right">
                       {(canWrite || canDelete) && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -484,6 +530,7 @@ function TarifasPage() {
                               size="icon"
                               className="h-8 w-8"
                               aria-label="Acciones de la tarifa"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <MoreVertical className="h-4 w-4" />
                             </Button>
@@ -524,6 +571,9 @@ function TarifasPage() {
         title="Nueva tarifa"
         submitLabel="Crear"
         submitting={create.isPending}
+        canChooseCentro={canChooseCentro}
+        centrosOrdenados={centrosOrdenados}
+        profileCenterId={profileCenterId}
         onSubmit={async (values) => {
           try {
             await create.mutateAsync(values as TarifaCreateInput);
@@ -541,6 +591,10 @@ function TarifasPage() {
         tarifa={overlayTarifa}
         canWrite={canWrite}
         submitting={update.isPending}
+        centroNombreById={centroNombreById}
+        canChooseCentro={canChooseCentro}
+        centrosOrdenados={centrosOrdenados}
+        profileCenterId={profileCenterId}
         onClose={handleCloseOverlay}
         onEdit={handleEditOverlay}
         onCancelEdit={handleCancelEditOverlay}
@@ -617,6 +671,9 @@ function TarifaFormDialog({
   submitLabel,
   initial,
   submitting,
+  canChooseCentro,
+  centrosOrdenados,
+  profileCenterId,
   onSubmit,
 }: {
   open: boolean;
@@ -626,6 +683,9 @@ function TarifaFormDialog({
   submitLabel: string;
   initial?: TarifaData | null;
   submitting: boolean;
+  canChooseCentro: boolean;
+  centrosOrdenados: { ID_CENTRO: string; NOMBRE_CENTRO: string }[];
+  profileCenterId: string | null;
   onSubmit: (values: TarifaCreateInput | TarifaUpdateInput) => void;
 }) {
   const [servicio, setServicio] = useState("");
@@ -635,6 +695,7 @@ function TarifaFormDialog({
   const [sesionesSemanales, setSesionesSemanales] = useState("");
   const [totalHorasSemanales, setTotalHorasSemanales] = useState("");
   const [detalles, setDetalles] = useState("");
+  const [idCentro, setIdCentro] = useState(ALL_CENTROS_FILTER_VALUE);
 
   useEffect(() => {
     if (!open) return;
@@ -649,7 +710,12 @@ function TarifaFormDialog({
       initial?.TOTAL_HORAS_SEMANALES != null ? String(initial.TOTAL_HORAS_SEMANALES) : "",
     );
     setDetalles(initial?.DETALLES ?? "");
-  }, [open, initial]);
+    if (canChooseCentro) {
+      setIdCentro(initial?.ID_CENTRO ?? ALL_CENTROS_FILTER_VALUE);
+    } else {
+      setIdCentro(profileCenterId ?? ALL_CENTROS_FILTER_VALUE);
+    }
+  }, [open, initial, canChooseCentro, profileCenterId]);
 
   const parseOptionalFloat = (value: string): number | null => {
     const trimmed = value.trim();
@@ -673,6 +739,11 @@ function TarifaFormDialog({
         if (!servicio.trim()) return;
         onSubmit({
           SERVICIO: servicio.trim(),
+          ...(canChooseCentro
+            ? {
+                ID_CENTRO: idCentro === ALL_CENTROS_FILTER_VALUE ? null : idCentro,
+              }
+            : {}),
           PRECIO: parseOptionalFloat(precio),
           FORMATO_VENTA: formatoVenta || null,
           TIPO_COBRO: tipoCobro || null,
@@ -693,6 +764,37 @@ function TarifaFormDialog({
           required
         />
       </div>
+
+      {canChooseCentro ? (
+        <div className="space-y-2">
+          <Label htmlFor="tarifa-centro">Centro</Label>
+          <Select value={idCentro} onValueChange={setIdCentro}>
+            <SelectTrigger id="tarifa-centro">
+              <SelectValue placeholder="Seleccionar centro" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CENTROS_FILTER_VALUE}>{CATALOG_ALL_CENTROS_LABEL}</SelectItem>
+              {centrosOrdenados.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : profileCenterId ? (
+        <div className="space-y-2">
+          <Label>Centro</Label>
+          <Input
+            value={
+              centrosOrdenados.find((c) => c.ID_CENTRO === profileCenterId)?.NOMBRE_CENTRO ??
+              profileCenterId
+            }
+            readOnly
+            disabled
+          />
+        </div>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
