@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, type Control } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import {
@@ -15,17 +15,35 @@ import type { AlumnoTree, MatriculaTree } from "@/hooks/useAlumnosTree";
 import type { HorarioCreateInput, HorarioUpdateInput } from "@/hooks/useAlumnosTree";
 import { useAlumnoMatriculas } from "@/hooks/useAlumnoMatriculas";
 import { useMatriculas } from "@/hooks/useMatriculas";
-import { useCargosExtra, calcCargoExtraTotal, calcCargoExtraRowTotal, cargoExtraEstadoStatus, formatCargoExtraFecha, canEditCargoExtraRole, type CargoExtraRow } from "@/hooks/useCargosExtra";
+import {
+  useCargosExtra,
+  calcCargoExtraTotal,
+  calcCargoExtraRowTotal,
+  cargoExtraEstadoStatus,
+  formatCargoExtraFecha,
+  canEditCargoExtraRole,
+  isCargoExtraPendiente,
+  type CargoExtraRow,
+} from "@/hooks/useCargosExtra";
+import { useTarifas } from "@/hooks/useTarifas";
 import { CargoExtraDetailDialog } from "@/components/alumnos/CargoExtraDetailDialog";
 import { useActiveTenant } from "@/context/AppContext";
 import { formatCurrency } from "@/lib/format";
 import type { CentroData } from "@/hooks/useCentros";
 import type { Matricula } from "@/types/database";
-import { cursosForCentro, formatCursoNombre, getActiveCursoIdsForCentro, resolveCursoIdForCentro } from "@/lib/matriculaCursoUtils";
+import {
+  cursosForCentro,
+  formatCursoNombre,
+  getActiveCursoIdsForCentro,
+  resolveCursoIdForCentro,
+} from "@/lib/matriculaCursoUtils";
+import { scopeAlumnoCatalogSources, type AlumnoCatalogSources } from "@/lib/catalogCenterFilter";
+import { toProfesorEntityOptions } from "@/lib/profesorSelector";
 import { countGrupoAlumnos, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -168,6 +186,7 @@ function profesorSelectOptions(
 }
 
 const MATRICULA_ESTADOS = ["Activo", "Inactivo"] as const;
+const sortLocale = { sensitivity: "base" } as const;
 const ESTADO_OPCIONES = ["Cobrar", "Pagado", "Devolver"] as const;
 
 function normalizeMatriculaEstado(
@@ -381,6 +400,164 @@ function schedulesTimeOverlap(
 function isHorarioScheduleActivo(estado: string | null | undefined): boolean {
   const normalized = estado?.trim().toLowerCase() ?? "";
   return normalized === "activo" || normalized === "activa";
+}
+
+function isMatriculaActivaEstado(estado: string | null | undefined): boolean {
+  return isHorarioScheduleActivo(estado);
+}
+
+type TotalMensualBreakdownLine = {
+  key: string;
+  label: string;
+  amount: number;
+};
+
+export type AlumnoTotalMensualBreakdownProps = {
+  matriculas: MatriculaTree[];
+  dtoHermanosPorcentaje: number | string | null | undefined;
+  ajusteManualEur: number | string | null | undefined;
+  motivoAjuste: string | null | undefined;
+  cargosExtra: CargoExtraRow[];
+  tarifaNombreById: Map<string, string>;
+};
+
+function buildHorarioBreakdownLabel(horario: MatriculaTree["HORARIOS_MATRICULAS"][number]): string {
+  const dia = horario.DIA?.trim();
+  const inicio = horario.HORA_INICIO?.trim();
+  const fin = horario.HORA_FIN?.trim();
+  const horarioLabel = [dia, inicio && fin ? `${inicio}–${fin}` : inicio].filter(Boolean).join(" ");
+  return horarioLabel ? `Horario ${horarioLabel}` : "Horario adicional";
+}
+
+function buildTotalMensualBreakdown(
+  input: AlumnoTotalMensualBreakdownProps & { tarifaPrecioById: Map<string, number> },
+): { lines: TotalMensualBreakdownLine[]; isEmpty: boolean } {
+  const lines: TotalMensualBreakdownLine[] = [];
+  let sumaTarifas = 0;
+  let sumaHorarios = 0;
+
+  for (const matricula of input.matriculas ?? []) {
+    if (!isMatriculaActivaEstado(matricula.ESTADO)) continue;
+
+    const idTarifa = matricula.ID_TARIFA?.trim() ?? "";
+    if (idTarifa) {
+      const precioTarifa = input.tarifaPrecioById.get(idTarifa);
+      if (precioTarifa != null && Number.isFinite(precioTarifa)) {
+        sumaTarifas += precioTarifa;
+        lines.push({
+          key: `mat-${matricula.ID_MATRICULA}`,
+          label: input.tarifaNombreById.get(idTarifa) ?? "Tarifa",
+          amount: precioTarifa,
+        });
+      }
+    }
+
+    for (const horario of matricula.HORARIOS_MATRICULAS ?? []) {
+      if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) continue;
+      const precio = Number(horario.PRECIO ?? 0);
+      if (!Number.isFinite(precio)) continue;
+      sumaHorarios += precio;
+      if (precio !== 0) {
+        lines.push({
+          key: `hor-${horario.ID_HORARIO}`,
+          label: buildHorarioBreakdownLabel(horario),
+          amount: precio,
+        });
+      }
+    }
+  }
+
+  const subtotalFormacion = sumaTarifas + sumaHorarios;
+  const dtoPorcentaje = Number(input.dtoHermanosPorcentaje ?? 0);
+  if (Number.isFinite(dtoPorcentaje) && dtoPorcentaje !== 0 && subtotalFormacion !== 0) {
+    const dtoImporte = Math.round(subtotalFormacion * (dtoPorcentaje / 100) * 100) / 100;
+    lines.push({
+      key: "dto-hermanos",
+      label: `Dto. hermanos (${dtoPorcentaje}%)`,
+      amount: -dtoImporte,
+    });
+  }
+
+  const ajusteManual = Number(input.ajusteManualEur ?? 0);
+  if (Number.isFinite(ajusteManual) && ajusteManual !== 0) {
+    const motivo = input.motivoAjuste?.trim();
+    lines.push({
+      key: "ajuste-manual",
+      label: motivo ? `Ajuste manual: ${motivo}` : "Ajuste manual",
+      amount: ajusteManual,
+    });
+  }
+
+  for (const cargo of input.cargosExtra ?? []) {
+    if (!isCargoExtraPendiente(cargo.ESTADO)) continue;
+    lines.push({
+      key: `cargo-${cargo.ID_CARGO}`,
+      label: cargo.CONCEPTO?.trim() || "Cargo extra",
+      amount: calcCargoExtraRowTotal(cargo),
+    });
+  }
+
+  return { lines, isEmpty: lines.length === 0 };
+}
+
+export function AlumnoTotalMensualBreakdown({
+  matriculas,
+  dtoHermanosPorcentaje,
+  ajusteManualEur,
+  motivoAjuste,
+  cargosExtra,
+  tarifaNombreById,
+}: AlumnoTotalMensualBreakdownProps) {
+  const { list: tarifasList } = useTarifas();
+  const tarifaPrecioById = useMemo(
+    () =>
+      new Map(
+        (tarifasList.data ?? []).map((tarifa) => [tarifa.ID_TARIFA, Number(tarifa.PRECIO ?? 0)]),
+      ),
+    [tarifasList.data],
+  );
+
+  const breakdown = useMemo(
+    () =>
+      buildTotalMensualBreakdown({
+        matriculas,
+        dtoHermanosPorcentaje,
+        ajusteManualEur,
+        motivoAjuste,
+        cargosExtra,
+        tarifaNombreById,
+        tarifaPrecioById,
+      }),
+    [
+      matriculas,
+      dtoHermanosPorcentaje,
+      ajusteManualEur,
+      motivoAjuste,
+      cargosExtra,
+      tarifaNombreById,
+      tarifaPrecioById,
+    ],
+  );
+
+  return (
+    <div className="space-y-2 rounded-md border bg-muted/40 p-3 sm:col-span-2 lg:col-span-3">
+      <p className="text-xs font-medium text-muted-foreground">Desglose del total mensual</p>
+      {breakdown.isEmpty ? (
+        <p className="text-sm text-muted-foreground">
+          Sin tarifas, horarios ni cargos extra en el cálculo
+        </p>
+      ) : (
+        <ul className="space-y-1.5 text-xs">
+          {breakdown.lines.map((line) => (
+            <li key={line.key} className="flex items-start gap-2 text-muted-foreground">
+              <span>{line.label}</span>
+              <span className="shrink-0 tabular-nums">{formatCurrency(line.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 type HorarioScheduleEstadoSource = {
@@ -1519,7 +1696,7 @@ function LockedScheduleBlock({
   return (
     <Card className="space-y-2 bg-muted/30 p-3">
       <p className="text-xs font-medium text-muted-foreground">Bloque {index + 1}</p>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 [&>*]:min-w-0">
         <div className="space-y-1">
           <Label className="text-[10px] text-muted-foreground">Día</Label>
           <Input className="h-8 bg-muted/50" value={slot.DIA_SEMANA ?? "—"} readOnly disabled />
@@ -1589,6 +1766,7 @@ function HorarioSubForm({
   matriculaTarifaId,
   matriculaCursoId,
   centros = [],
+  aulaSelectOptions = null,
   saving,
   onSave,
   onDelete,
@@ -1617,6 +1795,7 @@ function HorarioSubForm({
   matriculaTarifaId?: string | null;
   matriculaCursoId?: string | null;
   centros?: CentroData[];
+  aulaSelectOptions?: SelectOption[] | null;
   saving: boolean;
   onSave: (patch: HorarioUpdateInput | HorarioUpdateInput[]) => Promise<void>;
   onDelete?: () => Promise<void>;
@@ -1787,13 +1966,12 @@ function HorarioSubForm({
     grupoCapacity.max != null &&
     grupoCapacity.enrolled >= grupoCapacity.max;
 
-  const aulaOptions = useMemo(
-    () =>
-      Array.from(lookups.aulaById.entries())
-        .map(([id, label]) => ({ id, label }))
-        .sort((a, b) => a.label.localeCompare(b.label, "es")),
-    [lookups.aulaById],
-  );
+  const aulaOptions = useMemo(() => {
+    if (aulaSelectOptions) return aulaSelectOptions;
+    return Array.from(lookups.aulaById.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [aulaSelectOptions, lookups.aulaById]);
 
   const hasIndividualScheduleWindow =
     isIndividualSchedule && !!form.dia.trim() && !!form.horaInicio && !!form.horaFin;
@@ -2034,9 +2212,7 @@ function HorarioSubForm({
   const saveDisabled =
     saving ||
     !hasEspecialidad ||
-    (isColectiva &&
-      !horario &&
-      (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0)) ||
+    (isColectiva && !horario && (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0)) ||
     (isIndividualSchedule && scheduleResourceConflict);
 
   const blockTitle =
@@ -2058,50 +2234,50 @@ function HorarioSubForm({
   return (
     <>
       <Card className="space-y-4 border-dashed p-4">
-      {((!showEnrollmentFields && !isColectiva) || appendMode) && (
-        <p className="text-xs font-medium text-muted-foreground">{blockTitle}</p>
-      )}
+        {((!showEnrollmentFields && !isColectiva) || appendMode) && (
+          <p className="text-xs font-medium text-muted-foreground">{blockTitle}</p>
+        )}
 
-      {showStandaloneScheduleEspecialidad && (
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">
-            Especialidad <span className="text-destructive">*</span>
-          </Label>
-          <Select
-            value={form.idEspecialidad || undefined}
-            onValueChange={(v) => patchField("idEspecialidad", v)}
-            disabled={saving}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Seleccionar especialidad" />
-            </SelectTrigger>
-            <SelectContent>
-              {selectOptions.especialidades.map((e) => (
-                <SelectItem key={e.id} value={e.id}>
-                  {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+        {showStandaloneScheduleEspecialidad && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Especialidad <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={form.idEspecialidad || undefined}
+              onValueChange={(v) => patchField("idEspecialidad", v)}
+              disabled={saving}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Seleccionar especialidad" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectOptions.especialidades.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-      {(showEnrollmentFields || appendMode) && (
-        <MatriculaEnrollmentFields
-          form={form}
-          setForm={setForm}
-          selectOptions={selectOptions}
-          grupoSlots={grupoSlots}
-          saving={saving}
-          defaultProfesorId={defaultProfesorId}
-          alumnoCenterId={alumnoCenterId}
-          matriculaTarifaId={matriculaTarifaId}
-          matriculaCursoId={matriculaCursoId}
-          centros={centros}
-        />
-      )}
+        {(showEnrollmentFields || appendMode) && (
+          <MatriculaEnrollmentFields
+            form={form}
+            setForm={setForm}
+            selectOptions={selectOptions}
+            grupoSlots={grupoSlots}
+            saving={saving}
+            defaultProfesorId={defaultProfesorId}
+            alumnoCenterId={alumnoCenterId}
+            matriculaTarifaId={matriculaTarifaId}
+            matriculaCursoId={matriculaCursoId}
+            centros={centros}
+          />
+        )}
 
-      {showGrupoLockedSchedule && (
+        {showGrupoLockedSchedule && (
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Horarios del grupo</Label>
             {grupoHorarioBlocks.map((slot, index) => (
@@ -2115,202 +2291,202 @@ function HorarioSubForm({
           </div>
         )}
 
-      {(horario != null || !isColectiva || (appendMode && !showGrupoLockedSchedule)) &&
-        hasEspecialidad && (
-        <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Día</Label>
-              <Select
-                value={form.dia || undefined}
-                onValueChange={(v) => patchField("dia", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar día" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIAS_SEMANA_OPCIONES.map((dia) => (
-                    <SelectItem key={dia} value={dia}>
-                      {dia}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Hora inicio</Label>
-              <Input
-                className="h-9"
-                type="time"
-                value={form.horaInicio}
-                onChange={(e) => handleHoraInicioChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Duración (min)</Label>
-              <Input
-                className="h-9"
-                type="number"
-                min={1}
-                step={1}
-                value={form.duracion}
-                onChange={(e) => handleDuracionChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Hora fin</Label>
-              <Input
-                className="h-9"
-                type="time"
-                value={form.horaFin}
-                onChange={(e) => handleHoraFinChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label className="text-xs text-muted-foreground">Profesor</Label>
-              <Select
-                value={form.idProfesor || undefined}
-                onValueChange={(v) => patchField("idProfesor", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profesorOptions.map((p) => (
-                    <SelectItem
-                      key={p.id}
-                      value={p.id}
-                      disabled={
-                        hasIndividualScheduleWindow &&
-                        p.id !== form.idProfesor &&
-                        isProfesorOccupied(p.id)
-                      }
-                    >
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label className="text-xs text-muted-foreground">Aula</Label>
-              <Select
-                value={form.idAula || undefined}
-                onValueChange={(v) => patchField("idAula", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {aulaOptions.map((a) => (
-                    <SelectItem
-                      key={a.id}
-                      value={a.id}
-                      disabled={
-                        hasIndividualScheduleWindow &&
-                        a.id !== form.idAula &&
-                        isAulaOccupied(a.id)
-                      }
-                    >
-                      {a.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
-          {isIndividualSchedule && scheduleResourceConflict && (
-            <p className="text-xs font-medium text-destructive">
-              El profesor y/o el aula seleccionada ya están ocupados en este horario
-            </p>
-          )}
-          {appendMode && studentScheduleConflict && (
-            <p className="text-xs font-medium text-destructive">
-              El alumno ya tiene otra clase asignada en este horario
-            </p>
-          )}
-        </div>
-      )}
-
-      {exceedsTariffLimit && (
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Precio (€)</Label>
-          <Input
-            className="h-9"
-            type="number"
-            step="0.01"
-            value={form.precio}
-            onChange={(e) => patchField("precio", e.target.value)}
-            disabled={cascadeDisabled}
-          />
-        </div>
-      )}
-
-      <Accordion type="single" collapsible>
-        <AccordionItem value="advanced" className="border-none">
-          <AccordionTrigger
-            className="py-2 text-sm text-muted-foreground hover:no-underline"
-            disabled={!hasEspecialidad}
-          >
-            Opciones avanzadas
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
-              {(
-                [
-                  ["faltasRecuperables", "Faltas recuperables", "1"],
-                  ["faltasNoRecuperables", "Faltas no recuperables", "1"],
-                  ["recuperaciones", "Recuperaciones", "1"],
-                  ["saldo", "Saldo", "0.01"],
-                ] as const
-              ).map(([key, label, step]) => (
-                <div key={key} className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{label}</Label>
+        {(horario != null || !isColectiva || (appendMode && !showGrupoLockedSchedule)) &&
+          hasEspecialidad && (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 [&>*]:min-w-0">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Día</Label>
+                  <Select
+                    value={form.dia || undefined}
+                    onValueChange={(v) => patchField("dia", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar día" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DIAS_SEMANA_OPCIONES.map((dia) => (
+                        <SelectItem key={dia} value={dia}>
+                          {dia}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Hora inicio</Label>
+                  <Input
+                    className="h-9"
+                    type="time"
+                    value={form.horaInicio}
+                    onChange={(e) => handleHoraInicioChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Duración (min)</Label>
                   <Input
                     className="h-9"
                     type="number"
-                    step={step}
-                    value={form[key]}
-                    onChange={(e) => patchField(key, e.target.value)}
-                    disabled={cascadeDisabled}
+                    min={1}
+                    step={1}
+                    value={form.duracion}
+                    onChange={(e) => handleDuracionChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
                   />
                 </div>
-              ))}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Hora fin</Label>
+                  <Input
+                    className="h-9"
+                    type="time"
+                    value={form.horaFin}
+                    onChange={(e) => handleHoraFinChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label className="text-xs text-muted-foreground">Profesor</Label>
+                  <Select
+                    value={form.idProfesor || undefined}
+                    onValueChange={(v) => patchField("idProfesor", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profesorOptions.map((p) => (
+                        <SelectItem
+                          key={p.id}
+                          value={p.id}
+                          disabled={
+                            hasIndividualScheduleWindow &&
+                            p.id !== form.idProfesor &&
+                            isProfesorOccupied(p.id)
+                          }
+                        >
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label className="text-xs text-muted-foreground">Aula</Label>
+                  <Select
+                    value={form.idAula || undefined}
+                    onValueChange={(v) => patchField("idAula", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {aulaOptions.map((a) => (
+                        <SelectItem
+                          key={a.id}
+                          value={a.id}
+                          disabled={
+                            hasIndividualScheduleWindow &&
+                            a.id !== form.idAula &&
+                            isAulaOccupied(a.id)
+                          }
+                        >
+                          {a.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
+              {isIndividualSchedule && scheduleResourceConflict && (
+                <p className="text-xs font-medium text-destructive">
+                  El profesor y/o el aula seleccionada ya están ocupados en este horario
+                </p>
+              )}
+              {appendMode && studentScheduleConflict && (
+                <p className="text-xs font-medium text-destructive">
+                  El alumno ya tiene otra clase asignada en este horario
+                </p>
+              )}
             </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+          )}
 
-      <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
-        {onCancel && (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </Button>
+        {exceedsTariffLimit && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Precio (€)</Label>
+            <Input
+              className="h-9"
+              type="number"
+              step="0.01"
+              value={form.precio}
+              onChange={(e) => patchField("precio", e.target.value)}
+              disabled={cascadeDisabled}
+            />
+          </div>
         )}
-        {onDelete && (
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            disabled={saving}
-            onClick={() => void onDelete()}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Eliminar
+
+        <Accordion type="single" collapsible>
+          <AccordionItem value="advanced" className="border-none">
+            <AccordionTrigger
+              className="py-2 text-sm text-muted-foreground hover:no-underline"
+              disabled={!hasEspecialidad}
+            >
+              Opciones avanzadas
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ["faltasRecuperables", "Faltas recuperables", "1"],
+                    ["faltasNoRecuperables", "Faltas no recuperables", "1"],
+                    ["recuperaciones", "Recuperaciones", "1"],
+                    ["saldo", "Saldo", "0.01"],
+                  ] as const
+                ).map(([key, label, step]) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{label}</Label>
+                    <Input
+                      className="h-9"
+                      type="number"
+                      step={step}
+                      value={form[key]}
+                      onChange={(e) => patchField(key, e.target.value)}
+                      disabled={cascadeDisabled}
+                    />
+                  </div>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
+          {onCancel && (
+            <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
+              Cancelar
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={saving}
+              onClick={() => void onDelete()}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
+          <Button type="button" size="sm" disabled={saveDisabled} onClick={() => void handleSave()}>
+            {saving ? "Guardando…" : horario ? "Guardar horario" : "Crear horario"}
           </Button>
-        )}
-        <Button type="button" size="sm" disabled={saveDisabled} onClick={() => void handleSave()}>
-          {saving ? "Guardando…" : horario ? "Guardar horario" : "Crear horario"}
-        </Button>
-      </div>
-    </Card>
+        </div>
+      </Card>
 
       <AlertDialog open={grupoCompletoConfirmOpen} onOpenChange={setGrupoCompletoConfirmOpen}>
         <AlertDialogContent>
@@ -2356,6 +2532,7 @@ function MatriculaHorariosGroup({
   occupancySesiones,
   scheduleAssignmentContext,
   alumnoCenterId,
+  aulaSelectOptions = null,
   onCreateHorario,
   onUpdateHorario,
   onRemoveHorario,
@@ -2375,6 +2552,7 @@ function MatriculaHorariosGroup({
   occupancySesiones: SesionOccupancyRow[];
   scheduleAssignmentContext: ScheduleAssignmentContext | null;
   alumnoCenterId?: string | null;
+  aulaSelectOptions?: SelectOption[] | null;
   onCreateHorario: (input: HorarioCreateInput) => Promise<void>;
   onUpdateHorario: (id: string, patch: HorarioUpdateInput) => Promise<void>;
   onRemoveHorario: (id: string) => Promise<void>;
@@ -2457,6 +2635,7 @@ function MatriculaHorariosGroup({
       matriculaTarifaId={matricula.ID_TARIFA}
       matriculaCursoId={matriculaCursoId}
       centros={centros}
+      aulaSelectOptions={aulaSelectOptions}
       sharedForm={sharedEnrollment}
       showEnrollmentFields={false}
       blockIndex={blockIndex}
@@ -2569,6 +2748,7 @@ function MatriculaHorariosGroup({
                   matriculaTarifaId={matricula.ID_TARIFA}
                   matriculaCursoId={matriculaCursoId}
                   centros={centros}
+                  aulaSelectOptions={aulaSelectOptions}
                   showEnrollmentFields={!hasExistingHorarios}
                   blockIndex={matriculaHorarios.length + draftIndex}
                   tariffSessionLimit={maxHorarios}
@@ -2584,7 +2764,9 @@ function MatriculaHorariosGroup({
                   saving={horarioSaving}
                   onCancel={() => removeDraftHorario(draftId)}
                   onSave={async (patchOrPatches) => {
-                    const patches = Array.isArray(patchOrPatches) ? patchOrPatches : [patchOrPatches];
+                    const patches = Array.isArray(patchOrPatches)
+                      ? patchOrPatches
+                      : [patchOrPatches];
                     if (patches.length === 0) return;
                     try {
                       for (const patch of patches) {
@@ -2635,7 +2817,6 @@ function MatriculaRowEditor({
   lookups,
   saving,
   onSave,
-  onDelete,
 }: {
   matricula: Matricula & { ID_CURSO?: string | null };
   centros: CentroData[];
@@ -2650,7 +2831,6 @@ function MatriculaRowEditor({
     ID_CURSO: string | null;
     ID_TARIFA: string | null;
   }) => Promise<void>;
-  onDelete: () => Promise<void>;
 }) {
   const [especialidad, setEspecialidad] = useState(matricula.ESPECIALIDAD ?? "");
   const [idProfesor, setIdProfesor] = useState(matricula.ID_PROFESOR ?? "");
@@ -2670,9 +2850,7 @@ function MatriculaRowEditor({
     setIdTarifa(matricula.ID_TARIFA ?? "");
     const centerId = matricula.ID_CENTRO?.trim() || alumnoCenterId?.trim() || "";
     const savedCurso = matricula.ID_CURSO?.trim() ?? "";
-    setIdCurso(
-      savedCurso || (centerId ? resolveCursoIdForCentro(centros, centerId, "") : ""),
-    );
+    setIdCurso(savedCurso || (centerId ? resolveCursoIdForCentro(centros, centerId, "") : ""));
   }, [
     matricula.ID_MATRICULA,
     matricula.ESPECIALIDAD,
@@ -2730,9 +2908,7 @@ function MatriculaRowEditor({
             type="button"
             size="sm"
             variant="outline"
-            disabled={
-              saving || !dirty || !idCurso?.trim() || cursoOptions.length === 0
-            }
+            disabled={saving || !dirty || !idCurso?.trim() || cursoOptions.length === 0}
             onClick={() => {
               if (!idCurso?.trim()) {
                 toast.error("Selecciona un curso escolar.");
@@ -2749,15 +2925,6 @@ function MatriculaRowEditor({
           >
             Guardar
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="destructive"
-            disabled={saving}
-            onClick={() => void onDelete()}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
         </div>
       </div>
 
@@ -2765,7 +2932,7 @@ function MatriculaRowEditor({
         Centro: <span className="font-medium text-foreground">{centroNombre}</span>
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 [&>*]:min-w-0">
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             Curso escolar <span className="text-destructive">*</span>
@@ -2794,11 +2961,7 @@ function MatriculaRowEditor({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Tarifa</Label>
-          <Select
-            value={idTarifa || undefined}
-            onValueChange={setIdTarifa}
-            disabled={saving}
-          >
+          <Select value={idTarifa || undefined} onValueChange={setIdTarifa} disabled={saving}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Seleccionar" />
             </SelectTrigger>
@@ -2876,6 +3039,34 @@ export type DraftMatriculaInput = {
   ID_CURSO: string | null;
 };
 
+function isDraftMatriculaValidForCentro(
+  mat: DraftMatriculaInput,
+  centerId: string,
+  catalogSources: AlumnoCatalogSources,
+  centros: CentroData[],
+): boolean {
+  const scoped = scopeAlumnoCatalogSources(catalogSources, centerId);
+  if (
+    mat.ESPECIALIDAD &&
+    !scoped.especialidades.some((e) => e.ID_ESPECIALIDAD === mat.ESPECIALIDAD)
+  ) {
+    return false;
+  }
+  if (mat.ID_TARIFA && !scoped.tarifas.some((t) => t.ID_TARIFA === mat.ID_TARIFA)) {
+    return false;
+  }
+  if (mat.ID_PROFESOR && !scoped.profesores.some((p) => p.ID_PROFESOR === mat.ID_PROFESOR)) {
+    return false;
+  }
+  if (
+    mat.ID_CURSO &&
+    !cursosForCentro(centros, centerId).some((c) => c.ID_CURSO === mat.ID_CURSO)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function DraftMatriculaPanel({
   centros,
   alumnoCenterId,
@@ -2919,6 +3110,13 @@ function DraftMatriculaPanel({
     setNewCurso((prev) => resolveCursoIdForCentro(centros, alumnoCenterId, prev));
   }, [showAdd, alumnoCenterId, centros]);
 
+  useEffect(() => {
+    setNewEspecialidad("");
+    setNewTarifa("");
+    setNewProfesor("");
+    setNewCurso(alumnoCenterId ? resolveCursoIdForCentro(centros, alumnoCenterId, "") : "");
+  }, [alumnoCenterId, centros]);
+
   const newMatriculaProfesorOptions = useMemo(
     () => profesorSelectOptions(selectOptions.profesores, newProfesor, lookups.profesorById),
     [selectOptions.profesores, newProfesor, lookups.profesorById],
@@ -2934,6 +3132,11 @@ function DraftMatriculaPanel({
 
   return (
     <div className="space-y-4">
+      {!alumnoCenterId ? (
+        <p className="rounded-md border border-dashed bg-muted/20 px-3 py-4 text-center text-sm text-muted-foreground">
+          Selecciona el centro del alumno en la pestaña Resumen para gestionar matrículas.
+        </p>
+      ) : null}
       {draftMatriculas.length === 0 ? (
         <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
           Añade las matrículas del nuevo alumno. Se guardarán junto con su ficha.
@@ -2974,7 +3177,7 @@ function DraftMatriculaPanel({
       {showAdd ? (
         <Card className="space-y-3 border-dashed p-4">
           <p className="text-sm font-medium">Nueva matrícula</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 [&>*]:min-w-0">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Curso escolar *</Label>
               <Select
@@ -3068,7 +3271,13 @@ function DraftMatriculaPanel({
           </div>
         </Card>
       ) : (
-        <Button type="button" variant="outline" size="sm" onClick={() => setShowAdd(true)}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!alumnoCenterId}
+          onClick={() => setShowAdd(true)}
+        >
           <Plus className="mr-2 h-4 w-4" />
           Añadir Matrícula
         </Button>
@@ -3082,6 +3291,7 @@ function MatriculaManagePanel({
   alumnoId,
   alumnoCenterId,
   selectOptions,
+  aulaSelectOptions = null,
   lookups,
   tarifaSesionesById,
   grupoSlots,
@@ -3095,6 +3305,7 @@ function MatriculaManagePanel({
   alumnoId: string | null;
   alumnoCenterId?: string | null;
   selectOptions: SelectOptions;
+  aulaSelectOptions?: SelectOption[] | null;
   lookups: LookupMaps;
   tarifaSesionesById: Map<string, number | null>;
   grupoSlots: GrupoHorarioSlot[];
@@ -3105,7 +3316,7 @@ function MatriculaManagePanel({
   treeMatriculas?: MatriculaTree[];
 }) {
   const { tenantId } = useActiveTenant();
-  const { list, create, update, remove } = useAlumnoMatriculas(alumnoId);
+  const { list, create, update } = useAlumnoMatriculas(alumnoId);
   const allMatriculasQuery = useMatriculas(null);
   const occupancyMetaQuery = useQuery({
     queryKey: ["schedule-assignment-meta", tenantId],
@@ -3147,7 +3358,7 @@ function MatriculaManagePanel({
     setNewCurso((prev) => resolveCursoIdForCentro(centros, effectiveCenterId, prev));
   }, [showAdd, effectiveCenterId, centros]);
 
-  const matriculaSaving = create.isPending || update.isPending || remove.isPending;
+  const matriculaSaving = create.isPending || update.isPending;
   const matriculas = list.data && list.data.length > 0 ? list.data : (treeMatriculas ?? []);
 
   const newMatriculaProfesorOptions = useMemo(
@@ -3215,9 +3426,7 @@ function MatriculaManagePanel({
     setNewEspecialidad("");
     setNewTarifa("");
     setNewProfesor("");
-    setNewCurso(
-      effectiveCenterId ? resolveCursoIdForCentro(centros, effectiveCenterId, "") : "",
-    );
+    setNewCurso(effectiveCenterId ? resolveCursoIdForCentro(centros, effectiveCenterId, "") : "");
     setShowAdd(false);
   };
 
@@ -3250,14 +3459,6 @@ function MatriculaManagePanel({
                     toast.error(err instanceof Error ? err.message : "Error al actualizar");
                   }
                 }}
-                onDelete={async () => {
-                  try {
-                    await remove.mutateAsync(mat.ID_MATRICULA);
-                    toast.success("Matrícula eliminada");
-                  } catch (err) {
-                    toast.error(err instanceof Error ? err.message : "Error al eliminar");
-                  }
-                }}
               />
 
               <MatriculaHorariosGroup
@@ -3268,6 +3469,7 @@ function MatriculaManagePanel({
                 centros={centros}
                 alumnoCenterId={alumnoCenterId}
                 selectOptions={selectOptions}
+                aulaSelectOptions={aulaSelectOptions}
                 lookups={lookups}
                 grupoSlots={grupoSlots}
                 maxHorarios={maxHorarios}
@@ -3289,7 +3491,7 @@ function MatriculaManagePanel({
       {showAdd ? (
         <Card className="space-y-3 border-dashed p-4">
           <p className="text-sm font-medium">Nueva matrícula</p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 [&>*]:min-w-0">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Curso escolar *</Label>
               <Select
@@ -3386,9 +3588,7 @@ function MatriculaManagePanel({
               type="button"
               size="sm"
               disabled={
-                matriculaSaving ||
-                !newEspecialidad ||
-                (cursoOptions.length > 0 && !newCurso)
+                matriculaSaving || !newEspecialidad || (cursoOptions.length > 0 && !newCurso)
               }
               onClick={async () => {
                 try {
@@ -3434,6 +3634,7 @@ export function AlumnoFormDialog({
   centros = [],
   showCentroSelector = false,
   assignedCenterId = null,
+  catalogSources,
   defaultCreateCenterId = null,
   activeTab: controlledActiveTab,
   onTabChange,
@@ -3457,6 +3658,7 @@ export function AlumnoFormDialog({
   centros?: CentroData[];
   showCentroSelector?: boolean;
   assignedCenterId?: string | null;
+  catalogSources?: AlumnoCatalogSources;
   defaultCreateCenterId?: string | null;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
@@ -3472,7 +3674,11 @@ export function AlumnoFormDialog({
   const { rol } = useActiveTenant();
   const initialId = initial?.ID_ALUMNO ?? null;
   const isCreate = !initial;
-  const { create: createCargoExtra, update: updateCargoExtra, listByAlumno: cargosExtraByAlumno } = useCargosExtra({
+  const {
+    create: createCargoExtra,
+    update: updateCargoExtra,
+    listByAlumno: cargosExtraByAlumno,
+  } = useCargosExtra({
     alumnoId: initialId,
   });
   const [internalActiveTab, setInternalActiveTab] = useState("resumen");
@@ -3482,6 +3688,7 @@ export function AlumnoFormDialog({
     resolver: zodResolver(alumnoFormSchema),
     defaultValues: initial ? buildAlumnoFormResetValues(initial) : emptyAlumnoFormValues(),
   });
+  const alumnoFormControl = form.control as Control<AlumnoFormInput>;
 
   const nacimiento = form.watch("NACIMIENTO");
   const watchedCentro = form.watch("ID_CENTRO");
@@ -3490,16 +3697,91 @@ export function AlumnoFormDialog({
     [centros],
   );
   const alumnoCenterId =
-    watchedCentro?.trim() ||
-    initial?.ID_CENTRO?.trim() ||
-    assignedCenterId?.trim() ||
-    null;
+    watchedCentro?.trim() || initial?.ID_CENTRO?.trim() || assignedCenterId?.trim() || null;
+
+  const { activeSelectOptions, activeAulaSelectOptions } = useMemo(() => {
+    if (!catalogSources) {
+      return {
+        activeSelectOptions: selectOptions,
+        activeAulaSelectOptions: null as SelectOption[] | null,
+      };
+    }
+    const scoped = scopeAlumnoCatalogSources(catalogSources, alumnoCenterId);
+    return {
+      activeSelectOptions: {
+        tarifas: scoped.tarifas.map((t) => ({ id: t.ID_TARIFA, label: t.SERVICIO })),
+        especialidades: scoped.especialidades.map((e) => ({
+          id: e.ID_ESPECIALIDAD,
+          label: e.ESPECIALIDAD,
+        })),
+        profesores: toProfesorEntityOptions(scoped.profesores),
+      },
+      activeAulaSelectOptions: scoped.aulas
+        .map((a) => ({ id: a.ID_AULA, label: a.NOMBRE_AULA }))
+        .sort((a, b) => a.label.localeCompare(b.label, "es", sortLocale)),
+    };
+  }, [catalogSources, alumnoCenterId, selectOptions]);
+
+  const initialCentroRef = useRef(initial?.ID_CENTRO?.trim() ?? "");
+  const prevWatchedCentroRef = useRef(watchedCentro?.trim() ?? "");
+
+  useEffect(() => {
+    initialCentroRef.current = initial?.ID_CENTRO?.trim() ?? "";
+  }, [initial?.ID_CENTRO]);
+
+  useEffect(() => {
+    const next = watchedCentro?.trim() ?? "";
+    const prev = prevWatchedCentroRef.current;
+    if (next === prev) return;
+
+    if (
+      !isCreate &&
+      (initial?.MATRICULAS?.length ?? 0) > 0 &&
+      initialCentroRef.current &&
+      next !== initialCentroRef.current
+    ) {
+      form.setValue("ID_CENTRO", initialCentroRef.current);
+      prevWatchedCentroRef.current = initialCentroRef.current;
+      toast.error("No puedes cambiar el centro del alumno mientras tenga matrículas registradas.");
+      return;
+    }
+
+    prevWatchedCentroRef.current = next;
+
+    if (!isCreate || !showCentroSelector || !catalogSources) return;
+
+    if (!next) {
+      setDraftMatriculas([]);
+      return;
+    }
+
+    setDraftMatriculas((prevMats) => {
+      const filtered = prevMats.filter((mat) =>
+        isDraftMatriculaValidForCentro(mat, next, catalogSources, centros),
+      );
+      if (filtered.length !== prevMats.length) {
+        toast.message("Se quitaron matrículas borrador que no aplican al centro seleccionado.");
+      }
+      return filtered;
+    });
+  }, [
+    watchedCentro,
+    isCreate,
+    showCentroSelector,
+    catalogSources,
+    centros,
+    initial?.MATRICULAS,
+    form,
+  ]);
   const nombreAlumno = form.watch("NOMBRE_ALUMNO") ?? "";
   const metodoPago = normalizeMetodoPago(form.watch("METODO_PAGO"));
   const tlfComunicacion = form.watch("TLF_COMUNICACION");
   const tlfAlumno = form.watch("TLF_ALUMNO");
   const tlfMadre = form.watch("TLF_MADRE");
   const tlfPadre = form.watch("TLF_PADRE");
+  const dtoHermanosPorcentaje = form.watch("DTO_HERMANOS_PORCENTAJE");
+  const ajusteManualEur = form.watch("AJUSTE_MANUAL_EUR");
+  const motivoAjuste = form.watch("MOTIVO_AJUSTE");
   const bizumPhones = useMemo(
     () =>
       collectBizumPhoneOptions({
@@ -3526,7 +3808,11 @@ export function AlumnoFormDialog({
   const [cargoPrecioUnitario, setCargoPrecioUnitario] = useState("");
   const [cargoPorcentajeIva, setCargoPorcentajeIva] = useState("0");
   const canAddCargoExtra = canAddCargoExtraRole(rol);
-  const cargoExtraTotal = calcCargoExtraTotal(cargoCantidad, cargoPrecioUnitario, cargoPorcentajeIva);
+  const cargoExtraTotal = calcCargoExtraTotal(
+    cargoCantidad,
+    cargoPrecioUnitario,
+    cargoPorcentajeIva,
+  );
 
   const resetCargoExtraForm = () => {
     setCargoConcepto("");
@@ -3614,9 +3900,7 @@ export function AlumnoFormDialog({
     }
     const ajusteManual = values.AJUSTE_MANUAL_EUR;
     const ajusteDistintoDeCero =
-      ajusteManual != null &&
-      Number.isFinite(Number(ajusteManual)) &&
-      Number(ajusteManual) !== 0;
+      ajusteManual != null && Number.isFinite(Number(ajusteManual)) && Number(ajusteManual) !== 0;
     if (ajusteDistintoDeCero && !values.MOTIVO_AJUSTE?.trim()) {
       form.setError("MOTIVO_AJUSTE", {
         message: "El motivo es obligatorio cuando el ajuste manual es distinto de 0.",
@@ -3625,6 +3909,16 @@ export function AlumnoFormDialog({
       return;
     }
     const draft = isCreate ? { id: draftAlumnoId, matriculas: draftMatriculas } : undefined;
+    if (isCreate && catalogSources && alumnoCenterId && draftMatriculas.length > 0) {
+      const invalid = draftMatriculas.some(
+        (mat) => !isDraftMatriculaValidForCentro(mat, alumnoCenterId, catalogSources, centros),
+      );
+      if (invalid) {
+        toast.error("Hay matrículas borrador que no corresponden al centro seleccionado.");
+        setActiveTab("matricula");
+        return;
+      }
+    }
     if (isCreate && !showCentroSelector && assignedCenterId) {
       onSubmit({ ...values, ID_CENTRO: assignedCenterId }, draft);
       return;
@@ -3636,7 +3930,7 @@ export function AlumnoFormDialog({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-2 grid w-full grid-cols-4">
+          <TabsList className="mb-2 grid w-full grid-cols-2 sm:grid-cols-4">
             <TabsTrigger value="resumen">Resumen</TabsTrigger>
             <TabsTrigger value="personales">Datos personales</TabsTrigger>
             <TabsTrigger value="pago">Datos de pago</TabsTrigger>
@@ -3655,7 +3949,7 @@ export function AlumnoFormDialog({
           <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {showCentroSelector && (
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="ID_CENTRO"
                 render={({ field }) => (
                   <FormItem>
@@ -3684,11 +3978,11 @@ export function AlumnoFormDialog({
               />
             )}
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="NOMBRE_ALUMNO"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Nombre alumno *</FormLabel>
+                  <FormLabel>Nombre y apellidos del alumno *</FormLabel>
                   <FormControl>
                     <Input {...field} disabled={submitting} />
                   </FormControl>
@@ -3697,7 +3991,7 @@ export function AlumnoFormDialog({
               )}
             />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="TLF_COMUNICACION"
               render={({ field }) => (
                 <FormItem>
@@ -3709,7 +4003,7 @@ export function AlumnoFormDialog({
               )}
             />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="MAIL"
               render={({ field }) => (
                 <FormItem>
@@ -3728,7 +4022,7 @@ export function AlumnoFormDialog({
               )}
             />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="ESTADO_MATRICULA"
               render={({ field }) => (
                 <FormItem>
@@ -3756,7 +4050,7 @@ export function AlumnoFormDialog({
               )}
             />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="ESTADO_RESERVA"
               render={({ field }) => (
                 <FormItem>
@@ -3784,7 +4078,7 @@ export function AlumnoFormDialog({
               )}
             />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="TOTAL_MENSUAL"
               render={({ field }) => (
                 <FormItem>
@@ -3802,8 +4096,16 @@ export function AlumnoFormDialog({
                 </FormItem>
               )}
             />
+            <AlumnoTotalMensualBreakdown
+              matriculas={initial?.MATRICULAS ?? []}
+              dtoHermanosPorcentaje={dtoHermanosPorcentaje}
+              ajusteManualEur={ajusteManualEur}
+              motivoAjuste={motivoAjuste}
+              cargosExtra={cargosExtraByAlumno.data ?? []}
+              tarifaNombreById={lookups.tarifaById}
+            />
             <FormField
-              control={form.control as any}
+              control={alumnoFormControl}
               name="NOTAS"
               render={({ field }) => (
                 <FormItem className="sm:col-span-2 lg:col-span-3">
@@ -3817,9 +4119,9 @@ export function AlumnoFormDialog({
           </TabsContent>
 
           <TabsContent value="personales" className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 [&>*]:min-w-0">
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="DNI"
                 render={({ field }) => (
                   <FormItem>
@@ -3831,16 +4133,16 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="NACIMIENTO"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Nacimiento</FormLabel>
                     <FormControl>
-                      <Input
-                        type="date"
-                        {...field}
+                      <DateField
                         value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
                         disabled={submitting}
                       />
                     </FormControl>
@@ -3852,7 +4154,7 @@ export function AlumnoFormDialog({
                 <Input value={edad} disabled readOnly className="bg-muted/40" />
               </div>
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="NOMBRE_MADRE"
                 render={({ field }) => (
                   <FormItem>
@@ -3864,7 +4166,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="TLF_MADRE"
                 render={({ field }) => (
                   <FormItem>
@@ -3876,7 +4178,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="NOMBRE_PADRE"
                 render={({ field }) => (
                   <FormItem>
@@ -3888,7 +4190,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="TLF_PADRE"
                 render={({ field }) => (
                   <FormItem>
@@ -3900,7 +4202,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="DIRECCION"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
@@ -3912,7 +4214,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="CP"
                 render={({ field }) => (
                   <FormItem>
@@ -3924,7 +4226,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="MUNICIPIO"
                 render={({ field }) => (
                   <FormItem>
@@ -3936,7 +4238,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="PROVINCIA"
                 render={({ field }) => (
                   <FormItem>
@@ -3963,7 +4265,7 @@ export function AlumnoFormDialog({
                 ).map(([name, label]) => (
                   <FormField
                     key={name}
-                    control={form.control as any}
+                    control={alumnoFormControl}
                     name={name}
                     render={({ field }) => (
                       <FormItem className="flex items-center justify-between rounded-md border px-3 py-2">
@@ -3984,9 +4286,9 @@ export function AlumnoFormDialog({
           </TabsContent>
 
           <TabsContent value="pago" className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 [&>*]:min-w-0">
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="METODO_PAGO"
                 render={({ field }) => (
                   <FormItem>
@@ -3994,10 +4296,7 @@ export function AlumnoFormDialog({
                     <Select
                       value={resolveMetodoPagoSelectValue(field.value)}
                       onValueChange={(v) => {
-                        const next =
-                          v === "__unset__"
-                            ? null
-                            : (v as MetodoPagoOption);
+                        const next = v === "__unset__" ? null : (v as MetodoPagoOption);
                         field.onChange(next);
                         const normalized = normalizeMetodoPago(next);
                         if (!isBankRemittancePaymentMethod(normalized)) {
@@ -4033,7 +4332,7 @@ export function AlumnoFormDialog({
               {isSepa && (
                 <>
                   <FormField
-                    control={form.control as any}
+                    control={alumnoFormControl}
                     name="IBAN"
                     render={({ field }) => (
                       <FormItem>
@@ -4045,7 +4344,7 @@ export function AlumnoFormDialog({
                     )}
                   />
                   <FormField
-                    control={form.control as any}
+                    control={alumnoFormControl}
                     name="TITULAR_CUENTA"
                     render={({ field }) => (
                       <FormItem>
@@ -4061,7 +4360,7 @@ export function AlumnoFormDialog({
 
               {isBizum && (
                 <FormField
-                  control={form.control as any}
+                  control={alumnoFormControl}
                   name="TLF_BIZUM"
                   render={({ field }) => (
                     <FormItem>
@@ -4106,7 +4405,7 @@ export function AlumnoFormDialog({
               )}
 
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="DTO_HERMANOS_PORCENTAJE"
                 render={({ field }) => (
                   <FormItem>
@@ -4129,7 +4428,7 @@ export function AlumnoFormDialog({
                 0, el motivo es obligatorio.
               </p>
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="AJUSTE_MANUAL_EUR"
                 render={({ field }) => (
                   <FormItem>
@@ -4147,7 +4446,7 @@ export function AlumnoFormDialog({
                 )}
               />
               <FormField
-                control={form.control as any}
+                control={alumnoFormControl}
                 name="MOTIVO_AJUSTE"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
@@ -4187,7 +4486,10 @@ export function AlumnoFormDialog({
                         </TableRow>
                       ) : cargosExtraByAlumno.isError ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="py-6 text-center text-sm text-destructive">
+                          <TableCell
+                            colSpan={8}
+                            className="py-6 text-center text-sm text-destructive"
+                          >
                             {(cargosExtraByAlumno.error as Error)?.message ??
                               "Error al cargar los cargos extra."}
                           </TableCell>
@@ -4244,7 +4546,12 @@ export function AlumnoFormDialog({
 
             {!isCreate && initialId && canAddCargoExtra && (
               <div className="pt-2">
-                <Button type="button" variant="outline" onClick={handleOpenCargoExtra} disabled={submitting}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleOpenCargoExtra}
+                  disabled={submitting}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir cargo extra
                 </Button>
@@ -4257,7 +4564,7 @@ export function AlumnoFormDialog({
               <DraftMatriculaPanel
                 centros={centros}
                 alumnoCenterId={alumnoCenterId}
-                selectOptions={selectOptions}
+                selectOptions={activeSelectOptions}
                 lookups={lookups}
                 draftMatriculas={draftMatriculas}
                 onAdd={(input) => setDraftMatriculas((prev) => [...prev, input])}
@@ -4270,7 +4577,8 @@ export function AlumnoFormDialog({
                 centros={centros}
                 alumnoId={initial?.ID_ALUMNO ?? null}
                 alumnoCenterId={alumnoCenterId}
-                selectOptions={selectOptions}
+                selectOptions={activeSelectOptions}
+                aulaSelectOptions={activeAulaSelectOptions}
                 lookups={lookups}
                 tarifaSesionesById={tarifaSesionesById}
                 grupoSlots={grupoSlots}
@@ -4383,7 +4691,11 @@ export function AlumnoFormDialog({
           >
             Cancelar
           </Button>
-          <Button type="button" onClick={handleSaveCargoExtra} disabled={createCargoExtra.isPending}>
+          <Button
+            type="button"
+            onClick={handleSaveCargoExtra}
+            disabled={createCargoExtra.isPending}
+          >
             {createCargoExtra.isPending ? "Guardando..." : "Guardar cargo"}
           </Button>
         </DialogFooter>

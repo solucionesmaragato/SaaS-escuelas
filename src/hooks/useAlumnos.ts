@@ -1,19 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import { scopeDirectCentroTableQuery, resolveProfileListCenterId } from "@/lib/centroFilter";
+import { workspaceListKey } from "@/lib/tenantQuery";
 import type { Alumno } from "@/types/database";
 
 export function useAlumnos() {
-  const { tenantId, rol } = useActiveTenant();
+  const { tenantId, centerId, rol } = useActiveTenant();
   const qc = useQueryClient();
-  const queryKey = tenantListKey("alumnos", rol, tenantId);
+  const effectiveCenterId = resolveProfileListCenterId(rol, centerId);
+  const queryKey = workspaceListKey("alumnos", tenantId, effectiveCenterId ?? "all");
 
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<Alumno[]> => {
       let query = supabase.from("ALUMNOS").select("*");
-      query = scopeTenantQuery(query, rol, tenantId);
+      query = scopeDirectCentroTableQuery(query, rol, tenantId, centerId);
       const { data, error } = await query.order("NOMBRE_ALUMNO", { ascending: true });
       if (error) throw error;
       return (data ?? []) as Alumno[];
@@ -23,11 +25,7 @@ export function useAlumnos() {
   const create = useMutation({
     mutationFn: async (input: Omit<Alumno, "ID_ALUMNO" | "ID_CLIENTE">) => {
       const payload = { ...input, ID_CLIENTE: tenantId };
-      const { data, error } = await supabase
-        .from("ALUMNOS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("ALUMNOS").insert(payload).select().single();
       if (error) throw error;
       return data as Alumno;
     },

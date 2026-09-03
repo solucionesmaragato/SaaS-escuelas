@@ -1,12 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import { appendCenterFilter } from "@/lib/centroFilter";
+import { resolveProfileListCenterId, scopeDirectCentroTableQuery } from "@/lib/centroFilter";
 import { resolveMatriculaCenterId } from "@/lib/alumnoSchema";
 import {
   isAdminRole,
   isSecretariaRole,
-  scopeTenantQuery,
   workspaceListKey,
   workspaceScopeFields,
 } from "@/lib/tenantQuery";
@@ -56,18 +55,27 @@ function normalizeAlumnoTreeRows(rows: AlumnoTree[]): AlumnoTree[] {
   }));
 }
 
+type FormSelectLike = { id?: string; value?: string | null };
+
+function unwrapFormFieldValue(val: unknown): unknown {
+  if (val && typeof val === "object" && !Array.isArray(val)) {
+    const obj = val as FormSelectLike;
+    return obj.id || obj.value || null;
+  }
+  return val;
+}
+
 export function useAlumnosTree(filterCenterId?: string | null) {
   const { tenantId, centerId, rol } = useActiveTenant();
   const qc = useQueryClient();
-  const resolvedCenterId = filterCenterId !== undefined ? filterCenterId : centerId;
+  const resolvedCenterId = resolveProfileListCenterId(rol, centerId, filterCenterId);
   const queryKey = workspaceListKey("alumnosTree", tenantId, resolvedCenterId ?? "all");
 
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<AlumnoTree[]> => {
       let query = supabase.from("ALUMNOS").select(ALUMNO_TREE_SELECT);
-      query = scopeTenantQuery(query, rol, tenantId);
-      query = appendCenterFilter(query, resolvedCenterId);
+      query = scopeDirectCentroTableQuery(query, rol, tenantId, centerId, filterCenterId);
       const { data, error } = await query.order("NOMBRE_ALUMNO", { ascending: true });
       if (error) throw error;
       return normalizeAlumnoTreeRows((data ?? []) as AlumnoTree[]);
@@ -119,14 +127,10 @@ export function useAlumnosTree(filterCenterId?: string | null) {
       // Limpiamos el input por si el formulario envía objetos {id, label} en vez de strings
       const sanitizedInput = Object.entries(input).reduce(
         (acc, [key, val]) => {
-          if (val && typeof val === "object" && !Array.isArray(val)) {
-            acc[key] = (val as any).id || (val as any).value || null;
-          } else {
-            acc[key] = val;
-          }
+          acc[key] = unwrapFormFieldValue(val);
           return acc;
         },
-        {} as Record<string, any>,
+        {} as Record<string, unknown>,
       );
 
       let alumnoCenterId = sanitizedInput.ID_CENTRO as string | null | undefined;
@@ -145,9 +149,7 @@ export function useAlumnosTree(filterCenterId?: string | null) {
 
       const idCentro = resolveMatriculaCenterId(alumnoCenterId, centerId);
       if (!idCentro) {
-        throw new Error(
-          "No se puede crear la matrícula: el alumno no tiene centro asignado.",
-        );
+        throw new Error("No se puede crear la matrícula: el alumno no tiene centro asignado.");
       }
 
       const payload = {
@@ -174,14 +176,10 @@ export function useAlumnosTree(filterCenterId?: string | null) {
       // Limpiamos el patch de la misma manera
       const sanitizedPatch = Object.entries(patch).reduce(
         (acc, [key, val]) => {
-          if (val && typeof val === "object" && !Array.isArray(val)) {
-            acc[key] = (val as any).id || (val as any).value || null;
-          } else {
-            acc[key] = val;
-          }
+          acc[key] = unwrapFormFieldValue(val);
           return acc;
         },
-        {} as Record<string, any>,
+        {} as Record<string, unknown>,
       );
 
       const { data, error } = await supabase

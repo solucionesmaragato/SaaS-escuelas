@@ -52,12 +52,12 @@ function parseTutores(value: unknown): ProfesorAlumnoTutor[] {
 }
 
 export function useAlumnosProfesor() {
-  const { tenantId, rol, perfil } = useActiveTenant();
+  const { tenantId, centerId, rol, perfil } = useActiveTenant();
   const profesorId = perfil.ID_PROFESOR?.trim() ?? "";
   const enabled = isProfesorRole(rol) && !!tenantId && !!profesorId;
 
   const list = useQuery({
-    queryKey: ["profesor-alumnos-lista", tenantId, profesorId] as const,
+    queryKey: ["profesor-alumnos-lista", tenantId, centerId, profesorId] as const,
     enabled,
     queryFn: async (): Promise<ProfesorAlumnoLista[]> => {
       const { data, error } = await supabase
@@ -78,7 +78,7 @@ export function useAlumnosProfesor() {
   });
 
   const horarios = useQuery({
-    queryKey: ["profesor-alumnos-horarios", tenantId, profesorId] as const,
+    queryKey: ["profesor-alumnos-horarios", tenantId, centerId, profesorId] as const,
     enabled,
     queryFn: async (): Promise<ProfesorAlumnoHorario[]> => {
       const { data, error } = await supabase

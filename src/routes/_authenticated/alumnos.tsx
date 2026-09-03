@@ -6,12 +6,14 @@ import type { CentroData } from "@/hooks/useCentros";
 import { useAlumnosTree, type AlumnoCreateInput, type AlumnoTree } from "@/hooks/useAlumnosTree";
 import { useProfesores, type ProfesorData, type ProfesoresQueryData } from "@/hooks/useProfesores";
 import { toProfesorEntityOptions, type ProfesorSelectable } from "@/lib/profesorSelector";
-import { useAulas } from "@/hooks/useAulas";
+import { useAulas, type AulaData } from "@/hooks/useAulas";
 import { useTarifas, type TarifaData } from "@/hooks/useTarifas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useGruposHorarios, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { useActiveTenant } from "@/context/AppContext";
+import { canWriteUi } from "@/lib/rbac";
 import { canViewAlumnosModule } from "@/lib/tenantQuery";
+import { madridTodayDateKey } from "@/lib/dateUtils";
 import type { OnNavigateToEntity } from "@/lib/entityNavigation";
 import {
   formToAlumnoCreatePayload,
@@ -22,6 +24,7 @@ import {
 } from "@/lib/alumnoSchema";
 import { AlumnoDetailOverlay } from "@/components/alumnos/AlumnoDetailOverlay";
 import { AlumnoFormDialog, type DraftMatriculaInput } from "@/components/alumnos/AlumnoFormDialog";
+import type { AlumnoCatalogSources } from "@/lib/catalogCenterFilter";
 import { isBankRemittancePaymentMethod, normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
 import { AlumnoQuickActions } from "@/components/alumnos/AlumnoQuickActions";
 import { PersonAvatar } from "@/components/PersonAvatar";
@@ -258,6 +261,7 @@ function AlumnosPage() {
   const { alumnoId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { rol, centerId } = useActiveTenant();
+  const canWriteAlumno = canWriteUi(rol, "alumnos:write");
   const {
     centrosOrdenados,
     showCentroFilter,
@@ -313,10 +317,22 @@ function AlumnosPage() {
   );
 
   const profesoresArray = resolveProfesoresList(profesores.list?.data);
-  const aulasArray = asArray<{ ID_AULA: string; NOMBRE_AULA: string }>(aulas.list.data);
+  const aulasArray = asArray<AulaData>(aulas.list.data);
   const tarifasArray = asArray<TarifaData>(tarifas.list.data);
-  const especialidadesArray = asArray<{ ID_ESPECIALIDAD: string; ESPECIALIDAD: string }>(
-    especialidades.list.data,
+  const especialidadesArray = asArray<{
+    ID_ESPECIALIDAD: string;
+    ESPECIALIDAD: string;
+    ID_CENTRO: string | null;
+  }>(especialidades.list.data);
+
+  const catalogSources = useMemo(
+    (): AlumnoCatalogSources => ({
+      tarifas: tarifasArray,
+      especialidades: especialidadesArray,
+      profesores: profesoresArray,
+      aulas: aulasArray,
+    }),
+    [tarifasArray, especialidadesArray, profesoresArray, aulasArray],
   );
 
   const lookups = useMemo(
@@ -397,18 +413,20 @@ function AlumnosPage() {
       mode: "detail" | "edit" = "detail",
       initialTab?: "resumen" | "pago",
     ) => {
-      setOverlay({ id, mode, initialTab });
+      const overlayMode = mode === "edit" && !canWriteAlumno ? "detail" : mode;
+      setOverlay({ id, mode: overlayMode, initialTab });
       navigate({
         search: (prev) => ({ ...prev, alumnoId: id, studentId: undefined }),
         replace: true,
       });
     },
-    [navigate],
+    [canWriteAlumno, navigate],
   );
 
   const handleEditOverlay = useCallback(() => {
+    if (!canWriteAlumno) return;
     setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
-  }, []);
+  }, [canWriteAlumno]);
   const handleCancelEditOverlay = useCallback(() => {
     setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
   }, []);
@@ -432,6 +450,7 @@ function AlumnosPage() {
     alumnoId: string,
     patch: Parameters<typeof update.mutateAsync>[0]["patch"],
   ) => {
+    if (!canWriteAlumno) return;
     try {
       await update.mutateAsync({ id: alumnoId, patch });
       toast.success("Alumno actualizado.");
@@ -442,7 +461,7 @@ function AlumnosPage() {
   };
 
   const handleConfirmStatusChange = async () => {
-    if (!statusConfirming) return;
+    if (!canWriteAlumno || !statusConfirming) return;
     const alumno = statusConfirming;
     const isDeactivating = isAlumnoActivo(alumno.ESTADO_ALUMNO);
     const nextEstado = toggleEstadoAlumno(alumno.ESTADO_ALUMNO);
@@ -468,6 +487,7 @@ function AlumnosPage() {
     editAlumnoId?: string | null,
     draft?: { id: string; matriculas: DraftMatriculaInput[] },
   ) => {
+    if (!canWriteAlumno) return;
     const payload =
       mode === "create"
         ? formToAlumnoCreatePayload(values)
@@ -499,7 +519,7 @@ function AlumnosPage() {
                 ID_ALUMNO: created.ID_ALUMNO,
                 ID_CENTRO: idCentro,
                 ESTADO: "Activo",
-                FECHA_ALTA: new Date().toISOString().slice(0, 10),
+                FECHA_ALTA: madridTodayDateKey(),
                 FECHA_BAJA: null,
               }),
             ),
@@ -533,7 +553,7 @@ function AlumnosPage() {
   if (!canViewAlumnosModule(rol)) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        Acceso denegado. Exclusivo para Admin y Secretaría.
+        Acceso denegado. Exclusivo para Admin, Secretaría y Dirección.
       </div>
     );
   }
@@ -548,9 +568,11 @@ function AlumnosPage() {
             : `${filtered.length} en total · activos primero, luego alfabético`
         }
         actions={
-          <Button onClick={() => setCreating(true)} disabled={isPageLoading}>
-            <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
-          </Button>
+          canWriteAlumno ? (
+            <Button onClick={() => setCreating(true)} disabled={isPageLoading}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
+            </Button>
+          ) : undefined
         }
       />
 
@@ -673,31 +695,39 @@ function AlumnosPage() {
                     <TableCell className="font-medium tabular-nums">
                       {formatCurrency(a.TOTAL_MENSUAL)}
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-right">
                       <AlumnoQuickActions alumno={a} />
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <AlumnoEstadoToggle
-                        alumno={a}
-                        disabled={update.isPending}
-                        onClick={() => setStatusConfirming(a)}
-                      />
+                    <TableCell className="text-right">
+                      {canWriteAlumno ? (
+                        <AlumnoEstadoToggle
+                          alumno={a}
+                          disabled={update.isPending}
+                          onClick={() => setStatusConfirming(a)}
+                        />
+                      ) : null}
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "edit")}
-                          >
-                            Editar
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell>
+                      {canWriteAlumno ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "edit")}
+                            >
+                              Editar
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))
@@ -709,7 +739,7 @@ function AlumnosPage() {
 
       <AlumnoDetailOverlay
         open={!!overlay}
-        mode={overlay?.mode ?? "detail"}
+        mode={canWriteAlumno ? (overlay?.mode ?? "detail") : "detail"}
         initialTab={overlay?.initialTab}
         alumno={overlayAlumno}
         lookups={lookups}
@@ -719,10 +749,12 @@ function AlumnosPage() {
         centros={centrosOrdenados}
         showCentroSelector={showCentroSelector}
         assignedCenterId={assignedCenterId}
+        catalogSources={catalogSources}
         patching={update.isPending}
         editSubmitting={update.isPending}
         horarioSaving={horarioSaving}
         onPatch={async (patch) => {
+          if (!canWriteAlumno) return;
           const alumnoId = overlay?.id;
           if (!alumnoId) return;
           await handlePatchAlumno(alumnoId, patch);
@@ -761,6 +793,7 @@ function AlumnosPage() {
         centros={centrosOrdenados}
         showCentroSelector={showCentroSelector}
         assignedCenterId={assignedCenterId}
+        catalogSources={catalogSources}
         defaultCreateCenterId={defaultCreateCenterId}
         onSubmit={(values, draft) => handleAlumnoSubmit(values, "create", undefined, draft)}
         onCreateHorario={async (input) => {

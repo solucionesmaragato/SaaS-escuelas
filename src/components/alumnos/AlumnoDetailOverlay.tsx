@@ -13,7 +13,11 @@ import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
 import { ContactEmailRich, ContactPhoneRich } from "@/components/ui/ContactQuickActions";
 import type { GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import type { CentroData } from "@/hooks/useCentros";
-import { AlumnoFormDialog } from "@/components/alumnos/AlumnoFormDialog";
+import {
+  AlumnoFormDialog,
+  AlumnoTotalMensualBreakdown,
+} from "@/components/alumnos/AlumnoFormDialog";
+import type { AlumnoCatalogSources } from "@/lib/catalogCenterFilter";
 import { calcEdad, type AlumnoFormValues } from "@/lib/alumnoSchema";
 import {
   isBankRemittancePaymentMethod,
@@ -31,6 +35,7 @@ import {
 } from "@/hooks/useCargosExtra";
 import { CargoExtraDetailDialog } from "@/components/alumnos/CargoExtraDetailDialog";
 import { useActiveTenant } from "@/context/AppContext";
+import { canWriteUi } from "@/lib/rbac";
 import type { OnNavigateToEntity } from "@/lib/entityNavigation";
 import { PersonAvatar } from "@/components/PersonAvatar";
 import { Button } from "@/components/ui/button";
@@ -48,9 +53,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ALUMNO_OVERLAY_PANEL_CLASS, ModalBackdrop } from "@/components/ui/modal-overlay";
 
-export const ALUMNO_OVERLAY_PANEL_CLASS =
-  "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl max-h-[85vh] overflow-y-auto bg-card text-card-foreground border border-border shadow-xl rounded-lg z-50";
+export { ALUMNO_OVERLAY_PANEL_CLASS };
 
 type LookupMaps = {
   profesorById: Map<string, string>;
@@ -69,9 +74,9 @@ function ReadOnlyField({
   className?: string;
 }) {
   return (
-    <div className={className}>
+    <div className={cn("min-w-0", className)}>
       <Label className="text-muted-foreground">{label}</Label>
-      <p className="mt-1 text-sm font-medium">{value ?? "—"}</p>
+      <p className="mt-1 truncate text-sm font-medium">{value ?? "—"}</p>
     </div>
   );
 }
@@ -185,6 +190,7 @@ export type AlumnoDetailOverlayProps = {
   centros?: CentroData[];
   showCentroSelector?: boolean;
   assignedCenterId?: string | null;
+  catalogSources?: AlumnoCatalogSources;
   initialTab?: "resumen" | "pago";
 };
 
@@ -211,9 +217,11 @@ export function AlumnoDetailOverlay({
   centros = [],
   showCentroSelector = false,
   assignedCenterId = null,
+  catalogSources,
   initialTab,
 }: AlumnoDetailOverlayProps) {
   const { rol } = useActiveTenant();
+  const canWriteAlumno = canWriteUi(rol, "alumnos:write");
   const [activeTab, setActiveTab] = useState("resumen");
   const alumnoId = alumno?.ID_ALUMNO ?? null;
   const { listByAlumno: cargosExtraByAlumno, update: updateCargoExtra } = useCargosExtra({ alumnoId });
@@ -255,12 +263,7 @@ export function AlumnoDetailOverlay({
   if (!alumno) {
     return createPortal(
       <>
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/10"
-          aria-label="Cerrar"
-          onClick={onClose}
-        />
+        <ModalBackdrop ariaLabel="Cerrar" onClose={onClose} />
         <div className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "flex items-center justify-center p-6")}>
           <Skeleton className="h-8 w-48" />
         </div>
@@ -277,12 +280,7 @@ export function AlumnoDetailOverlay({
 
   return createPortal(
     <>
-      <button
-        type="button"
-        className="fixed inset-0 z-40 bg-black/10"
-        aria-label="Cerrar detalle del alumno"
-        onClick={onClose}
-      />
+      <ModalBackdrop ariaLabel="Cerrar detalle del alumno" onClose={onClose} />
 
       <div
         role="dialog"
@@ -337,6 +335,7 @@ export function AlumnoDetailOverlay({
               centros={centros}
               showCentroSelector={showCentroSelector}
               assignedCenterId={assignedCenterId}
+              catalogSources={catalogSources}
               onClose={onCancelEdit}
               onSubmit={onEditSubmit}
               onCreateHorario={onCreateHorario}
@@ -358,16 +357,18 @@ export function AlumnoDetailOverlay({
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  className="gap-2 bg-black text-white hover:bg-black/90"
-                  onClick={onEdit}
-                >
-                  <Pencil className="h-4 w-4" />
-                  Editar Alumno
-                </Button>
+                {canWriteAlumno ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    onClick={onEdit}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Editar Alumno
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
@@ -381,7 +382,7 @@ export function AlumnoDetailOverlay({
             </header>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="mb-4 grid w-full grid-cols-4">
+              <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-4">
                 <TabsTrigger value="resumen">Resumen</TabsTrigger>
                 <TabsTrigger value="personales">Datos personales</TabsTrigger>
                 <TabsTrigger value="pago">Datos de pago</TabsTrigger>
@@ -415,6 +416,15 @@ export function AlumnoDetailOverlay({
                 <ReadOnlyField
                   label="Total mensual (€)"
                   value={formatCurrency(alumno.TOTAL_MENSUAL)}
+                />
+
+                <AlumnoTotalMensualBreakdown
+                  matriculas={alumno.MATRICULAS ?? []}
+                  dtoHermanosPorcentaje={alumno.DTO_HERMANOS_PORCENTAJE}
+                  ajusteManualEur={alumno.AJUSTE_MANUAL_EUR}
+                  motivoAjuste={alumno.MOTIVO_AJUSTE}
+                  cargosExtra={cargosExtraByAlumno.data ?? []}
+                  tarifaNombreById={lookups.tarifaById}
                 />
 
                 {alumno.NOTAS?.trim() ? (

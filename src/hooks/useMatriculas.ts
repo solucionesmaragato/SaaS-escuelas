@@ -1,13 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import { appendCenterFilter } from "@/lib/centroFilter";
+import { resolveProfileListCenterId, scopeDirectCentroTableQuery } from "@/lib/centroFilter";
 import { resolveMatriculaCenterId } from "@/lib/alumnoSchema";
-import {
-  scopeTenantQuery,
-  workspaceListKey,
-  workspaceScopeFields,
-} from "@/lib/tenantQuery";
+import { scopeTenantQuery, workspaceListKey, workspaceScopeFields } from "@/lib/tenantQuery";
 import type { HorarioMatricula, Matricula } from "@/types/database";
 
 const MATRICULAS_LIST_SELECT = `
@@ -42,6 +38,9 @@ export type MatriculasListResult = {
   rows: MatriculaRow[];
   especialidadById: Map<string, string>;
 };
+
+export type MatriculaCreateInput = Omit<Matricula, "ID_MATRICULA" | "ID_CLIENTE">;
+export type MatriculaUpdateInput = Partial<MatriculaCreateInput>;
 
 export type HorarioMatriculaRowInput = {
   ID_HORARIO?: string;
@@ -87,29 +86,21 @@ export function isExistingHorarioId(id?: string | null): id is string {
 
 export type MatriculaEstado = "Activo" | "Inactivo";
 
-export function normalizeMatriculaEstado(
-  estado: string | null | undefined,
-): MatriculaEstado {
+export function normalizeMatriculaEstado(estado: string | null | undefined): MatriculaEstado {
   return estado?.trim().toLowerCase() === "inactivo" ? "Inactivo" : "Activo";
 }
 
 function isMatriculaEstadoBackendError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  const message =
-    "message" in error && typeof error.message === "string" ? error.message : "";
+  const message = "message" in error && typeof error.message === "string" ? error.message : "";
   const code = "code" in error && typeof error.code === "string" ? error.code : "";
   return code === "42P01" || message.toLowerCase().includes("sesiones");
 }
 
-export function formatMatriculaEstadoError(
-  error: unknown,
-  partialCount = 0,
-): string {
+export function formatMatriculaEstadoError(error: unknown, partialCount = 0): string {
   if (isMatriculaEstadoBackendError(error)) {
     const prefix =
-      partialCount > 0
-        ? `Se actualizaron ${partialCount} matrículas antes del error. `
-        : "";
+      partialCount > 0 ? `Se actualizaron ${partialCount} matrículas antes del error. ` : "";
     return `${prefix}Fallo interno al cambiar el estado. Consulte con el desarrollador.`;
   }
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -129,9 +120,7 @@ function hasCompleteHorarioSchedule(row: HorarioMatriculaRowInput): boolean {
 }
 
 /** Rejects rows with day/time but no professor before syncing to the DB. */
-export function validateHorarioRowsForSync(
-  rows: HorarioMatriculaRowInput[],
-): string | null {
+export function validateHorarioRowsForSync(rows: HorarioMatriculaRowInput[]): string | null {
   for (const [index, row] of rows.entries()) {
     if (!hasCompleteHorarioSchedule(row)) continue;
     if (!row.ID_PROFESOR?.trim()) {
@@ -148,14 +137,9 @@ type HorarioDbPayloadCtx = {
   idCurso: string | null;
 };
 
-function buildHorarioSharedFields(
-  row: HorarioMatriculaRowInput,
-  ctx: HorarioDbPayloadCtx,
-) {
+function buildHorarioSharedFields(row: HorarioMatriculaRowInput, ctx: HorarioDbPayloadCtx) {
   if (!ctx.tenantId || !ctx.matriculaId) {
-    throw new Error(
-      "Faltan ID_CLIENTE o ID_MATRICULA para sincronizar el horario.",
-    );
+    throw new Error("Faltan ID_CLIENTE o ID_MATRICULA para sincronizar el horario.");
   }
 
   return {
@@ -181,9 +165,7 @@ function buildHorarioDbPayload(
   const idProfesor = row.ID_PROFESOR?.trim() ?? "";
 
   if (hasCompleteHorarioSchedule(row) && !idProfesor) {
-    throw new Error(
-      "Cada horario con día y hora debe tener un profesor asignado.",
-    );
+    throw new Error("Cada horario con día y hora debe tener un profesor asignado.");
   }
 
   return {
@@ -203,9 +185,7 @@ function buildHorarioUpdatePayload(
   const idAula = row.ID_AULA?.trim() ?? "";
 
   if (hasCompleteHorarioSchedule(row) && !idProfesor) {
-    throw new Error(
-      "Cada horario con día y hora debe tener un profesor asignado.",
-    );
+    throw new Error("Cada horario con día y hora debe tener un profesor asignado.");
   }
 
   const payload: Partial<HorarioMatriculaDbPayload> = {
@@ -221,10 +201,10 @@ function buildHorarioUpdatePayload(
 function hasHorarioRowContent(row: HorarioMatriculaRowInput): boolean {
   return Boolean(
     row.ID_PROFESOR?.trim() ||
-      row.DIA?.trim() ||
-      row.HORA_INICIO ||
-      row.HORA_FIN ||
-      row.SALDO != null,
+    row.DIA?.trim() ||
+    row.HORA_INICIO ||
+    row.HORA_FIN ||
+    row.SALDO != null,
   );
 }
 
@@ -254,8 +234,7 @@ export type CheckSolapamientosParams = {
 export function useMatriculas(filterCenterId?: string | null, alumnoId?: string | null) {
   const { tenantId, centerId, rol } = useActiveTenant();
   const qc = useQueryClient();
-  const resolvedCenterId =
-    filterCenterId !== undefined ? filterCenterId : centerId;
+  const resolvedCenterId = resolveProfileListCenterId(rol, centerId, filterCenterId);
   const queryKey = [
     ...workspaceListKey("matriculas", tenantId, resolvedCenterId ?? "all"),
     alumnoId ?? "all",
@@ -265,8 +244,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
     queryKey,
     queryFn: async (): Promise<MatriculasListResult> => {
       let query = supabase.from("MATRICULAS").select(MATRICULAS_LIST_SELECT);
-      query = scopeTenantQuery(query, rol, tenantId);
-      query = appendCenterFilter(query, resolvedCenterId);
+      query = scopeDirectCentroTableQuery(query, rol, tenantId, centerId, filterCenterId);
       if (alumnoId) query = query.eq("ID_ALUMNO", alumnoId);
       const { data: mats, error } = await query.order("FECHA_ALTA", { ascending: false });
 
@@ -290,15 +268,9 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
       const { data: cursos, error: cursosError } = await cursosQuery;
       if (cursosError) throw cursosError;
 
-      const especialidadById = new Map(
-        (esp ?? []).map((e) => [e.ID_ESPECIALIDAD, e.ESPECIALIDAD]),
-      );
-      const centroById = new Map(
-        (centros ?? []).map((c) => [c.ID_CENTRO, c.NOMBRE_CENTRO]),
-      );
-      const cursoById = new Map(
-        (cursos ?? []).map((c) => [c.ID_CURSO, c.NOMBRE_CURSO]),
-      );
+      const especialidadById = new Map((esp ?? []).map((e) => [e.ID_ESPECIALIDAD, e.ESPECIALIDAD]));
+      const centroById = new Map((centros ?? []).map((c) => [c.ID_CENTRO, c.NOMBRE_CENTRO]));
+      const cursoById = new Map((cursos ?? []).map((c) => [c.ID_CURSO, c.NOMBRE_CURSO]));
 
       const rows = (mats || [])
         .map((m: MatriculaRow) => {
@@ -318,11 +290,9 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
           };
         })
         .sort((a, b) =>
-          (a.ALUMNOS?.NOMBRE_ALUMNO ?? "").localeCompare(
-            b.ALUMNOS?.NOMBRE_ALUMNO ?? "",
-            "es",
-            { sensitivity: "base" },
-          ),
+          (a.ALUMNOS?.NOMBRE_ALUMNO ?? "").localeCompare(b.ALUMNOS?.NOMBRE_ALUMNO ?? "", "es", {
+            sensitivity: "base",
+          }),
         );
 
       return { rows, especialidadById };
@@ -330,7 +300,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
   });
 
   const create = useMutation({
-    mutationFn: async (input: any) => {
+    mutationFn: async (input: MatriculaCreateInput) => {
       const idCentro = resolveMatriculaCenterId(input.ID_CENTRO, centerId);
       if (!idCentro) {
         throw new Error("No se puede crear la matrícula: selecciona un centro.");
@@ -348,8 +318,14 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
   });
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: any }) => {
-      const { data, error } = await supabase.from("MATRICULAS").update(patch).eq("ID_MATRICULA", id).eq("ID_CLIENTE", tenantId).select().single();
+    mutationFn: async ({ id, patch }: { id: string; patch: MatriculaUpdateInput }) => {
+      const { data, error } = await supabase
+        .from("MATRICULAS")
+        .update(patch)
+        .eq("ID_MATRICULA", id)
+        .eq("ID_CLIENTE", tenantId)
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
@@ -357,7 +333,11 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("MATRICULAS").delete().eq("ID_MATRICULA", id).eq("ID_CLIENTE", tenantId);
+      const { error } = await supabase
+        .from("MATRICULAS")
+        .delete()
+        .eq("ID_MATRICULA", id)
+        .eq("ID_CLIENTE", tenantId);
       if (error) throw error;
       return id;
     },
@@ -397,13 +377,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
   };
 
   const bulkUpdateEstadoByCurso = useMutation({
-    mutationFn: async ({
-      idCurso,
-      estado,
-    }: {
-      idCurso: string;
-      estado: MatriculaEstado;
-    }) => {
+    mutationFn: async ({ idCurso, estado }: { idCurso: string; estado: MatriculaEstado }) => {
       if (!tenantId) {
         throw new Error("No se pudo determinar el ID_CLIENTE de la sesión activa.");
       }
@@ -492,9 +466,7 @@ export function useMatriculas(filterCenterId?: string | null, alumnoId?: string 
         if (!hasHorarioRowContent(row)) continue;
 
         const payload = buildHorarioDbPayload(row, payloadCtx);
-        const { error } = await supabase
-          .from("HORARIOS_MATRICULAS")
-          .insert(payload);
+        const { error } = await supabase.from("HORARIOS_MATRICULAS").insert(payload);
         if (error) throw error;
       }
     },

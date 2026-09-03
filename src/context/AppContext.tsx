@@ -4,12 +4,13 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { syncWorkspaceMetadata } from "@/lib/workspace";
+import { syncWorkspaceMetadataWithRetry, needsWorkspaceMetadataSync } from "@/lib/workspace";
 import {
   fetchUserWorkspaceProfiles,
   type WorkspaceCentroSummary,
@@ -38,6 +39,7 @@ interface AppContextValue {
   demoTrialBlocked: boolean;
   demoTrialChecking: boolean;
   demoTrialError: string | null;
+  workspaceSyncError: string | null;
   refreshDemoTrialGate: () => Promise<boolean>;
   signOut: () => Promise<void>;
 }
@@ -59,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [demoTrialBlocked, setDemoTrialBlocked] = useState(false);
   const [demoTrialChecking, setDemoTrialChecking] = useState(false);
   const [demoTrialError, setDemoTrialError] = useState<string | null>(null);
+  const [workspaceSyncError, setWorkspaceSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     const {
@@ -81,6 +84,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDemoTrialBlocked(false);
         setDemoTrialChecking(false);
         setDemoTrialError(null);
+        setWorkspaceSyncError(null);
       }
     });
     supabase.auth.getSession().then(({ data }) => {
@@ -98,6 +102,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setPerfilesLoading(true);
       let profilesLoadedOk = false;
       try {
+        // Solo asigna ID_CENTRO cuando el tenant tiene exactamente un centro activo
+        // (HAVING count(*) = 1). DEMO-0015 tiene Madrid + Cucurucú → no toca admin ID_CENTRO null.
         await supabase.rpc("ensure_my_profiles_single_center");
         const options = await fetchUserWorkspaceProfiles(session.user.id);
         if (cancelled) return;
@@ -124,16 +130,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (chosenPerfilId) {
           const perfil = rows.find((p) => p.ID_PERFIL === chosenPerfilId);
           if (perfil) {
-            try {
-              await syncWorkspaceMetadata(perfil);
-            } catch (syncError) {
-              console.error("Failed to sync workspace metadata (JWT refresh)", syncError);
+            const mustSyncJwt =
+              needsWorkspaceMetadataSync(session, perfil) ||
+              !String(session.user.user_metadata?.current_perfil_id ?? "").trim();
+
+            if (mustSyncJwt) {
+              try {
+                await syncWorkspaceMetadataWithRetry(perfil);
+                if (cancelled) return;
+                const { data: refreshed } = await supabase.auth.getSession();
+                if (refreshed.session) setSession(refreshed.session);
+              } catch (syncError) {
+                console.error("Failed to sync workspace metadata (JWT refresh)", syncError);
+                if (cancelled) return;
+                setActivePerfilIdState(null);
+                setWorkspaceSyncError(
+                  syncError instanceof Error
+                    ? syncError.message
+                    : "No se pudo sincronizar el workspace.",
+                );
+                return;
+              }
             }
-            if (cancelled) return;
+
+            setActivePerfilIdState(chosenPerfilId);
+            setWorkspaceSyncError(null);
+          } else {
+            setActivePerfilIdState(null);
+            setWorkspaceSyncError(null);
           }
-          setActivePerfilIdState(chosenPerfilId);
         } else {
           setActivePerfilIdState(null);
+          setWorkspaceSyncError(null);
         }
       } catch (error) {
         console.error("Failed to load PERFILES", error);
@@ -177,7 +205,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDemoTrialError(null);
       return !result.expired;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo comprobar la prueba demo";
+      const message =
+        error instanceof Error ? error.message : "No se pudo comprobar la prueba demo";
       setDemoTrialError(message);
       throw error;
     }
@@ -228,7 +257,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const perfil = option?.perfil ?? perfiles.find((p) => p.ID_PERFIL === perfilId);
       if (!perfil) throw new Error("Perfil de workspace no encontrado.");
 
-      await syncWorkspaceMetadata(perfil);
+      await syncWorkspaceMetadataWithRetry(perfil);
+      setWorkspaceSyncError(null);
       setActivePerfilIdState(perfilId);
       setActiveCliente(option?.cliente ?? null);
       setActiveCentro(option?.centro ?? null);
@@ -250,26 +280,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const activePerfil = perfiles.find((p) => p.ID_PERFIL === activePerfilId) ?? null;
   const hasMultipleProfiles = perfiles.length > 1;
 
-  const value: AppContextValue = {
-    session,
-    loading,
-    perfilesLoading,
-    perfiles,
-    activePerfil,
-    activeCliente,
-    activeCentro,
-    workspaceOptions,
-    hasMultipleProfiles,
-    setActivePerfilId,
-    activateWorkspace,
-    isAuthenticated: !!session,
-    needsTenantSelection: !!session && hasMultipleProfiles && !activePerfil,
-    demoTrialBlocked,
-    demoTrialChecking,
-    demoTrialError,
-    refreshDemoTrialGate,
-    signOut,
-  };
+  const value = useMemo<AppContextValue>(
+    () => ({
+      session,
+      loading,
+      perfilesLoading,
+      perfiles,
+      activePerfil,
+      activeCliente,
+      activeCentro,
+      workspaceOptions,
+      hasMultipleProfiles,
+      setActivePerfilId,
+      activateWorkspace,
+      isAuthenticated: !!session,
+      needsTenantSelection: !!session && hasMultipleProfiles && !activePerfil,
+      demoTrialBlocked,
+      demoTrialChecking,
+      demoTrialError,
+      workspaceSyncError,
+      refreshDemoTrialGate,
+      signOut,
+    }),
+    [
+      session,
+      loading,
+      perfilesLoading,
+      perfiles,
+      activePerfil,
+      activeCliente,
+      activeCentro,
+      workspaceOptions,
+      hasMultipleProfiles,
+      setActivePerfilId,
+      activateWorkspace,
+      demoTrialBlocked,
+      demoTrialChecking,
+      demoTrialError,
+      workspaceSyncError,
+      refreshDemoTrialGate,
+      signOut,
+    ],
+  );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type WorkspaceMetadata = {
   current_client_id: string;
   current_center_id: string | null;
+  current_perfil_id: string;
 };
 
 export async function syncWorkspaceMetadata(perfil: Perfil): Promise<void> {
@@ -11,6 +12,7 @@ export async function syncWorkspaceMetadata(perfil: Perfil): Promise<void> {
     data: {
       current_client_id: perfil.ID_CLIENTE,
       current_center_id: perfil.ID_CENTRO ?? null,
+      current_perfil_id: String(perfil.ID_PERFIL),
     },
   });
   if (error) throw error;
@@ -20,6 +22,56 @@ export async function syncWorkspaceMetadata(perfil: Perfil): Promise<void> {
   if (!data.session) {
     throw new Error("No se pudo refrescar la sesión tras cambiar el workspace.");
   }
+
+  const meta = data.session.user.user_metadata;
+  if (
+    meta.current_perfil_id !== String(perfil.ID_PERFIL) ||
+    meta.current_client_id !== perfil.ID_CLIENTE
+  ) {
+    throw new Error("El JWT no refleja el workspace activo.");
+  }
+}
+
+const WORKSPACE_SYNC_RETRY_DELAY_MS = 400;
+
+/** True when JWT workspace metadata is missing or does not match the chosen perfil. */
+export function needsWorkspaceMetadataSync(
+  session: { user: { user_metadata?: Record<string, unknown> } } | null,
+  perfil: Perfil,
+): boolean {
+  if (!session?.user) return true;
+  const meta = session.user.user_metadata ?? {};
+  const jwtPerfilId = String(meta.current_perfil_id ?? "").trim();
+  const jwtClientId = String(meta.current_client_id ?? "").trim();
+  const jwtCenterId = meta.current_center_id;
+  const perfilCenterId = perfil.ID_CENTRO ?? null;
+
+  if (jwtClientId !== perfil.ID_CLIENTE) return true;
+  if (jwtPerfilId !== String(perfil.ID_PERFIL)) return true;
+  if ((jwtCenterId ?? null) !== perfilCenterId) return true;
+  return false;
+}
+
+/** Sync JWT workspace metadata; one retry for transient OAuth/updateUser failures. */
+export async function syncWorkspaceMetadataWithRetry(
+  perfil: Perfil,
+  maxAttempts = 2,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await syncWorkspaceMetadata(perfil);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, WORKSPACE_SYNC_RETRY_DELAY_MS));
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("No se pudo sincronizar el workspace.");
 }
 
 const AVATAR_PALETTES = [

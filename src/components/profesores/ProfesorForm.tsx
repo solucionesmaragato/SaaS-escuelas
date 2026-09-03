@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useProfesorRol,
   type AulaLookup,
@@ -8,7 +8,9 @@ import {
   type ProfesorUpdateInput,
 } from "@/hooks/useProfesores";
 import type { Rol } from "@/types/database";
-import { Button } from "@/components/ui/button";
+import { madridTodayDateKey } from "@/lib/dateUtils";
+import { catalogMatchesCenter } from "@/lib/catalogCenterFilter";
+import { DateField } from "@/components/ui/date-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,12 +107,20 @@ export function ProfesorForm({
   const [saldoAp, setSaldoAp] = useState("");
   const [especialidadIds, setEspecialidadIds] = useState<string[]>([]);
   const [aulaIds, setAulaIds] = useState<string[]>([]);
-  const [idCentro, setIdCentro] = useState("");
+  const [idCentro, setIdCentro] = useState(
+    () => initial?.ID_CENTRO?.trim() ?? assignedCenterId?.trim() ?? "",
+  );
   const [rol, setRol] = useState<Rol>("PROFESOR");
   const showCentroField = showCentroSelector && !selfProfile;
-  const showRolField = isCreate || (!selfProfile && !!initial);
+  const showRolField = isCreate && !selfProfile;
   const rolQuery = useProfesorRol(showRolField && !isCreate ? initial?.ID_PROFESOR : null);
   const rolLoading = showRolField && !isCreate && rolQuery.isLoading;
+  const prevCreateCentroRef = useRef("");
+
+  const effectiveCentroId = useMemo(
+    () => idCentro.trim() || initial?.ID_CENTRO?.trim() || assignedCenterId?.trim() || null,
+    [idCentro, initial?.ID_CENTRO, assignedCenterId],
+  );
 
   const especialidadesOrdenadas = useMemo(
     () =>
@@ -125,6 +135,18 @@ export function ProfesorForm({
     [aulas],
   );
 
+  const especialidadesVisibles = useMemo(() => {
+    if (!effectiveCentroId) return [];
+    return especialidadesOrdenadas.filter((e) =>
+      catalogMatchesCenter(e.ID_CENTRO, effectiveCentroId),
+    );
+  }, [especialidadesOrdenadas, effectiveCentroId]);
+
+  const aulasVisibles = useMemo(() => {
+    if (!effectiveCentroId) return [];
+    return aulasOrdenadas.filter((a) => a.ID_CENTRO === effectiveCentroId);
+  }, [aulasOrdenadas, effectiveCentroId]);
+
   useEffect(() => {
     setNombre(initial?.NOMBRE_PROFESOR ?? "");
     setEmail(initial?.EMAIL_PROFESORES ?? "");
@@ -133,13 +155,13 @@ export function ProfesorForm({
     setNSegSocial(initial?.N_SEG_SOCIAL ?? "");
     setDomicilio(initial?.DOMICILIO ?? "");
     setNacimiento(toDateInputValue(initial?.NACIMIENTO));
-    setFechaAlta(toDateInputValue(initial?.FECHA_ALTA));
+    setFechaAlta(toDateInputValue(initial?.FECHA_ALTA) || (isCreate ? madridTodayDateKey() : ""));
     setFechaBaja(toDateInputValue(initial?.FECHA_BAJA));
     setSaldoVacaciones(initial?.SALDO_VACACIONES != null ? String(initial.SALDO_VACACIONES) : "");
     setSaldoAp(initial?.SALDO_AP != null ? String(initial.SALDO_AP) : "");
     setEspecialidadIds(Array.isArray(initial?.ESPECIALIDAD) ? initial.ESPECIALIDAD : []);
     setAulaIds(Array.isArray(initial?.AULA) ? initial.AULA : []);
-    setIdCentro(initial?.ID_CENTRO ?? assignedCenterId ?? "");
+    setIdCentro(initial?.ID_CENTRO?.trim() ?? assignedCenterId?.trim() ?? "");
     if (isCreate) {
       setRol("PROFESOR");
     }
@@ -153,6 +175,28 @@ export function ProfesorForm({
       setRol("PROFESOR");
     }
   }, [showRolField, isCreate, rolQuery.data, rolQuery.isLoading]);
+
+  useEffect(() => {
+    if (!isCreate || !showCentroField) return;
+    const centro = idCentro.trim();
+    if (prevCreateCentroRef.current === idCentro) return;
+    prevCreateCentroRef.current = idCentro;
+
+    if (!centro) {
+      setEspecialidadIds([]);
+      setAulaIds([]);
+      return;
+    }
+
+    const validEspIds = new Set(
+      especialidades
+        .filter((e) => catalogMatchesCenter(e.ID_CENTRO, centro))
+        .map((e) => e.ID_ESPECIALIDAD),
+    );
+    const validAulaIds = new Set(aulas.filter((a) => a.ID_CENTRO === centro).map((a) => a.ID_AULA));
+    setEspecialidadIds((prev) => prev.filter((id) => validEspIds.has(id)));
+    setAulaIds((prev) => prev.filter((id) => validAulaIds.has(id)));
+  }, [idCentro, isCreate, showCentroField, especialidades, aulas]);
 
   const toggleEspecialidad = (id: string) => {
     setEspecialidadIds((prev) =>
@@ -194,7 +238,7 @@ export function ProfesorForm({
           return;
         }
 
-        const values: ProfesorCreateInput & { FECHA_ALTA?: string | null } = {
+        const values: ProfesorCreateInput = {
           NOMBRE_PROFESOR: nombre.trim(),
           EMAIL_PROFESORES: email.trim() || null,
           TELEFONO: tlf.trim() || null,
@@ -213,13 +257,11 @@ export function ProfesorForm({
         }
         if (isCreate) {
           values.ROL = rol;
+          values.FECHA_ALTA = fechaAlta || null;
           onSubmit(values);
           return;
         }
         values.FECHA_ALTA = fechaAlta || null;
-        if (showRolField) {
-          values.ROL = rol;
-        }
         onSubmit(values);
       }}
       className="space-y-4"
@@ -228,6 +270,7 @@ export function ProfesorForm({
         <div className="space-y-2">
           <Label htmlFor="prof-centro">Centro *</Label>
           <Select
+            key={idCentro || "empty"}
             value={idCentro || CENTRO_NONE_VALUE}
             onValueChange={(v) => setIdCentro(v === CENTRO_NONE_VALUE ? "" : v)}
             disabled={submitting}
@@ -237,7 +280,7 @@ export function ProfesorForm({
             </SelectTrigger>
             <SelectContent>
               {centros.map((centro) => (
-                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                <SelectItem key={centro.ID_CENTRO} value={String(centro.ID_CENTRO)}>
                   {centro.NOMBRE_CENTRO}
                 </SelectItem>
               ))}
@@ -312,34 +355,15 @@ export function ProfesorForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="prof-nacimiento">Fecha de nacimiento</Label>
-          <Input
-            id="prof-nacimiento"
-            type="date"
-            value={nacimiento}
-            onChange={(e) => setNacimiento(e.target.value)}
-          />
+          <DateField id="prof-nacimiento" value={nacimiento} onChange={setNacimiento} />
         </div>
-        {!isCreate && (
-          <div className="space-y-2">
-            <Label htmlFor="prof-alta">Fecha de alta</Label>
-            <Input
-              id="prof-alta"
-              type="date"
-              value={fechaAlta}
-              onChange={(e) => setFechaAlta(e.target.value)}
-              disabled={readOnly}
-            />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor="prof-alta">Fecha de alta</Label>
+          <DateField id="prof-alta" value={fechaAlta} onChange={setFechaAlta} disabled={readOnly} />
+        </div>
         <div className="space-y-2">
           <Label htmlFor="prof-baja">Fecha de baja</Label>
-          <Input
-            id="prof-baja"
-            type="date"
-            value={fechaBaja}
-            onChange={(e) => setFechaBaja(e.target.value)}
-            disabled={readOnly}
-          />
+          <DateField id="prof-baja" value={fechaBaja} onChange={setFechaBaja} disabled={readOnly} />
         </div>
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="prof-domicilio">Domicilio</Label>
@@ -376,23 +400,23 @@ export function ProfesorForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <MultiSelectCheckboxes
           label="Especialidades"
-          options={especialidadesOrdenadas.map((e) => ({
+          options={especialidadesVisibles.map((e) => ({
             id: e.ID_ESPECIALIDAD,
             name: e.ESPECIALIDAD,
           }))}
           selected={especialidadIds}
           onToggle={toggleEspecialidad}
-          disabled={readOnly}
+          disabled={readOnly || !effectiveCentroId}
         />
         <MultiSelectCheckboxes
           label="Aulas"
-          options={aulasOrdenadas.map((a) => ({
+          options={aulasVisibles.map((a) => ({
             id: a.ID_AULA,
             name: a.NOMBRE_AULA,
           }))}
           selected={aulaIds}
           onToggle={toggleAula}
-          disabled={readOnly}
+          disabled={readOnly || !effectiveCentroId}
         />
       </div>
     </form>

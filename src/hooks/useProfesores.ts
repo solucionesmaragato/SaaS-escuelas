@@ -1,15 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
+import { appendCatalogCenterOrFilter } from "@/lib/catalogCenterFilter";
 import {
   canViewMiPerfilNav,
   isAdminRole,
+  isDireccionRole,
   isMasterRole,
   isProfesorRole,
+  isSecretariaRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
 import type { Rol } from "@/types/database";
+import { madridTodayDateKey } from "@/lib/dateUtils";
 
 export class ProfesorPerfilAssignError extends Error {
   readonly profesorId: string;
@@ -38,11 +42,13 @@ export class ProfesorPerfilRolUpdateError extends Error {
 export type AulaLookup = {
   ID_AULA: string;
   NOMBRE_AULA: string;
+  ID_CENTRO: string | null;
 };
 
 export type EspecialidadLookup = {
   ID_ESPECIALIDAD: string;
   ESPECIALIDAD: string;
+  ID_CENTRO: string | null;
 };
 
 export type ProfesorData = {
@@ -87,6 +93,7 @@ export type ProfesorCreateInput = {
   SALDO_VACACIONES?: number | null;
   SALDO_AP?: number | null;
   FECHA_BAJA?: string | null;
+  FECHA_ALTA?: string | null;
 };
 
 export type ProfesorUpdateInput = Partial<ProfesorCreateInput> & {
@@ -238,7 +245,7 @@ function sanitizeProfesorPayload(
     if (payload.AULA === ("" as unknown)) payload.AULA = null;
   }
 
-  if (mode === "update" && "FECHA_ALTA" in input) {
+  if ("FECHA_ALTA" in input) {
     payload.FECHA_ALTA = nullIfEmpty(input.FECHA_ALTA);
   }
 
@@ -282,12 +289,28 @@ function mapProfesores(
   });
 }
 
+function shouldScopeProfesorCatalogByActiveCenter(
+  rol: string | null | undefined,
+  centerId: string | null | undefined,
+): boolean {
+  if (!centerId?.trim()) return false;
+  if (isMasterRole(rol) || isAdminRole(rol)) return false;
+  return isSecretariaRole(rol) || isDireccionRole(rol) || isProfesorRole(rol);
+}
+
 export function useProfesores() {
-  const { tenantId, rol, perfil } = useActiveTenant();
+  const { tenantId, rol, perfil, centerId } = useActiveTenant();
   const qc = useQueryClient();
+  const catalogScopeKey = shouldScopeProfesorCatalogByActiveCenter(rol, centerId)
+    ? (centerId ?? "no-center")
+    : "tenant-wide";
   const queryKey = isProfesorRole(rol)
-    ? ([...tenantListKey("profesores", rol, tenantId), perfil?.ID_PROFESOR ?? "none"] as const)
-    : tenantListKey("profesores", rol, tenantId);
+    ? ([
+        ...tenantListKey("profesores", rol, tenantId),
+        perfil?.ID_PROFESOR ?? "none",
+        catalogScopeKey,
+      ] as const)
+    : ([...tenantListKey("profesores", rol, tenantId), catalogScopeKey] as const);
   const perfilesQueryKey = tenantListKey("perfiles", rol, tenantId);
 
   const list = useQuery({
@@ -305,15 +328,21 @@ export function useProfesores() {
 
       let espQuery = supabase
         .from("ESPECIALIDADES")
-        .select("ID_ESPECIALIDAD, ESPECIALIDAD")
+        .select("ID_ESPECIALIDAD, ESPECIALIDAD, ID_CENTRO")
         .order("ESPECIALIDAD", { ascending: true });
       espQuery = scopeTenantQuery(espQuery, rol, tenantId);
 
       let aulaQuery = supabase
         .from("AULA")
-        .select("ID_AULA, NOMBRE_AULA")
+        .select("ID_AULA, NOMBRE_AULA, ID_CENTRO")
         .order("NOMBRE_AULA", { ascending: true });
       aulaQuery = scopeTenantQuery(aulaQuery, rol, tenantId);
+
+      if (shouldScopeProfesorCatalogByActiveCenter(rol, centerId)) {
+        const scopedCenterId = centerId!.trim();
+        espQuery = appendCatalogCenterOrFilter(espQuery, scopedCenterId);
+        aulaQuery = aulaQuery.eq("ID_CENTRO", scopedCenterId);
+      }
 
       const profesorId = perfil?.ID_PROFESOR?.trim();
       const skipProfesorQuery = isProfesorRole(rol) && !profesorId;
@@ -325,11 +354,7 @@ export function useProfesores() {
         { data: profs, error },
         { data: esp, error: espError },
         { data: aul, error: aulaError },
-      ] = await Promise.all([
-        profQueryPromise,
-        espQuery,
-        aulaQuery,
-      ]);
+      ] = await Promise.all([profQueryPromise, espQuery, aulaQuery]);
 
       if (error) throw error;
       if (espError) throw espError;
@@ -453,7 +478,7 @@ export function useProfesores() {
         throw new Error("No tienes permiso para cambiar el estado del profesor.");
       }
 
-      const fechaBaja = deactivate ? new Date().toISOString() : null;
+      const fechaBaja = deactivate ? madridTodayDateKey() : null;
       const { error } = await supabase
         .from("PROFESOR")
         .update({ FECHA_BAJA: fechaBaja })
@@ -463,7 +488,7 @@ export function useProfesores() {
       return { id, fechaBaja, deactivate };
     },
     onMutate: async ({ id, deactivate }) => {
-      const fechaBaja = deactivate ? new Date().toISOString() : null;
+      const fechaBaja = deactivate ? madridTodayDateKey() : null;
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData<ProfesoresQueryData>(queryKey);
       qc.setQueryData<ProfesoresQueryData>(queryKey, (old) => {
