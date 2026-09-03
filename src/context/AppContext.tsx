@@ -4,12 +4,13 @@ import {
   useEffect,
   useState,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { syncWorkspaceMetadata } from "@/lib/workspace";
+import { syncWorkspaceMetadataWithRetry } from "@/lib/workspace";
 import {
   fetchUserWorkspaceProfiles,
   type WorkspaceCentroSummary,
@@ -38,6 +39,7 @@ interface AppContextValue {
   demoTrialBlocked: boolean;
   demoTrialChecking: boolean;
   demoTrialError: string | null;
+  workspaceSyncError: string | null;
   refreshDemoTrialGate: () => Promise<boolean>;
   signOut: () => Promise<void>;
 }
@@ -59,6 +61,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [demoTrialBlocked, setDemoTrialBlocked] = useState(false);
   const [demoTrialChecking, setDemoTrialChecking] = useState(false);
   const [demoTrialError, setDemoTrialError] = useState<string | null>(null);
+  const [workspaceSyncError, setWorkspaceSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     const {
@@ -81,6 +84,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDemoTrialBlocked(false);
         setDemoTrialChecking(false);
         setDemoTrialError(null);
+        setWorkspaceSyncError(null);
       }
     });
     supabase.auth.getSession().then(({ data }) => {
@@ -124,16 +128,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (chosenPerfilId) {
           const perfil = rows.find((p) => p.ID_PERFIL === chosenPerfilId);
           if (perfil) {
+            const jwtPerfilIdEmpty = !String(
+              session.user.user_metadata?.current_perfil_id ?? "",
+            ).trim();
             try {
-              await syncWorkspaceMetadata(perfil);
+              await syncWorkspaceMetadataWithRetry(perfil, jwtPerfilIdEmpty ? 2 : 1);
+              if (cancelled) return;
+              const { data: refreshed } = await supabase.auth.getSession();
+              if (refreshed.session) setSession(refreshed.session);
             } catch (syncError) {
               console.error("Failed to sync workspace metadata (JWT refresh)", syncError);
+              if (cancelled) return;
+              setActivePerfilIdState(null);
+              setWorkspaceSyncError(
+                syncError instanceof Error
+                  ? syncError.message
+                  : "No se pudo sincronizar el workspace.",
+              );
+              return;
             }
-            if (cancelled) return;
+            setActivePerfilIdState(chosenPerfilId);
+            setWorkspaceSyncError(null);
+          } else {
+            setActivePerfilIdState(null);
+            setWorkspaceSyncError(null);
           }
-          setActivePerfilIdState(chosenPerfilId);
         } else {
           setActivePerfilIdState(null);
+          setWorkspaceSyncError(null);
         }
       } catch (error) {
         console.error("Failed to load PERFILES", error);
@@ -228,7 +250,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const perfil = option?.perfil ?? perfiles.find((p) => p.ID_PERFIL === perfilId);
       if (!perfil) throw new Error("Perfil de workspace no encontrado.");
 
-      await syncWorkspaceMetadata(perfil);
+      await syncWorkspaceMetadataWithRetry(perfil);
+      setWorkspaceSyncError(null);
       setActivePerfilIdState(perfilId);
       setActiveCliente(option?.cliente ?? null);
       setActiveCentro(option?.centro ?? null);
@@ -250,26 +273,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const activePerfil = perfiles.find((p) => p.ID_PERFIL === activePerfilId) ?? null;
   const hasMultipleProfiles = perfiles.length > 1;
 
-  const value: AppContextValue = {
-    session,
-    loading,
-    perfilesLoading,
-    perfiles,
-    activePerfil,
-    activeCliente,
-    activeCentro,
-    workspaceOptions,
-    hasMultipleProfiles,
-    setActivePerfilId,
-    activateWorkspace,
-    isAuthenticated: !!session,
-    needsTenantSelection: !!session && hasMultipleProfiles && !activePerfil,
-    demoTrialBlocked,
-    demoTrialChecking,
-    demoTrialError,
-    refreshDemoTrialGate,
-    signOut,
-  };
+  const value = useMemo<AppContextValue>(
+    () => ({
+      session,
+      loading,
+      perfilesLoading,
+      perfiles,
+      activePerfil,
+      activeCliente,
+      activeCentro,
+      workspaceOptions,
+      hasMultipleProfiles,
+      setActivePerfilId,
+      activateWorkspace,
+      isAuthenticated: !!session,
+      needsTenantSelection: !!session && hasMultipleProfiles && !activePerfil,
+      demoTrialBlocked,
+      demoTrialChecking,
+      demoTrialError,
+      workspaceSyncError,
+      refreshDemoTrialGate,
+      signOut,
+    }),
+    [
+      session,
+      loading,
+      perfilesLoading,
+      perfiles,
+      activePerfil,
+      activeCliente,
+      activeCentro,
+      workspaceOptions,
+      hasMultipleProfiles,
+      setActivePerfilId,
+      activateWorkspace,
+      demoTrialBlocked,
+      demoTrialChecking,
+      demoTrialError,
+      workspaceSyncError,
+      refreshDemoTrialGate,
+      signOut,
+    ],
+  );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
