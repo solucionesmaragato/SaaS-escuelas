@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { ChevronDown, MapPin, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { SchoolBrandAvatar } from "@/components/workspace/SchoolBrandAvatar";
 import { homePathForRole } from "@/lib/homePath";
+import { BRAND_BLUE, MYSINCOPPA_SIDEBAR_LOGO_URL } from "@/lib/brand";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { roleBadgeClass } from "@/lib/workspace";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+
+const WORKSPACE_ROLE_LABEL: Record<string, string> = {
+  MASTER: "Master",
+  ADMIN: "Admin",
+  DIRECCION: "Dirección",
+  SECRETARIA: "Secretaría",
+  PROFESOR: "Profesor",
+};
 
 export function WorkspaceSwitcher() {
   const navigate = useNavigate();
@@ -33,8 +42,11 @@ export function WorkspaceSwitcher() {
 
   if (!activePerfil) return null;
 
-  const schoolName = activeCliente?.NOMBRE_ESCUELA?.trim() || "Escuela";
-  const centerName = activeCentro?.NOMBRE_CENTRO?.trim() || "Sin centro asignado";
+  const schoolName = activeCliente?.NOMBRE_ESCUELA?.trim() || "Mi escuela";
+  const logoUrl = activeCliente?.APP_LOGO?.trim() || MYSINCOPPA_SIDEBAR_LOGO_URL;
+  const roleLabel =
+    WORKSPACE_ROLE_LABEL[activePerfil.ROL] ?? ROLE_LABEL[activePerfil.ROL] ?? activePerfil.ROL;
+  const centerName = activeCentro?.NOMBRE_CENTRO?.trim() || null;
 
   const handleSwitch = async (perfilId: string) => {
     if (perfilId === activePerfil.ID_PERFIL || switching) return;
@@ -54,17 +66,16 @@ export function WorkspaceSwitcher() {
 
   const content = (
     <div className="flex min-w-0 items-center gap-2 text-left">
-      <SchoolBrandAvatar
-        schoolName={schoolName}
-        logoUrl={activeCliente?.APP_LOGO}
-        className="h-8 w-8"
-        fallbackClassName="text-[10px]"
-      />
-      <div className="min-w-0 hidden sm:block">
-        <div className="truncate text-sm font-medium leading-tight">{schoolName}</div>
-        <div className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-          <MapPin className="h-3 w-3 shrink-0" />
-          <span className="truncate">{centerName}</span>
+      <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-border/40 bg-white">
+        <img src={logoUrl} alt={schoolName} className="h-full w-full object-contain" />
+      </div>
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold" style={{ color: BRAND_BLUE }}>
+          {schoolName}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {roleLabel}
+          {centerName ? ` · ${centerName}` : ""}
         </div>
       </div>
       {hasMultipleProfiles && (
@@ -75,28 +86,14 @@ export function WorkspaceSwitcher() {
   );
 
   if (!hasMultipleProfiles) {
-    return (
-      <div className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5">
-        {content}
-        <Badge className={roleBadgeClass(activePerfil.ROL)}>
-          {ROLE_LABEL[activePerfil.ROL] ?? activePerfil.ROL}
-        </Badge>
-      </div>
-    );
+    return content;
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          className="h-auto max-w-[320px] gap-2 px-2 py-1.5"
-          disabled={switching}
-        >
+        <Button variant="ghost" className="h-auto max-w-[320px] px-0 py-0 hover:bg-transparent" disabled={switching}>
           {content}
-          <Badge className={`ml-1 shrink-0 ${roleBadgeClass(activePerfil.ROL)}`}>
-            {ROLE_LABEL[activePerfil.ROL] ?? activePerfil.ROL}
-          </Badge>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[340px]">

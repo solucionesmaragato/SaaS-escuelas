@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { Outlet, Navigate, createFileRoute, Link, useRouterState } from "@tanstack/react-router";
-import { PanelLeft, Home, CalendarDays, Clock } from "lucide-react";
-import { SidebarProvider, useSidebar } from "@/components/ui/sidebar";
+import { Home, CalendarDays, Clock } from "lucide-react";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DemoCalComBanner } from "@/components/DemoCalComBanner";
 import { DemoExpiredWall } from "@/components/DemoExpiredWall";
 import { MobileBouncer } from "@/components/MobileBouncer";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
-import { Button } from "@/components/ui/button";
 import { useApp } from "@/context/AppContext";
 import { useProfesorMobileShell } from "@/hooks/useProfesorMobileShell";
 import { cn } from "@/lib/utils";
@@ -131,7 +130,6 @@ function AuthenticatedShellContent({
   isSidebarOpen: boolean;
   showMobileShell: boolean;
 }) {
-  const { toggleSidebar } = useSidebar();
   const { activePerfil, session } = useApp();
 
   return (
@@ -140,19 +138,6 @@ function AuthenticatedShellContent({
         {!showMobileShell && <AppSidebar isOpen={isSidebarOpen} />}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
-          {!showMobileShell && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              aria-label={isSidebarOpen ? "Contraer menú lateral" : "Expandir menú lateral"}
-              aria-expanded={isSidebarOpen}
-              onClick={toggleSidebar}
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          )}
           <WorkspaceSwitcher />
           {activePerfil ? (
             <DemoCalComBanner
