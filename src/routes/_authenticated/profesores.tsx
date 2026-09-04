@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { MoreVertical, Plus, Search, UserCircle } from "lucide-react";
 import {
   findProfesorByPerfilId,
+  ProfesorEmailSyncError,
   ProfesorPerfilAssignError,
   ProfesorPerfilRolUpdateError,
   useProfesores,
@@ -695,6 +696,10 @@ function ProfesoresPage() {
               setCreating(false);
               return;
             }
+            if (err instanceof ProfesorEmailSyncError) {
+              toast.error(err.message);
+              return;
+            }
             toast.error(err instanceof Error ? err.message : "Error al crear.");
           }
         }}
@@ -720,6 +725,10 @@ function ProfesoresPage() {
             if (err instanceof ProfesorPerfilRolUpdateError) {
               toast.error(err.message);
               setOverlay({ id: overlay.id, mode: "detail" });
+              return;
+            }
+            if (err instanceof ProfesorEmailSyncError) {
+              toast.error(err.message);
               return;
             }
             toast.error(err instanceof Error ? err.message : "Error al actualizar.");

@@ -35,6 +35,16 @@ export class ProfesorPerfilRolUpdateError extends Error {
   }
 }
 
+export class ProfesorEmailSyncError extends Error {
+  readonly profesorId: string;
+
+  constructor(profesorId: string, message: string) {
+    super(message);
+    this.name = "ProfesorEmailSyncError";
+    this.profesorId = profesorId;
+  }
+}
+
 export type AulaLookup = {
   ID_AULA: string;
   NOMBRE_AULA: string;
@@ -140,6 +150,65 @@ type ProfesorRow = {
 function nullIfEmpty(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeProfesorEmail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
+function rethrowProfesorEmailSyncError(error: unknown, profesorId: string): never {
+  const message = extractErrorMessage(error);
+  if (
+    message.includes("profesor_email_duplicate") ||
+    message.includes("PERFILES_EMAIL_CLIENTE_CENTRO_ROL_key")
+  ) {
+    throw new ProfesorEmailSyncError(
+      profesorId,
+      "Ese email ya está en uso por otro usuario del mismo centro.",
+    );
+  }
+  if (message.includes("profesor_email_sync_failed")) {
+    throw new ProfesorEmailSyncError(
+      profesorId,
+      "No se pudo sincronizar el email con Usuarios.",
+    );
+  }
+  throw error instanceof Error ? error : new Error(message);
+}
+
+async function assertProfesorEmailSynced(
+  profesorId: string,
+  tenantId: string,
+  expectedEmail: string | null | undefined,
+): Promise<void> {
+  const normalizedExpected = normalizeProfesorEmail(expectedEmail);
+  if (!normalizedExpected) return;
+
+  const { data: perfil, error } = await supabase
+    .from("PERFILES")
+    .select("EMAIL")
+    .eq("ID_PROFESOR", profesorId)
+    .eq("ID_CLIENTE", tenantId)
+    .maybeSingle();
+
+  if (error) rethrowProfesorEmailSyncError(error, profesorId);
+  if (!perfil) return;
+
+  if (normalizeProfesorEmail(perfil.EMAIL) !== normalizedExpected) {
+    throw new ProfesorEmailSyncError(
+      profesorId,
+      "No se pudo sincronizar el email con Usuarios.",
+    );
+  }
 }
 
 function nullIfEmptyNumber(value: number | string | null | undefined): number | null {
@@ -366,7 +435,7 @@ export function useProfesores() {
         .insert(payload)
         .select()
         .single();
-      if (error) throw error;
+      if (error) rethrowProfesorEmailSyncError(error, "new");
 
       const { error: perfilError } = await supabase.from("PERFILES").insert({
         NOMBRE: input.NOMBRE_PROFESOR.trim(),
@@ -380,7 +449,20 @@ export function useProfesores() {
 
       if (perfilError) {
         await qc.invalidateQueries({ queryKey });
+        try {
+          rethrowProfesorEmailSyncError(perfilError, profesor.ID_PROFESOR);
+        } catch (mappedError) {
+          if (mappedError instanceof ProfesorEmailSyncError) throw mappedError;
+        }
         throw new ProfesorPerfilAssignError(profesor.ID_PROFESOR);
+      }
+
+      if ("EMAIL_PROFESORES" in input) {
+        await assertProfesorEmailSynced(
+          profesor.ID_PROFESOR,
+          tenantId,
+          input.EMAIL_PROFESORES,
+        );
       }
 
       return profesor;
@@ -422,7 +504,15 @@ export function useProfesores() {
         .eq("ID_CLIENTE", tenantId)
         .select()
         .single();
-      if (error) throw error;
+      if (error) rethrowProfesorEmailSyncError(error, id);
+
+      if ("EMAIL_PROFESORES" in payload) {
+        await assertProfesorEmailSynced(
+          id,
+          tenantId,
+          payload.EMAIL_PROFESORES as string | null,
+        );
+      }
 
       if (selectedRol !== undefined && !selfProfile) {
         const { error: perfilError } = await supabase
