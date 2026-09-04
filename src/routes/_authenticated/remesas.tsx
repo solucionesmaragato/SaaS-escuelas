@@ -618,7 +618,7 @@ function RemesasPage() {
         description={`${list.data?.length ?? 0} lotes de recibos borrador registrados en el sistema`}
         actions={
           canWrite && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Generar nuevos recibos
             </Button>
           )
@@ -1301,7 +1301,7 @@ function GenerarRemesaDialog({
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!canSubmit}>
+            <Button type="submit" variant="brand" disabled={!canSubmit}>
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1438,7 +1438,7 @@ function RemesaEditDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </DialogFooter>

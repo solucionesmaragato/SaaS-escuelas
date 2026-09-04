@@ -246,7 +246,7 @@ function CentroDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="centro-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="centro-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
@@ -263,9 +263,9 @@ function CentroDetailOverlay({
                 {canEdit && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -563,6 +563,7 @@ function CursoEscolarForm({
       <div className="flex flex-wrap gap-2 pt-1">
         <Button
           type="submit"
+          variant="brand"
           id={`save-curso-${formInstanceId}`}
           name="saveCurso"
           size="sm"
@@ -868,7 +869,7 @@ function EmpresaDatosDialog({
               <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={submitting || !canSave}>
+              <Button type="submit" variant="brand" disabled={submitting || !canSave}>
                 {submitting ? "Guardando..." : "Guardar datos"}
               </Button>
             </DialogFooter>
@@ -989,7 +990,7 @@ function CentroExpandedDetail({
             {!activeForm && (
               <Button
                 type="button"
-                variant="outline"
+                variant="brand-outline"
                 size="sm"
                 className="shrink-0 gap-1.5"
                 onClick={(e) => {
@@ -1165,6 +1166,7 @@ function CentroFormDialog({
           </Button>
           <Button
             type="submit"
+            variant="brand"
             disabled={submitting || !form.NOMBRE_CENTRO.trim() || !form.DIRECCION.trim()}
           >
             {submitting ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear sede"}
@@ -1361,11 +1363,11 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
           canAccess && (
             <Button
               type="button"
-              variant="outline"
+              variant="brand-outline"
               className="shrink-0 gap-2 shadow-sm"
               onClick={() => setEmpresaOpen(true)}
             >
-              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Building2 className="h-4 w-4 text-brand" />
               Modificar/Ver datos empresa
             </Button>
           )
@@ -1385,7 +1387,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
             </p>
           </div>
           {canCreateCentro && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Añadir Nueva Sede
             </Button>

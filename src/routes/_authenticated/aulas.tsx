@@ -234,7 +234,7 @@ function AulaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="aula-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="aula-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -251,9 +251,9 @@ function AulaDetailOverlay({
                 {canMutate && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -420,7 +420,7 @@ function AulasPage() {
         description={`${aulas.length} registradas en el sistema`}
         actions={
           canMutate && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nueva aula
             </Button>
           )
@@ -846,6 +846,7 @@ function AulaFormDialog(props: AulaFormDialogProps) {
           </Button>
           <Button
             type="submit"
+            variant="brand"
             disabled={
               submitting ||
               masterNeedsCliente ||

@@ -2614,7 +2614,7 @@ function MatriculaHorariosGroup({
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="brand-outline"
             disabled={horarioSaving}
             onClick={appendEmptyHorario}
           >
@@ -3068,7 +3068,7 @@ function DraftMatriculaPanel({
           </div>
         </Card>
       ) : (
-        <Button type="button" variant="outline" size="sm" onClick={() => setShowAdd(true)}>
+        <Button type="button" variant="brand-outline" size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Añadir Matrícula
         </Button>
@@ -3410,7 +3410,7 @@ function MatriculaManagePanel({
           </div>
         </Card>
       ) : (
-        <Button type="button" variant="outline" size="sm" onClick={() => setShowAdd(true)}>
+        <Button type="button" variant="brand-outline" size="sm" onClick={() => setShowAdd(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Añadir Matrícula
         </Button>
@@ -4244,7 +4244,7 @@ export function AlumnoFormDialog({
 
             {!isCreate && initialId && canAddCargoExtra && (
               <div className="pt-2">
-                <Button type="button" variant="outline" onClick={handleOpenCargoExtra} disabled={submitting}>
+                <Button type="button" variant="brand-outline" size="sm" onClick={handleOpenCargoExtra} disabled={submitting}>
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir cargo extra
                 </Button>
@@ -4289,7 +4289,7 @@ export function AlumnoFormDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </DialogFooter>
@@ -4298,7 +4298,7 @@ export function AlumnoFormDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </div>

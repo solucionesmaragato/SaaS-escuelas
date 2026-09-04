@@ -75,7 +75,7 @@ export function TeacherDatosPersonalesDashboard() {
           />
 
           <div className="flex justify-end border-t pt-4">
-            <Button type="submit" form="profesor-form" disabled={update.isPending}>
+            <Button type="submit" variant="brand" form="profesor-form" disabled={update.isPending}>
               {update.isPending ? "Guardando..." : "Guardar cambios"}
             </Button>
           </div>

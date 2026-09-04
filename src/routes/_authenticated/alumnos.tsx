@@ -548,7 +548,7 @@ function AlumnosPage() {
             : `${filtered.length} en total · activos primero, luego alfabético`
         }
         actions={
-          <Button onClick={() => setCreating(true)} disabled={isPageLoading}>
+          <Button variant="brand" onClick={() => setCreating(true)} disabled={isPageLoading}>
             <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
           </Button>
         }
@@ -673,20 +673,24 @@ function AlumnosPage() {
                     <TableCell className="font-medium tabular-nums">
                       {formatCurrency(a.TOTAL_MENSUAL)}
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-right">
                       <AlumnoQuickActions alumno={a} />
                     </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="text-right">
                       <AlumnoEstadoToggle
                         alumno={a}
                         disabled={update.isPending}
                         onClick={() => setStatusConfirming(a)}
                       />
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>

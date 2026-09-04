@@ -123,9 +123,9 @@ export function CargoExtraDetailDialog({
         {showHeaderEdit ? (
           <Button
             type="button"
-            variant="default"
+            variant="brand"
             size="sm"
-            className="absolute right-10 top-4 z-10 gap-2 bg-black text-white hover:bg-black/90"
+            className="absolute right-10 top-4 z-10 gap-2"
             onClick={() => setMode("edit")}
           >
             <Pencil className="h-4 w-4" />
@@ -189,7 +189,7 @@ export function CargoExtraDetailDialog({
               <Button type="button" variant="ghost" onClick={handleCancelEdit} disabled={updating}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={() => void handleSave()} disabled={updating}>
+              <Button type="button" variant="brand" onClick={() => void handleSave()} disabled={updating}>
                 {updating ? "Guardando..." : "Guardar"}
               </Button>
             </>
@@ -199,7 +199,7 @@ export function CargoExtraDetailDialog({
                 Cerrar
               </Button>
               {!editInHeader && editable ? (
-                <Button type="button" onClick={() => setMode("edit")}>
+                <Button type="button" variant="brand" onClick={() => setMode("edit")}>
                   Editar
                 </Button>
               ) : null}

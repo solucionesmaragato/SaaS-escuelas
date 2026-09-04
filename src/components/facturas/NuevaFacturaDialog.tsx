@@ -518,7 +518,7 @@ export function NuevaFacturaDialog({
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
+                variant="brand-outline"
                 className="h-8 gap-1"
                 onClick={() => setLineas((prev) => [...prev, newLineaDraft()])}
               >
@@ -614,7 +614,11 @@ export function NuevaFacturaDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting || loadingRef || !!previewRefError || !previewRef.trim()}>
+            <Button
+              type="submit"
+              variant="brand"
+              disabled={submitting || loadingRef || !!previewRefError || !previewRef.trim()}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -211,12 +211,15 @@ function MatriculasSubSection({
                         })
                       }
                     >
-                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="w-10 px-2">
                         <button
                           type="button"
                           className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
                           aria-label={isExpanded ? "Contraer horarios" : "Expandir horarios"}
-                          onClick={() => toggle(m.ID_MATRICULA)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggle(m.ID_MATRICULA);
+                          }}
                         >
                           <ChevronDown
                             className={cn(
@@ -246,22 +249,18 @@ function MatriculasSubSection({
                           <span className="text-muted-foreground">Sin asignar</span>
                         )}
                       </TableCell>
-                      <TableCell
-                        className="text-sm"
-                        onClick={(e) => {
-                          if (m.ID_TARIFA) e.stopPropagation();
-                        }}
-                      >
+                      <TableCell className="text-sm">
                         {m.ID_TARIFA ? (
                           <button
                             type="button"
                             className="text-left text-primary underline-offset-4 hover:underline"
-                            onClick={() =>
+                            onClick={(e) => {
+                              e.stopPropagation();
                               onNavigateToEntity({
                                 to: "/tarifas",
                                 search: { tarifaId: m.ID_TARIFA! },
-                              })
-                            }
+                              });
+                            }}
                           >
                             {lookups.tarifaById.get(m.ID_TARIFA) ?? m.ID_TARIFA}
                           </button>
@@ -601,12 +600,15 @@ function EvaluacionesSubSection({
                         })
                       }
                     >
-                      <TableCell className="w-10 px-2" onClick={(e) => e.stopPropagation()}>
+                      <TableCell className="w-10 px-2">
                         <button
                           type="button"
                           className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
                           aria-label={isExpanded ? "Contraer criterios" : "Expandir criterios"}
-                          onClick={() => toggle(row.ID_EVALUACION)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggle(row.ID_EVALUACION);
+                          }}
                         >
                           <ChevronDown
                             className={cn(

@@ -101,7 +101,7 @@ export function RubricasAdminView() {
         description={`${list.data?.length ?? 0} rúbricas configuradas para esta escuela`}
         actions={
           canMutate && (
-            <Button onClick={() => setCreating(true)}>
+            <Button onClick={() => setCreating(true)} variant="brand">
               <Plus className="mr-2 h-4 w-4" /> Nueva rúbrica
             </Button>
           )
@@ -336,7 +336,7 @@ function RubricaFormDialog({
               </div>
               <Button
                 type="button"
-                variant="outline"
+                variant="brand-outline"
                 size="sm"
                 onClick={addCriterio}
                 disabled={submitting}
@@ -378,7 +378,7 @@ function RubricaFormDialog({
             <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting || !nombre.trim()}>
+            <Button type="submit" variant="brand" disabled={submitting || !nombre.trim()}>
               {submitting ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear rúbrica"}
             </Button>
           </DialogFooter>

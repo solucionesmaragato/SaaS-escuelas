@@ -700,7 +700,7 @@ function JornadaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelRectify}>
                 Cancelar
               </Button>
-              <Button type="submit" form="manual-fichaje-rectify-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="manual-fichaje-rectify-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Registrar modificación"}
               </Button>
             </div>
@@ -717,9 +717,9 @@ function JornadaDetailOverlay({
                 {canRectify && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onRectify}
                   >
                     <FilePenLine className="h-4 w-4" />
@@ -2305,7 +2305,7 @@ function ManualFichajeDialog({
             <Button type="button" variant="ghost" onClick={handleClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting || !canSubmitModificacion}>
+            <Button type="submit" variant="brand" disabled={submitting || !canSubmitModificacion}>
               {submitting ? "Guardando..." : "Registrar modificación"}
             </Button>
           </div>
@@ -2343,11 +2343,11 @@ function ManualFichajeDialog({
           <div className="grid gap-3 py-2">
             <Button
               type="button"
-              variant="outline"
+              variant="brand-outline"
               className="h-auto justify-start gap-3 px-4 py-4 text-left"
               onClick={() => handleSelectAction("nuevo")}
             >
-              <Plus className="h-5 w-5 shrink-0 text-blue-950" />
+              <Plus className="h-5 w-5 shrink-0" />
               <span>
                 <span className="block font-semibold">Nuevo Fichaje</span>
                 <span className="block text-xs font-normal text-muted-foreground">
@@ -2357,11 +2357,11 @@ function ManualFichajeDialog({
             </Button>
             <Button
               type="button"
-              variant="outline"
+              variant="brand-outline"
               className="h-auto justify-start gap-3 px-4 py-4 text-left"
               onClick={() => handleSelectAction("modificacion")}
             >
-              <FilePenLine className="h-5 w-5 shrink-0 text-amber-700" />
+              <FilePenLine className="h-5 w-5 shrink-0" />
               <span>
                 <span className="block font-semibold">Modificación de Fichaje Existente</span>
                 <span className="block text-xs font-normal text-muted-foreground">
@@ -2439,7 +2439,7 @@ function ManualFichajeDialog({
                 <Button type="button" variant="ghost" onClick={handleClose}>
                   Cancelar
                 </Button>
-                <Button type="submit" disabled={submitting || !canSubmitNuevo}>
+                <Button type="submit" variant="brand" disabled={submitting || !canSubmitNuevo}>
                   {submitting ? "Guardando..." : "Registrar"}
                 </Button>
               </div>

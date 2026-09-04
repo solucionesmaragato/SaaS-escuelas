@@ -86,7 +86,7 @@ function ComprasInternasPage() {
         description={`${rows.length} cargos extra registrados`}
         actions={
           canEditCargoExtra ? (
-            <Button type="button" onClick={() => setCargoExtraCreateOpen(true)}>
+            <Button type="button" variant="brand" onClick={() => setCargoExtraCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Añadir cargo extra
             </Button>

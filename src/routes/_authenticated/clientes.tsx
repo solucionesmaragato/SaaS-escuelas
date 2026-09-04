@@ -119,7 +119,7 @@ function ClientesPage() {
         title="Clientes"
         description={`${list.data?.length ?? 0} registrados en el sistema`}
         actions={
-          <Button onClick={() => setCreating(true)}>
+          <Button variant="brand" onClick={() => setCreating(true)}>
             <Plus className="mr-2 h-4 w-4" /> Nuevo cliente
           </Button>
         }
@@ -506,7 +506,7 @@ function ClienteFormDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </DialogFooter>

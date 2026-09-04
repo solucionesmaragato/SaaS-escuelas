@@ -188,7 +188,7 @@ function EspecialidadDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="especialidad-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="especialidad-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -205,9 +205,9 @@ function EspecialidadDetailOverlay({
                 {canMutate && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -330,7 +330,7 @@ function EspecialidadesPage() {
         description={`${especialidades.length} registradas en el sistema`}
         actions={
           canMutate && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nueva especialidad
             </Button>
           )
@@ -624,7 +624,7 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || (isMaster && !isEdit && !idCliente)}>
+          <Button type="submit" variant="brand" disabled={submitting || (isMaster && !isEdit && !idCliente)}>
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

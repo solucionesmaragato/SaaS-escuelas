@@ -264,7 +264,7 @@ function HorarioDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="horario-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="horario-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -281,9 +281,9 @@ function HorarioDetailOverlay({
                 {canMutate && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -437,7 +437,7 @@ function MensajesAutomaticosPage() {
         description={`${horarios.length} horarios registrados`}
         actions={
           isMaster && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nuevo Horario
             </Button>
           )
@@ -900,7 +900,7 @@ function HorarioFormDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" variant="brand" disabled={submitting}>
             {submitLabel}
           </Button>
         </DialogFooter>

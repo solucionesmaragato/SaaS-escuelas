@@ -416,7 +416,7 @@ function PrestamoDetailDialog({
               >
                 Cancelar
               </Button>
-              <Button type="button" disabled={submitting} onClick={() => void handleSaveEdit()}>
+              <Button type="button" variant="brand" disabled={submitting} onClick={() => void handleSaveEdit()}>
                 {saving ? "Guardando..." : "Guardar cambios"}
               </Button>
             </>
@@ -730,7 +730,7 @@ function NuevoPrestamoDialog({
           <Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="button" disabled={submitting} onClick={() => void handleSubmit()}>
+          <Button type="button" variant="brand" disabled={submitting} onClick={() => void handleSubmit()}>
             {submitting ? "Guardando..." : "Registrar préstamo"}
           </Button>
         </DialogFooter>
@@ -847,7 +847,7 @@ export function TeacherPrestamosDashboard() {
         </Tabs>
 
         {canMutate ? (
-          <Button type="button" className="w-full sm:w-auto" onClick={() => setCreating(true)}>
+          <Button type="button" variant="brand" className="w-full sm:w-auto" onClick={() => setCreating(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo préstamo
           </Button>

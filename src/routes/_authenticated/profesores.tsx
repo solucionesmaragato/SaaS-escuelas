@@ -190,7 +190,7 @@ function ProfesorPersonalDataView({
             />
 
             <div className="flex justify-end border-t pt-4">
-              <Button type="submit" form="profesor-form" disabled={update.isPending}>
+              <Button type="submit" variant="brand" form="profesor-form" disabled={update.isPending}>
                 {update.isPending ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
@@ -535,7 +535,7 @@ function ProfesoresPage() {
         description={`${profesores.length} en total · activos primero, luego alfabético`}
         actions={
           canManage && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Nuevo profesor
             </Button>
@@ -837,7 +837,7 @@ function ProfesorFormDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" form="profesor-form" disabled={submitting}>
+          <Button type="submit" variant="brand" form="profesor-form" disabled={submitting}>
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

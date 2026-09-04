@@ -115,7 +115,7 @@ function DocumentoCard({
         <Button
           type="button"
           size="sm"
-          variant="default"
+          variant="brand"
           className="gap-1"
           disabled={!doc.URL_ORIGINAL}
           onClick={onOpen}
@@ -124,7 +124,7 @@ function DocumentoCard({
           Abrir documento
         </Button>
         {pending ? (
-          <Button type="button" size="sm" variant="outline" className="gap-1" onClick={onSign}>
+          <Button type="button" size="sm" variant="brand-outline" className="gap-1" onClick={onSign}>
             <Upload className="h-3.5 w-3.5" />
             Subir firmado
           </Button>
@@ -199,6 +199,7 @@ function FirmaDialog({
           </Button>
           <Button
             type="button"
+            variant="brand"
             disabled={submitting || !signedFile}
             onClick={() => signedFile && void onSubmit(signedFile)}
           >

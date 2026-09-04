@@ -90,7 +90,10 @@ function LoginPage() {
 
           <p className="text-center text-xs text-muted-foreground pt-2">
             ¿Primera vez?{" "}
-            <Link to="/registro" className="font-medium text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/registro"
+              className="font-medium text-primary underline-offset-4 hover:text-brand-hover hover:underline"
+            >
               Regístrate y solicita un entorno demo
             </Link>
             .

@@ -247,7 +247,7 @@ function IncidenciaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="incidencia-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="incidencia-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar Cambios"}
               </Button>
             </div>
@@ -264,9 +264,9 @@ function IncidenciaDetailOverlay({
                 {canWrite && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -482,7 +482,7 @@ function IncidenciasPage() {
         description={`${list.data?.length ?? 0} registros de asistencia e incidencias controlados`}
         actions={
           canWrite && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nueva incidencia
             </Button>
           )
@@ -2568,6 +2568,7 @@ function IncidenciaFormDialog({
           </Button>
           <Button
             type="submit"
+            variant="brand"
             disabled={
               submitting ||
               (!lookupsReady && !isEditing) ||

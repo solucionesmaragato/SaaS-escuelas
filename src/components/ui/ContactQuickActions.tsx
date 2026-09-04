@@ -97,10 +97,7 @@ export function ContactCompactCell({
   const rowAlign = align === "end" ? "justify-end" : "justify-start";
 
   return (
-    <div
-      className={cn("space-y-0.5", className)}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <div className={cn("space-y-0.5", className)}>
       {phoneValue ? (
         <div className={cn("flex items-center gap-1", rowAlign)}>
           <span className="truncate">{phoneValue}</span>

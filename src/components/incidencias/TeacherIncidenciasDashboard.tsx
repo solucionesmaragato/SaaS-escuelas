@@ -235,7 +235,7 @@ function IncidenciaDetailDialog({
             Cerrar
           </Button>
           {canWrite ? (
-            <Button type="button" onClick={onEdit}>
+            <Button type="button" variant="brand" onClick={onEdit}>
               <Pencil className="mr-2 h-4 w-4" />
               Editar
             </Button>
@@ -770,6 +770,7 @@ function TeacherIncidenciaFormDialog({
           </Button>
           <Button
             type="button"
+            variant="brand"
             disabled={
               submitting || (!isEditing && isRecuperacion && hasZeroSaldoRecuperaciones)
             }
@@ -968,6 +969,7 @@ export function TeacherIncidenciasDashboard() {
         </div>
         {canWrite ? (
           <Button
+            variant="brand"
             className="shrink-0"
             onClick={() => {
               setEditingIncidencia(null);

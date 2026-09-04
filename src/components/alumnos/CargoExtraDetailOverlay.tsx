@@ -182,7 +182,7 @@ export function CargoExtraDetailOverlay({
               <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={updating}>
                 Cancelar
               </Button>
-              <Button type="button" onClick={() => void handleSave()} disabled={updating}>
+              <Button type="button" variant="brand" onClick={() => void handleSave()} disabled={updating}>
                 {updating ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -199,9 +199,9 @@ export function CargoExtraDetailOverlay({
                 {editable ? (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={() => setMode("edit")}
                   >
                     <Pencil className="h-4 w-4" />

@@ -108,6 +108,7 @@ export function CorrectionRequestDialog({
               </Button>
               <Button
                 type="submit"
+                variant="brand"
                 disabled={submitting || !fechaHoraManual.trim() || !motivo.trim()}
               >
                 {submitting ? "Enviando..." : "Enviar solicitud"}

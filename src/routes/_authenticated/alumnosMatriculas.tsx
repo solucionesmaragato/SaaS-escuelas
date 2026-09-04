@@ -291,7 +291,7 @@ function AlumnosMatriculasPage() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                variant="outline"
+                variant="brand"
                 size="sm"
                 onClick={handleEditEnrollment}
                 disabled={!activeMatricula}

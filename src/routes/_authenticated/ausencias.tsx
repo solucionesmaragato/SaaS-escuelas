@@ -402,7 +402,7 @@ function PermisoDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="permiso-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="permiso-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
@@ -419,9 +419,9 @@ function PermisoDetailOverlay({
                 {canMutate && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -666,7 +666,7 @@ function PermisosPage() {
         title={isManagementRole ? "Registro de permisos" : "Solicitud de permisos"}
         description={`${ausencias.length} solicitudes registradas`}
         actions={
-          <Button onClick={() => setCreating(true)}>
+          <Button variant="brand" onClick={() => setCreating(true)}>
             <Plus className="mr-2 h-4 w-4" />
             {isManagementRole ? "+ Añadir / Tramitar permiso" : "+ Solicitar permiso"}
           </Button>
@@ -1181,7 +1181,7 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" variant="brand" disabled={submitting}>
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

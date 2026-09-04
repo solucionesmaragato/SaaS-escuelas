@@ -601,9 +601,9 @@ function MatriculaOverlayHeader({
         {edit?.visible ? (
           <Button
             type="button"
-            variant="default"
+            variant="brand"
             size="sm"
-            className="gap-2 bg-black text-white hover:bg-black/90"
+            className="gap-2"
             onClick={edit.onClick}
           >
             <Pencil className="h-4 w-4" />
@@ -632,7 +632,7 @@ function MatriculaOverlayFooter({
       <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
         Cancelar
       </Button>
-      <Button type="submit" form="matricula-form" disabled={submitting}>
+      <Button type="submit" variant="brand" form="matricula-form" disabled={submitting}>
         {submitting ? "Guardando..." : submitLabel}
       </Button>
     </div>
@@ -1446,7 +1446,7 @@ function MatriculaHorariosEditablePanel({
               aulas={aulas}
             />
           </div>
-          <Button type="button" size="sm" variant="outline" className="mt-3" onClick={onAddRow}>
+          <Button type="button" size="sm" variant="brand-outline" className="mt-3" onClick={onAddRow}>
             <Plus className="mr-2 h-4 w-4" />
             Añadir Horario
           </Button>
@@ -1863,7 +1863,7 @@ function MatriculasPage() {
         description={`${matriculas.length} matrículas registradas en el sistema`}
         actions={
           canWrite && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nueva matrícula
             </Button>
           )

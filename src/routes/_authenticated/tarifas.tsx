@@ -223,7 +223,7 @@ function TarifaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="tarifa-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="tarifa-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -240,9 +240,9 @@ function TarifaDetailOverlay({
                 {canWrite && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -387,7 +387,7 @@ function TarifasPage() {
         }
         actions={
           canWrite && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Nueva tarifa
             </Button>
@@ -796,7 +796,7 @@ function TarifaFormDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" form="tarifa-form" disabled={submitting}>
+          <Button type="submit" variant="brand" form="tarifa-form" disabled={submitting}>
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

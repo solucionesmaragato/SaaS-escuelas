@@ -641,9 +641,9 @@ function PrestamoOverlayHeader({
         {edit?.visible ? (
           <Button
             type="button"
-            variant="default"
+            variant="brand"
             size="sm"
-            className="gap-2 bg-black text-white hover:bg-black/90"
+            className="gap-2"
             onClick={edit.onClick}
           >
             <Pencil className="h-4 w-4" />
@@ -672,7 +672,7 @@ function PrestamoOverlayFooter({
       <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
         Cancelar
       </Button>
-      <Button type="submit" form="prestamo-form" disabled={submitting}>
+      <Button type="submit" variant="brand" form="prestamo-form" disabled={submitting}>
         {submitting ? "Guardando..." : submitLabel}
       </Button>
     </div>
@@ -1128,7 +1128,7 @@ function PrestamosMaterialPage() {
         description={`${list.data?.length ?? 0} préstamos registrados`}
         actions={
           canMutate && (
-            <Button onClick={() => setCreating(true)}>
+            <Button variant="brand" onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Nuevo préstamo
             </Button>

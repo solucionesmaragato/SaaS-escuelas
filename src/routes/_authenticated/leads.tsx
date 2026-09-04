@@ -616,7 +616,7 @@ function LeadDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="lead-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="lead-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar"}
               </Button>
             </div>
@@ -633,9 +633,9 @@ function LeadDetailOverlay({
                 {canWrite && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -849,7 +849,7 @@ function LeadsPage() {
           <div className="text-xs text-muted-foreground">Contacto: {lead.NOMBRE_CONTACTO}</div>
         )}
       </TableCell>
-      <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+      <TableCell className="text-sm">
         <ContactCompactCell phone={lead.TELEFONO} email={lead.EMAIL_LEAD} />
       </TableCell>
       <TableCell className="text-sm">
@@ -923,6 +923,7 @@ function LeadsPage() {
         actions={
           canWrite && (
             <Button
+              variant="brand"
               onClick={() => {
                 setCreateScheduleConflict(null);
                 setCreating(true);
@@ -1593,7 +1594,7 @@ function LeadFormDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </DialogFooter>

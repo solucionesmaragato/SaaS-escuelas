@@ -1256,7 +1256,7 @@ function GruposPage() {
         description={`${grupos.length} grupos activos en el tenant`}
         actions={
           canWrite && (
-            <Button onClick={openCreateModal}>
+            <Button variant="brand" onClick={openCreateModal}>
               <Plus className="w-4 h-4 mr-2" />
               Nuevo Grupo
             </Button>
@@ -1541,9 +1541,9 @@ function GruposPage() {
                         </span>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="brand-outline"
                           size="icon"
-                          className="h-7 w-7 shrink-0 text-primary"
+                          className="h-7 w-7 shrink-0"
                           onClick={() =>
                             setPendingAdd({
                               id: alumno.ID_ALUMNO,
@@ -1937,7 +1937,7 @@ function GruposPage() {
             >
               Cancelar
             </Button>
-            <Button onClick={handleCreate} disabled={create.isPending}>
+            <Button variant="brand" onClick={handleCreate} disabled={create.isPending}>
               {create.isPending ? "Creando…" : "Crear grupo"}
             </Button>
           </DialogFooter>
@@ -2206,7 +2206,7 @@ function GruposPage() {
             <Button variant="outline" onClick={() => setEditing(null)}>
               Cancelar
             </Button>
-            <Button onClick={handleSaveEdit} disabled={update.isPending}>
+            <Button variant="brand" onClick={handleSaveEdit} disabled={update.isPending}>
               {update.isPending ? "Guardando…" : "Guardar cambios"}
             </Button>
           </DialogFooter>

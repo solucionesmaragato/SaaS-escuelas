@@ -1009,6 +1009,7 @@ function EvaluacionesTab() {
 
           <div className="flex shrink-0 flex-col gap-2 sm:flex-row xl:min-w-[280px] xl:flex-col 2xl:flex-row xl:items-stretch 2xl:items-center xl:justify-end">
             <Button
+              variant="brand"
               onClick={handleGenerateBulletins}
               disabled={generatingBulletins}
               className="w-full sm:w-auto"
@@ -1019,7 +1020,7 @@ function EvaluacionesTab() {
               Generar Boletines PDF
             </Button>
             {canMutate && (
-              <Button onClick={() => setCreating(true)} className="w-full sm:w-auto">
+              <Button variant="brand" onClick={() => setCreating(true)} className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" />
                 Nueva evaluación
               </Button>
@@ -1250,9 +1251,9 @@ function EvaluacionDetailDialog({
             {canMutate && (
               <Button
                 type="button"
-                variant="default"
+                variant="brand"
                 size="sm"
-                className="gap-2 bg-black text-white hover:bg-black/90"
+                className="gap-2"
                 onClick={onEdit}
               >
                 <Pencil className="h-4 w-4" />
@@ -1890,6 +1891,7 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
             </Button>
             <Button
               type="submit"
+              variant="brand"
               disabled={
                 submitting ||
                 !trimestre ||
@@ -2024,7 +2026,7 @@ function RubricaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelEdit}>
                 Cancelar
               </Button>
-              <Button type="submit" form="rubrica-form" disabled={submitting}>
+              <Button type="submit" variant="brand" form="rubrica-form" disabled={submitting}>
                 {submitting ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
@@ -2041,9 +2043,9 @@ function RubricaDetailOverlay({
                 {canMutate && (
                   <Button
                     type="button"
-                    variant="default"
+                    variant="brand"
                     size="sm"
-                    className="gap-2 bg-black text-white hover:bg-black/90"
+                    className="gap-2"
                     onClick={onEdit}
                   >
                     <Pencil className="h-4 w-4" />
@@ -2144,7 +2146,7 @@ function RubricasTab() {
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
         {canMutate && (
-          <Button onClick={() => setRubricaCreating(true)}>
+          <Button variant="brand" onClick={() => setRubricaCreating(true)}>
             <Plus className="mr-2 h-4 w-4" /> Nuevo criterio
           </Button>
         )}
@@ -2387,7 +2389,7 @@ function RubricaFormDialog({
           </div>
           <Button
             type="button"
-            variant="outline"
+            variant="brand-outline"
             size="sm"
             onClick={addCriterio}
             disabled={submitting}
@@ -2430,7 +2432,7 @@ function RubricaFormDialog({
           <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={submitting || !nombre.trim()}>
+          <Button type="submit" variant="brand" disabled={submitting || !nombre.trim()}>
             {submitting ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear rúbrica"}
           </Button>
         </DialogFooter>

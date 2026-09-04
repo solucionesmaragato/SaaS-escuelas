@@ -71,7 +71,7 @@ export function CrudTable<T>({
           </p>
         </div>
         {canWrite && onCreate && (
-          <Button onClick={onCreate}>
+          <Button variant="brand" onClick={onCreate}>
             <Plus className="mr-2 h-4 w-4" /> Nuevo
           </Button>
         )}

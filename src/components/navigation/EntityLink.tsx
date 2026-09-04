@@ -32,7 +32,10 @@ export function EntityLink({ type, id, children, className }: EntityLinkProps) {
     return <span className={className}>{children}</span>;
   }
 
-  const linkClassName = cn("font-medium text-primary hover:underline", className);
+  const linkClassName = cn(
+    "font-medium text-primary underline-offset-4 hover:text-brand-hover hover:underline",
+    className,
+  );
   const entityId = String(id);
 
   switch (type) {

@@ -103,7 +103,7 @@ export function SimpleFormDialog({
           <DialogFooter className="gap-2">
             {footerExtra}
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" variant="brand" disabled={submitting}>
               {submitting ? "Guardando..." : submitLabel}
             </Button>
           </DialogFooter>

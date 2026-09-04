@@ -824,6 +824,7 @@ function ProfesorFichajesView({
               </Button>
               <Button
                 type="submit"
+                variant="brand"
                 className="h-14 w-full sm:w-auto"
                 disabled={isPending || !desplazamientoMotivo.trim()}
               >
