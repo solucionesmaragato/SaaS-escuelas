@@ -1327,7 +1327,7 @@ export function ProfesorCalendar({
         ) : (
           <div className={cn("flex flex-col gap-2", embedded && "shrink-0")}>
             <div className="flex items-center gap-2">
-              <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
+              <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-brand">
                 {pageTitle ?? "Sesiones"}
               </h1>
               {!hideFilters && (

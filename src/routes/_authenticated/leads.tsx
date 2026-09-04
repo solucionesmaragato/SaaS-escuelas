@@ -400,7 +400,7 @@ function estadoTriggerProps(estado: string | null | undefined) {
     case "Cerrado (No matriculado)":
       return { variant: "destructive" as const, className: undefined, label };
     case "Contactado":
-      return { variant: "default" as const, className: undefined, label };
+      return { variant: "brand" as const, className: undefined, label };
     case "Pendiente":
       return {
         variant: "outline" as const,
@@ -436,7 +436,13 @@ function EstadoStatusDropdown({
   }
 
   const triggerVariant =
-    variant === "destructive" ? "destructive" : variant === "default" ? "default" : "outline";
+    variant === "destructive"
+      ? "destructive"
+      : variant === "brand"
+        ? "brand"
+        : variant === "default"
+          ? "default"
+          : "outline";
 
   return (
     <DropdownMenu>

@@ -1655,7 +1655,7 @@ export function CalendarWidget({
                   <PageHeader title={pageTitle} description={pageDescription} />
                 </div>
                 <div className="flex items-center gap-2 lg:hidden">
-                  <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{pageTitle}</h1>
+                  <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-brand">{pageTitle}</h1>
                   {!hideFilters && (
                     <Button
                       type="button"

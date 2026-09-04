@@ -257,7 +257,7 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
     <Sidebar collapsible={isMobile ? "offcanvas" : "icon"} className="h-svh">
       <SidebarHeader className="shrink-0 border-b">
         <div className="flex items-center gap-2 px-2 py-2">
-          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-border/40 bg-white">
             <img
               src={MYSINCOPPA_SIDEBAR_LOGO_URL}
               alt={MYSINCOPPA_APP_NAME}
