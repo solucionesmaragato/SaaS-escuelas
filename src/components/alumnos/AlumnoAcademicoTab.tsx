@@ -698,8 +698,9 @@ export function AlumnoAcademicoTab({
   onNavigateToEntity: OnNavigateToEntity;
 }) {
   const alumnoId = alumno.ID_ALUMNO;
-  const { list: matriculasList } = useMatriculas(undefined, alumnoId);
-  const { list: gruposList } = useGrupos(undefined, alumnoId);
+  const alumnoCenterId = alumno.ID_CENTRO ?? null;
+  const { list: matriculasList } = useMatriculas(alumnoCenterId, alumnoId);
+  const { list: gruposList } = useGrupos(alumnoCenterId, alumnoId);
   const { list: incidenciasList } = useIncidencias(undefined, alumnoId);
   const { list: evaluacionesList } = useEvaluaciones(undefined, alumnoId);
   const { list: rubricasList } = useRubricas();
