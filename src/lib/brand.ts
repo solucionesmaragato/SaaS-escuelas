@@ -6,4 +6,6 @@ export const MYSINCOPPA_LOGO_URL =
 
 export const MYSINCOPPA_ICON_URL = "/SincoppaIcon.png";
 
+export const MYSINCOPPA_SIDEBAR_LOGO_URL = "/SincoppaIcon.png";
+
 export const MYSINCOPPA_APP_NAME = "MySincoppa";

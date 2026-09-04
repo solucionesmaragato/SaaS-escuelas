@@ -4,12 +4,12 @@ import { cn } from "@/lib/utils";
 type AppLogoProps = {
   className?: string;
   variant?: "default" | "compact";
-  /** Mejora contraste del PNG con fondo negro sobre cards claras. */
+  /** Reservado: antes forzaba fondo oscuro; ahora se ignora (logo sin caja). */
   onLight?: boolean;
 };
 
-export function AppLogo({ className, variant = "default", onLight = false }: AppLogoProps) {
-  const img = (
+export function AppLogo({ className, variant = "default" }: AppLogoProps) {
+  return (
     <img
       src={MYSINCOPPA_LOGO_URL}
       alt={MYSINCOPPA_APP_NAME}
@@ -22,8 +22,4 @@ export function AppLogo({ className, variant = "default", onLight = false }: App
       decoding="async"
     />
   );
-
-  if (!onLight) return img;
-
-  return <div className="inline-flex rounded-xl bg-neutral-950 px-4 py-3">{img}</div>;
 }

@@ -14,7 +14,7 @@ import {
   SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
   SidebarMenuItem, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApp, useActiveTenant } from "@/context/AppContext";
@@ -22,6 +22,7 @@ import { useGrupos, canViewGruposNav } from "@/hooks/useGrupos";
 import { useAvisosInternos } from "@/hooks/useAvisosInternos";
 import { hasAnyPermission, ROLE_LABEL, type Permission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
+import { MYSINCOPPA_APP_NAME, MYSINCOPPA_SIDEBAR_LOGO_URL } from "@/lib/brand";
 import {
   canViewAlumnosModule,
   canViewMiPerfilNav,
@@ -256,12 +257,13 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
     <Sidebar collapsible={isMobile ? "offcanvas" : "icon"} className="h-svh">
       <SidebarHeader className="shrink-0 border-b">
         <div className="flex items-center gap-2 px-2 py-2">
-          <Avatar className="h-8 w-8 shrink-0 rounded-md">
-            {cliente?.APP_LOGO ? <AvatarImage src={cliente.APP_LOGO} alt={cliente.NOMBRE_ESCUELA} /> : null}
-            <AvatarFallback className="rounded-md bg-primary text-primary-foreground text-xs font-semibold">
-              {(cliente?.NOMBRE_ESCUELA ?? "ME").slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+            <img
+              src={MYSINCOPPA_SIDEBAR_LOGO_URL}
+              alt={MYSINCOPPA_APP_NAME}
+              className="h-full w-full object-contain"
+            />
+          </div>
           <div className="min-w-0 flex-1 overflow-hidden transition-[opacity,width] duration-200 ease-linear group-data-[collapsible=icon]:hidden group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
             <div className="truncate text-sm font-semibold">{cliente?.NOMBRE_ESCUELA ?? "Mi escuela"}</div>
             <div className="truncate text-xs text-muted-foreground">
