@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { AppLogo } from "@/components/AppLogo";
 import { supabase } from "@/integrations/supabase/client";
 import { useApp } from "@/context/AppContext";
@@ -35,6 +35,7 @@ function RegistroPage() {
     activePerfil,
     perfiles,
     session,
+    signOut,
   } = useApp();
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -192,7 +193,13 @@ function RegistroPage() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-muted px-4 py-10">
-      <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+      <div className="absolute right-4 top-4 flex flex-wrap items-center justify-end gap-2 sm:right-6 sm:top-6">
+        {hasSessionNoPerfil ? (
+          <Button variant="outline" size="sm" onClick={() => signOut()}>
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar sesión
+          </Button>
+        ) : null}
         <Button variant="ghost" size="sm" asChild>
           <Link to="/login">Ya tengo cuenta</Link>
         </Button>
