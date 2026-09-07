@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  ChevronRight,
   MoreVertical,
   Plus,
   Search,
@@ -19,6 +20,7 @@ import {
 import {
   useRecibos,
   normalizeEstadoPago,
+  estadoPagoStatus,
   canTransitionEstadoPago,
   sortRecibosByPeriodoAndAlumno,
   reciboTieneFacturaOficial,
@@ -40,6 +42,7 @@ import {
   FacturaPdfDownloadButton,
   FacturaOficialPdfButton,
   EstadoPagoSelect,
+  formatFacturaReferencia,
 } from "@/components/facturas/FacturaTableCells";
 import {
   NuevaFacturaDialog,
@@ -98,6 +101,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import {
   METODOS_PAGO_OPCIONES,
@@ -1284,6 +1288,135 @@ function FacturasPage() {
     );
   }
 
+  const renderFacturaActionsMenu = (r: ReciboRow) => {
+    const borrador = isFacturaBorrador(r);
+    const cobrado = isFacturaCobrado(r);
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="Acciones de la factura"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {borrador && (
+            <>
+              <DropdownMenuItem
+                onClick={() => void requestGenerarFactura(r)}
+                disabled={updatingEstadoId === r.ID_RECIBO}
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Generar factura
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setOverlay({ id: r.ID_RECIBO, mode: "edit" })}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Editar datos
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => requestAnularFactura(r)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Anular
+              </DropdownMenuItem>
+            </>
+          )}
+          {cobrado && (
+            <DropdownMenuItem
+              onClick={() => requestAnularFactura(r)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Anular
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  const renderFacturaMobileCard = (r: ReciboRow) => {
+    const anulado = isFacturaAnulado(r);
+    const hasMenuActions = canWrite && !anulado;
+    const ref = formatFacturaReferencia(r);
+    const estado = normalizeEstadoPago(r.ESTADO_PAGO);
+    const alumnoNombre = r.ALUMNOS?.NOMBRE_ALUMNO?.trim();
+    const titularNombre = r.RECEPTOR_NOMBRE?.trim();
+
+    return (
+      <li key={r.ID_RECIBO} className="flex items-stretch gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver factura ${ref.label}`}
+          onClick={() => setOverlay({ id: r.ID_RECIBO, mode: "detail" })}
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="truncate font-mono text-xs font-semibold">{ref.label}</p>
+            {ref.sublabel ? (
+              <p className="truncate text-[10px] text-muted-foreground">Ref: {ref.sublabel}</p>
+            ) : null}
+            <p className="truncate text-sm font-medium">
+              {alumnoNombre ?? titularNombre ?? "—"}
+            </p>
+            {alumnoNombre && titularNombre ? (
+              <p className="truncate text-xs text-muted-foreground">Titular: {titularNombre}</p>
+            ) : null}
+            <p className="truncate text-sm text-muted-foreground">
+              {r.ID_CENTRO ? (centroNameById.get(r.ID_CENTRO) ?? "—") : "—"}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {r.FECHA ?? "—"}
+              {r.MES_PERIODO ? ` · ${r.MES_PERIODO}` : ""}
+            </p>
+            <p className="font-mono text-sm font-bold text-blue-950">
+              {formatCurrency(r.TOTAL_DOC)}
+            </p>
+            <StatusBadge status={estadoPagoStatus(estado)} className="capitalize text-[10px]">
+              {estado}
+            </StatusBadge>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        {reciboTieneFacturaOficial(r) || r.LINK_PDF_BORRADOR ? (
+          <div
+            className="flex shrink-0 items-center gap-1 px-1"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {reciboTieneFacturaOficial(r) ? (
+              <FacturaOficialPdfButton
+                idRecibo={r.ID_RECIBO}
+                linkPdfRecibo={r.LINK_PDF_RECIBO}
+                linkFacturaKorefactu={r.LINK_FACTURA_KOREFACTU}
+                onPdfResolved={() => void list.refetch()}
+              />
+            ) : null}
+            {r.LINK_PDF_BORRADOR ? (
+              <FacturaPdfDownloadButton link={r.LINK_PDF_BORRADOR} label="Borrador" />
+            ) : null}
+          </div>
+        ) : null}
+        {hasMenuActions ? (
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {renderFacturaActionsMenu(r)}
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       {/* Cabecera de control */}
@@ -1373,7 +1506,7 @@ function FacturasPage() {
         )}
 
         {/* Tabla compacta y estilizada */}
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1491,56 +1624,7 @@ function FacturasPage() {
                         />
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        {hasMenuActions ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label="Acciones de la factura"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {borrador && (
-                                <>
-                                  <DropdownMenuItem
-                                    onClick={() => void requestGenerarFactura(r)}
-                                    disabled={updatingEstadoId === r.ID_RECIBO}
-                                  >
-                                    <FileText className="mr-2 h-4 w-4" />
-                                    Generar factura
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => setOverlay({ id: r.ID_RECIBO, mode: "edit" })}
-                                  >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Editar datos
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => requestAnularFactura(r)}
-                                    className="text-destructive focus:text-destructive"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Anular
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                              {cobrado && (
-                                <DropdownMenuItem
-                                  onClick={() => requestAnularFactura(r)}
-                                  className="text-destructive focus:text-destructive"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  Anular
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : null}
+                        {hasMenuActions ? renderFacturaActionsMenu(r) : null}
                       </TableCell>
                     </TableRow>
                   );
@@ -1549,6 +1633,22 @@ function FacturasPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-28 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados de facturación." : "No hay facturas registradas aún."}
+            </li>
+          ) : (
+            filtered.map((r) => renderFacturaMobileCard(r))
+          )}
+        </ul>
 
         <div ref={loadMoreRef} className="py-4">
           {list.isFetchingNextPage && (

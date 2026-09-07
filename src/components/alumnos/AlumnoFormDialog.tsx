@@ -3609,11 +3609,13 @@ export function AlumnoFormDialog({
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="mb-2 grid w-full grid-cols-4">
-            <TabsTrigger value="resumen">Resumen</TabsTrigger>
-            <TabsTrigger value="personales">Datos personales</TabsTrigger>
-            <TabsTrigger value="pago">Datos de pago</TabsTrigger>
-            <TabsTrigger value="matricula">Académico</TabsTrigger>
+          <TabsList className="mb-2 grid h-auto w-full grid-cols-2 gap-1 p-1 md:h-9 md:grid-cols-4 md:gap-0">
+            <TabsTrigger value="resumen" className="text-xs md:text-sm">Resumen</TabsTrigger>
+            <TabsTrigger value="personales" className="text-xs md:text-sm">
+              Datos personales
+            </TabsTrigger>
+            <TabsTrigger value="pago" className="text-xs md:text-sm">Datos de pago</TabsTrigger>
+            <TabsTrigger value="matricula" className="text-xs md:text-sm">Académico</TabsTrigger>
           </TabsList>
 
           {showCentroSelector && (
@@ -4413,7 +4415,7 @@ export function AlumnoFormDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl overflow-y-auto sm:w-full">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>

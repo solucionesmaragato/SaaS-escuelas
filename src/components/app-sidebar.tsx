@@ -43,6 +43,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { SidebarLogoToggle } from "@/components/SidebarLogoToggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useApp, useActiveTenant } from "@/context/AppContext";
@@ -50,7 +51,7 @@ import { useGrupos, canViewGruposNav } from "@/hooks/useGrupos";
 import { useAvisosInternos } from "@/hooks/useAvisosInternos";
 import { hasAnyPermission, ROLE_LABEL, type Permission } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
-import { BRAND_BLUE, MYSINCOPPA_APP_NAME, MYSINCOPPA_SIDEBAR_LOGO_URL } from "@/lib/brand";
+import { BRAND_BLUE } from "@/lib/brand";
 import {
   canViewAlumnosModule,
   canViewMiPerfilNav,
@@ -326,8 +327,7 @@ function AvisosNavIcon({ baseColorClass }: { baseColorClass: string }) {
 }
 
 export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
-  const { isMobile, toggleSidebar, state, openMobile } = useSidebar();
-  const isSidebarExpanded = isMobile ? openMobile : state === "expanded";
+  const { isMobile } = useSidebar();
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const { rol, perfil } = useActiveTenant();
   const { activePerfil, signOut } = useApp();
@@ -356,19 +356,7 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
     <Sidebar collapsible={isMobile ? "offcanvas" : "icon"} className="h-svh">
       <SidebarHeader className="h-14 shrink-0 justify-center border-b p-0">
         <div className="flex h-full items-center gap-2 px-2">
-          <button
-            type="button"
-            className="h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/40 bg-white p-0"
-            onClick={toggleSidebar}
-            aria-label={isSidebarExpanded ? "Contraer menú lateral" : "Expandir menú lateral"}
-            aria-expanded={isSidebarExpanded}
-          >
-            <img
-              src={MYSINCOPPA_SIDEBAR_LOGO_URL}
-              alt={MYSINCOPPA_APP_NAME}
-              className="h-full w-full object-contain"
-            />
-          </button>
+          <SidebarLogoToggle />
           <div className="min-w-0 flex-1 overflow-hidden transition-[opacity,width] duration-200 ease-linear group-data-[collapsible=icon]:hidden group-data-[collapsible=icon]:w-0 group-data-[collapsible=icon]:opacity-0">
             <span className="truncate text-sm font-semibold" style={{ color: BRAND_BLUE }}>
               MySincoppa

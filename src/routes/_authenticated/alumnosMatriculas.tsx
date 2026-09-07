@@ -6,6 +6,7 @@ import {
   Phone,
   Search,
   AlertTriangle,
+  ChevronRight,
   Pencil,
   SlidersHorizontal,
 } from "lucide-react";
@@ -199,18 +200,85 @@ function AlumnosMatriculasPage() {
     );
   }
 
+  const renderMatriculaMobileCard = (mat: MatriculaRow) => {
+    const active = isEstadoActivo(mat.ESTADO);
+    const isSelected = activeMatricula?.ID_MATRICULA === mat.ID_MATRICULA;
+
+    return (
+      <li
+        key={mat.ID_MATRICULA}
+        className={cn("flex items-stretch gap-1", isSelected && "bg-primary/5")}
+      >
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver matrícula de ${mat.TEXTO_ALUMNO}`}
+          onClick={() => openEnrollmentEditor(mat)}
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="truncate font-medium">{mat.TEXTO_ALUMNO}</p>
+            <p
+              className={cn(
+                "text-xs font-medium",
+                active
+                  ? "text-green-700 dark:text-green-400"
+                  : "text-red-600 dark:text-red-400",
+              )}
+            >
+              {active ? "Activo" : "Inactivo"}
+            </p>
+            <p className="truncate text-sm text-muted-foreground">{mat.TEXTO_TARIFA}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant={mat.TOTAL_INCIDENCIAS > 0 ? "destructive" : "secondary"}
+                className="gap-1 text-[10px]"
+              >
+                {mat.TOTAL_INCIDENCIAS > 0 && <AlertTriangle className="h-3 w-3" />}
+                {mat.TOTAL_INCIDENCIAS}
+              </Badge>
+              <span className="truncate text-xs text-muted-foreground">
+                {mat.TEXTO_ESPECIALIDAD}
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        {canWriteMatricula ? (
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <Switch
+              checked={active}
+              className={cn(
+                active
+                  ? "data-[state=checked]:bg-green-600"
+                  : "data-[state=unchecked]:bg-red-500",
+              )}
+              onCheckedChange={(checked) => handleMatriculaEstado(mat, checked)}
+              aria-label={`Estado de matrícula de ${mat.TEXTO_ALUMNO}`}
+            />
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
   return (
-    <div className="-m-6 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
-      <div className="border-b bg-background px-4 py-3">
+    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] flex-col overflow-hidden md:-m-6">
+      <div className="border-b bg-background px-4 py-3 md:px-6">
         <PageHeader
           title="Alumnos y matrículas"
           description="Gestiona alumnos y todas las matrículas del centro"
         />
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        {/* Students — 1/3 */}
-        <section className="flex w-1/3 min-w-0 flex-col border-r bg-background">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* Students — 1/3 desktop; stacked top on mobile */}
+        <section
+          className="flex w-full min-w-0 flex-col border-b bg-background max-md:max-h-[40vh] max-md:shrink-0 md:w-1/3 md:border-b-0 md:border-r"
+        >
           <div className={PANEL_SEARCH_ROW_CLASS}>
             <PanelSearchInput
               placeholder="Buscar alumno..."
@@ -219,7 +287,7 @@ function AlumnosMatriculasPage() {
             />
           </div>
 
-          <div className="overflow-y-auto" onScroll={onStudentsScroll}>
+          <div className="min-h-0 flex-1 overflow-y-auto" onScroll={onStudentsScroll}>
             {data.isLoading ? (
               <div className="space-y-2 p-3">
                 {Array.from({ length: 6 }).map((_, i) => (
@@ -256,21 +324,30 @@ function AlumnosMatriculasPage() {
           </div>
         </section>
 
-        {/* Enrollments — 2/3 */}
-        <section className="flex w-2/3 min-w-0 flex-col bg-muted/20">
-          <div className={cn(PANEL_SEARCH_ROW_CLASS, "flex items-center gap-2")}>
+        {/* Enrollments — 2/3 desktop; stacked below on mobile */}
+        <section className="flex min-h-0 w-full flex-1 flex-col bg-muted/20 md:w-2/3">
+          <div
+            className={cn(
+              PANEL_SEARCH_ROW_CLASS,
+              "flex flex-col gap-2 md:flex-row md:items-center",
+            )}
+          >
             <PanelSearchInput
               placeholder="Buscar por alumno, tarifa, especialidad, profesor o estado..."
               value={enrollmentQuery}
               onChange={setEnrollmentQuery}
             />
-            <Label htmlFor="filtro-especialidad-tarifa" className="shrink-0 text-sm font-medium">
-              Especialidad
-            </Label>
-            <Select value={filterTarifa} onValueChange={setFilterTarifa}>
-              <SelectTrigger id="filtro-especialidad-tarifa" className="h-9 w-44 shrink-0 sm:w-52">
-                <SelectValue placeholder="Todas" />
-              </SelectTrigger>
+            <div className="flex min-w-0 items-center gap-2 md:shrink-0">
+              <Label htmlFor="filtro-especialidad-tarifa" className="shrink-0 text-sm font-medium">
+                Especialidad
+              </Label>
+              <Select value={filterTarifa} onValueChange={setFilterTarifa}>
+                <SelectTrigger
+                  id="filtro-especialidad-tarifa"
+                  className="h-9 min-w-0 flex-1 md:w-44 md:flex-none md:shrink-0 lg:w-52"
+                >
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 {uniqueTarifas.map((tarifa) => (
@@ -280,19 +357,21 @@ function AlumnosMatriculasPage() {
                 ))}
               </SelectContent>
             </Select>
+            </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-background px-3 py-2.5">
+          <div className="flex shrink-0 flex-col gap-2 border-b bg-background px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-medium leading-none">Matrículas</h2>
               <p className="mt-1 text-xs text-muted-foreground">
                 {filteredMatriculas.length} de {matriculas.length} matrículas
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="brand"
                 size="sm"
+                className="max-md:flex-1"
                 onClick={handleEditEnrollment}
                 disabled={!activeMatricula}
               >
@@ -354,7 +433,7 @@ function AlumnosMatriculasPage() {
             </div>
           </div>
 
-          <div className="overflow-y-auto" onScroll={onEnrollmentsScroll}>
+          <div className="min-h-0 flex-1 overflow-y-auto" onScroll={onEnrollmentsScroll}>
             {data.isLoading ? (
               <div className="space-y-2 p-4">
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -373,6 +452,7 @@ function AlumnosMatriculasPage() {
               </div>
             ) : (
               <>
+                <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -441,6 +521,12 @@ function AlumnosMatriculasPage() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
+
+                <ul className="divide-y md:hidden">
+                  {visibleMatriculas.map((mat) => renderMatriculaMobileCard(mat))}
+                </ul>
+
                 {hasMoreEnrollments && (
                   <p className="py-3 text-center text-xs text-muted-foreground">
                     Desplázate para cargar más…
@@ -520,15 +606,15 @@ function StudentCard({
         onOpenDetails();
       }}
     >
-      <PersonAvatar name={alumno.NOMBRE_ALUMNO} photoUrl={alumno.FOTO} className="h-12 w-12" />
+      <PersonAvatar name={alumno.NOMBRE_ALUMNO} photoUrl={alumno.FOTO} className="h-10 w-10 md:h-12 md:w-12" />
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-lg font-semibold leading-tight">
+        <p className="truncate text-base font-semibold leading-tight md:text-lg">
           <EntityLink type="alumno" id={alumno.ID_ALUMNO}>
             {alumno.NOMBRE_ALUMNO}
           </EntityLink>
         </p>
-        <p className="truncate text-sm text-muted-foreground">
+        <p className="truncate text-xs text-muted-foreground md:text-sm">
           Tutor legal A: {alumno.NOMBRE_MADRE ?? "—"}
         </p>
       </div>

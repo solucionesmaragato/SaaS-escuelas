@@ -8,7 +8,10 @@ import type {
   ProfesorData,
   ProfesorUpdateInput,
 } from "@/hooks/useProfesores";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import {
+  ALUMNO_OVERLAY_PANEL_CLASS,
+  OVERLAY_PANEL_HEADER_CLASS_P6,
+} from "@/components/alumnos/AlumnoDetailOverlay";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ContactEmailRich, ContactPhoneRich } from "@/components/ui/ContactQuickActions";
@@ -118,7 +121,7 @@ export function ProfesorDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -166,7 +169,7 @@ export function ProfesorDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="profesor-overlay-title" className="truncate text-xl font-semibold">
                   {profesor.NOMBRE_PROFESOR}

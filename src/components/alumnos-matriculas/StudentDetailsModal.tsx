@@ -86,14 +86,14 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-2xl gap-0 p-0">
-        <DialogHeader className="px-6 pt-6">
+      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] max-w-2xl gap-0 p-0 sm:w-full">
+        <DialogHeader className="px-4 pt-4 sm:px-6 sm:pt-6">
           <DialogTitle>Detalle del alumno</DialogTitle>
           <DialogDescription>{draft.NOMBRE_ALUMNO}</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="max-h-[calc(90vh-5rem)] px-6 pb-6">
-          <div className="space-y-6 pr-4 pt-4">
-            <div className="flex items-center gap-4">
+        <ScrollArea className="max-h-[calc(90vh-5rem)] px-4 pb-4 sm:px-6 sm:pb-6">
+          <div className="space-y-6 pr-2 pt-4 sm:pr-4">
+            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
               <PersonAvatar
                 name={draft.NOMBRE_ALUMNO}
                 photoUrl={draft.FOTO}

@@ -92,10 +92,11 @@ export async function verifyMatriculaHashEvidence(
 }
 
 const EMPRESA_RESUMEN_SELECT =
-  "NOMBRE_ESCUELA, CIF, DIRECCION, TEXTO_REGIMEN_INTERNO, TEXTO_AUT_MEDIOS, TEXTO_AUT_INSTALACIONES, TEXTO_AUT_WEB, TEXTO_AUT_RRSS, TEXTO_AUT_COMUNICACION" as const;
+  "NOMBRE_ESCUELA, APP_LOGO, CIF, DIRECCION, TEXTO_REGIMEN_INTERNO, TEXTO_AUT_MEDIOS, TEXTO_AUT_INSTALACIONES, TEXTO_AUT_WEB, TEXTO_AUT_RRSS, TEXTO_AUT_COMUNICACION" as const;
 
 type EmpresaResumenRow = {
   NOMBRE_ESCUELA?: string | null;
+  APP_LOGO?: string | null;
   CIF?: string | null;
   DIRECCION?: string | null;
   TEXTO_REGIMEN_INTERNO?: string | null;
@@ -153,6 +154,24 @@ async function fetchCentroNombre(idCentro: string | null | undefined) {
   return data?.NOMBRE_CENTRO ?? null;
 }
 
+function looksLikeEspecialidadId(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return true;
+  }
+  return /^ESP_/i.test(trimmed);
+}
+
+function mapPayloadEspecialidades(payload: FirmarSolicitudMatriculaPayload): string | null {
+  const labels = payload.ESPECIALIDADES_LABELS?.map((label) => label.trim()).filter(Boolean);
+  if (labels?.length) return labels.join(", ");
+
+  const legacy = payload.ESPECIALIDAD?.trim();
+  if (!legacy || legacy.includes(",") || looksLikeEspecialidadId(legacy)) return null;
+  return legacy;
+}
+
 export function mapSolicitudToMatriculaPdfInput(
   solicitud: SolicitudMatriculaFirmadaRow,
   empresa: EmpresaResumenRow | null,
@@ -164,11 +183,28 @@ export function mapSolicitudToMatriculaPdfInput(
   }
 
   return {
+    logoUrl: empresa?.APP_LOGO,
     nombreEscuela: empresa?.NOMBRE_ESCUELA,
     cif: empresa?.CIF,
     direccionEscuela: empresa?.DIRECCION,
     nombreCentro,
     nombreAlumno: payload.NOMBRE_ALUMNO,
+    dniAlumno: payload.DNI,
+    email: payload.MAIL,
+    tlfAlumno: payload.TLF_ALUMNO,
+    tlfComunicacion: payload.TLF_COMUNICACION,
+    nacimiento: payload.NACIMIENTO,
+    direccion: payload.DIRECCION,
+    cp: payload.CP,
+    municipio: payload.MUNICIPIO,
+    provincia: payload.PROVINCIA,
+    nombreMadre: payload.NOMBRE_MADRE,
+    tlfMadre: payload.TLF_MADRE,
+    nombrePadre: payload.NOMBRE_PADRE,
+    tlfPadre: payload.TLF_PADRE,
+    nombreCurso: payload.NOMBRE_CURSO?.trim() || payload.ID_CURSO?.trim() || null,
+    especialidades: mapPayloadEspecialidades(payload),
+    observaciones: payload.OBSERVACIONES?.trim() || null,
     nombreFirmante: solicitud.NOMBRE_FIRMANTE,
     dniFirmante: solicitud.DNI_FIRMANTE ?? payload.DNI_FIRMANTE,
     token: solicitud.TOKEN_PUBLICO,
@@ -177,6 +213,9 @@ export function mapSolicitudToMatriculaPdfInput(
     userAgent: solicitud.USER_AGENT,
     hashEvidencia: solicitud.HASH_EVIDENCIA,
     metodoPago: normalizeMetodoPago(payload.METODO_PAGO) || payload.METODO_PAGO,
+    iban: payload.IBAN,
+    titularCuenta: payload.TITULAR_CUENTA,
+    tlfBizum: payload.TLF_BIZUM,
     autorizaciones: AUTORIZACION_LABELS,
     textosLegales: mapPayloadTextosLegales(payload, empresa),
   };
@@ -195,7 +234,7 @@ export async function downloadMatriculaPdfForAlumno(idAlumno: string): Promise<v
     fetchCentroNombre(solicitud.ID_CENTRO ?? payloadCentroId(solicitud)),
   ]);
 
-  downloadMatriculaPdf(mapSolicitudToMatriculaPdfInput(solicitud, empresa, nombreCentro));
+  await downloadMatriculaPdf(mapSolicitudToMatriculaPdfInput(solicitud, empresa, nombreCentro));
 }
 
 function payloadCentroId(solicitud: SolicitudMatriculaFirmadaRow): string | null {

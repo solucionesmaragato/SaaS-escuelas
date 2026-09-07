@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   ChevronsUpDown,
+  ChevronRight,
   ClipboardCheck,
   ListChecks,
   Loader2,
@@ -50,7 +51,7 @@ import {
   parseRubricCriteria,
   type RubricCriterion,
 } from "@/lib/rubricStructure";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { useAlumnos } from "@/hooks/useAlumnos";
@@ -854,6 +855,49 @@ function EvaluacionesTab() {
     }
   }, [filtered, alumnoById, especialidadById, profesorById]);
 
+  const grupoById = useMemo(
+    () => new Map(grupos.map((g) => [g.ID_GRUPO, g.NOMBRE_GRUPO])),
+    [grupos],
+  );
+
+  const formatAlumnoGruposLabel = (alumnoId: string) => {
+    const grupoIds = gruposByAlumno.get(alumnoId);
+    if (!grupoIds?.size) return null;
+    const names = [...grupoIds]
+      .map((id) => grupoById.get(id))
+      .filter((name): name is string => Boolean(name));
+    return names.length > 0 ? names.join(", ") : null;
+  };
+
+  const tableColSpan = canMutate ? 7 : 6;
+
+  const renderEvaluacionActionsMenu = (row: EvaluacionData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Acciones">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setEditing(row)}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const emptyMessage =
+    query ||
+    filtroCurso ||
+    filtroTrimestre ||
+    selectedProfesor ||
+    selectedEspecialidad ||
+    selectedGrupo ||
+    selectedAula
+      ? "Sin resultados."
+      : "Aún no hay evaluaciones registradas.";
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -1035,7 +1079,7 @@ function EvaluacionesTab() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1052,26 +1096,15 @@ function EvaluacionesTab() {
               {list.isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={canMutate ? 7 : 6}>
+                    <TableCell colSpan={tableColSpan}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={canMutate ? 8 : 7}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    {query ||
-                    filtroCurso ||
-                    filtroTrimestre ||
-                    selectedProfesor ||
-                    selectedEspecialidad ||
-                    selectedGrupo ||
-                    selectedAula
-                      ? "Sin resultados."
-                      : "Aún no hay evaluaciones registradas."}
+                  <TableCell colSpan={tableColSpan} className="py-10 text-center text-muted-foreground">
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -1109,19 +1142,7 @@ function EvaluacionesTab() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditing(row)}>
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderEvaluacionActionsMenu(row)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -1130,6 +1151,63 @@ function EvaluacionesTab() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
+          ) : (
+            filtered.map((row) => {
+              const gruposLabel = formatAlumnoGruposLabel(row.ID_ALUMNO);
+
+              return (
+                <li key={row.ID_EVALUACION} className="flex items-stretch gap-1">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                    aria-label={`Ver evaluación de ${alumnoById.get(row.ID_ALUMNO) ?? "alumno"}`}
+                    onClick={() => setDetail(row)}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="truncate font-medium">
+                        {alumnoById.get(row.ID_ALUMNO) ?? "—"}
+                      </p>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {especialidadById.get(row.ID_ESPECIALIDAD) || "—"}
+                      </p>
+                      {gruposLabel ? (
+                        <p className="truncate text-sm">{gruposLabel}</p>
+                      ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        {row.TRIMESTRE === "FINAL" ? "Final" : row.TRIMESTRE}
+                        {" · "}
+                        {row.ID_CURSO ? (cursoById.get(row.ID_CURSO) ?? "—") : "—"}
+                      </p>
+                      <p className="text-sm font-medium">
+                        Nota final: {formatNotaMedia(row.NOTA_MEDIA)}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  </button>
+                  {canMutate ? (
+                    <div
+                      className="flex shrink-0 items-center pr-2"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {renderEvaluacionActionsMenu(row)}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })
+          )}
+        </ul>
       </Card>
 
       {canMutate && creating && (
@@ -1243,7 +1321,7 @@ function EvaluacionDetailDialog({
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto [&>button:last-child]:hidden">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
           <DialogTitle className="flex min-w-0 items-center gap-2 text-xl font-semibold">
             <ClipboardCheck className="h-5 w-5 shrink-0" />
             Detalle de evaluación
@@ -1983,7 +2061,7 @@ function RubricaDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -2028,7 +2106,7 @@ function RubricaDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="rubrica-overlay-title" className="truncate text-xl font-semibold">
                   {rubrica.NOMBRE}
@@ -2137,6 +2215,30 @@ function RubricasTab() {
     }
   };
 
+  const rubricaTableColSpan = canMutate ? 4 : 3;
+
+  const emptyRubricaMessage = rubricaQuery
+    ? "Sin resultados."
+    : "Aún no hay rúbricas configuradas.";
+
+  const renderRubricaActionsMenu = (row: RubricaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => setRubricaOverlay({ id: row.ID_RUBRICA, mode: "edit" })}
+        >
+          <Pencil className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -2164,7 +2266,7 @@ function RubricasTab() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -2178,7 +2280,7 @@ function RubricasTab() {
               {list.isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={canMutate ? 4 : 3}>
+                    <TableCell colSpan={rubricaTableColSpan}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
@@ -2186,10 +2288,10 @@ function RubricasTab() {
               ) : rubricasFiltered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canMutate ? 4 : 3}
+                    colSpan={rubricaTableColSpan}
                     className="py-10 text-center text-muted-foreground"
                   >
-                    {rubricaQuery ? "Sin resultados." : "Aún no hay rúbricas configuradas."}
+                    {emptyRubricaMessage}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -2210,22 +2312,7 @@ function RubricasTab() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setRubricaOverlay({ id: row.ID_RUBRICA, mode: "edit" })
-                              }
-                            >
-                              Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderRubricaActionsMenu(row)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -2234,6 +2321,52 @@ function RubricasTab() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : rubricasFiltered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">{emptyRubricaMessage}</li>
+          ) : (
+            rubricasFiltered.map((row) => (
+              <li key={row.ID_RUBRICA} className="flex items-stretch gap-1">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                  aria-label={`Ver rúbrica ${row.NOMBRE}`}
+                  onClick={() => setRubricaOverlay({ id: row.ID_RUBRICA, mode: "detail" })}
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="truncate font-medium">{row.NOMBRE}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {row.DESCRIPCION || "—"}
+                    </p>
+                    <Badge
+                      variant={row.ESTADO?.toLowerCase() === "activa" ? "default" : "secondary"}
+                      className="text-[10px]"
+                    >
+                      {row.ESTADO || "—"}
+                    </Badge>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                </button>
+                {canMutate ? (
+                  <div
+                    className="flex shrink-0 items-center pr-2"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    {renderRubricaActionsMenu(row)}
+                  </div>
+                ) : null}
+              </li>
+            ))
+          )}
+        </ul>
       </Card>
 
       <RubricaDetailOverlay

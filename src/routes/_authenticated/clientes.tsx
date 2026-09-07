@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { MoreHorizontal, Plus, Search, Trash2, Pencil } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plus, Search, Trash2, Pencil } from "lucide-react";
 import { useClientes, type ClienteData } from "@/hooks/useClientes";
 import { normalizeUrlWeb } from "@/hooks/useEmpresaCliente";
 import { useActiveTenant } from "@/context/AppContext";
@@ -126,6 +126,53 @@ function ClientesPage() {
     );
   }
 
+  const renderClienteActionsMenu = (c: ClienteData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setEditing(c)}>
+          <Pencil className="mr-2 h-4 w-4" /> Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setDeleting(c)}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderClienteMobileCard = (c: ClienteData) => (
+    <li key={c.ID_CLIENTE} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Editar cliente ${c.NOMBRE_ESCUELA}`}
+        onClick={() => setEditing(c)}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{c.NOMBRE_ESCUELA}</p>
+          <p className="truncate font-mono text-xs text-muted-foreground">{c.ID_CLIENTE}</p>
+          <p className="truncate text-sm">{c.PLAN ?? "—"}</p>
+          <p className="text-sm text-muted-foreground">{c.ESTADO_CLIENTE ?? "—"}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      <div
+        className="flex shrink-0 items-center pr-2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {renderClienteActionsMenu(c)}
+      </div>
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <PageHeader
@@ -155,7 +202,7 @@ function ClientesPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -195,24 +242,7 @@ function ClientesPage() {
                     <TableCell>{c.PLAN ?? "—"}</TableCell>
                     <TableCell>{c.ESTADO_CLIENTE ?? "—"}</TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setEditing(c)}>
-                            <Pencil className="mr-2 h-4 w-4" /> Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => setDeleting(c)}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {renderClienteActionsMenu(c)}
                     </TableCell>
                   </TableRow>
                 ))
@@ -220,6 +250,22 @@ function ClientesPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay clientes registrados."}
+            </li>
+          ) : (
+            filtered.map((c) => renderClienteMobileCard(c))
+          )}
+        </ul>
       </Card>
 
       <ClienteFormDialog

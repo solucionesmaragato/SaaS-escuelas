@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, MoreVertical, Plus, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, MoreVertical, Plus, Search } from "lucide-react";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import type { CentroData } from "@/hooks/useCentros";
 import { useAlumnosTree, type AlumnoCreateInput, type AlumnoTree } from "@/hooks/useAlumnosTree";
@@ -11,7 +11,7 @@ import { useTarifas, type TarifaData } from "@/hooks/useTarifas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
 import { useGruposHorarios, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { useActiveTenant } from "@/context/AppContext";
-import { canViewAlumnosModule } from "@/lib/tenantQuery";
+import { canViewAlumnosModule, isAdminRole, isDireccionRole, isMasterRole, isSecretariaRole } from "@/lib/tenantQuery";
 import type { OnNavigateToEntity } from "@/lib/entityNavigation";
 import {
   formToAlumnoCreatePayload,
@@ -20,6 +20,7 @@ import {
   shouldShowAlumnoCentroSelector,
   type AlumnoFormValues,
 } from "@/lib/alumnoSchema";
+import { NuevaMatriculaEnBlancoButton } from "@/components/matricula/NuevaMatriculaEnBlancoButton";
 import { AlumnoDetailOverlay } from "@/components/alumnos/AlumnoDetailOverlay";
 import { AlumnoFormDialog, type DraftMatriculaInput } from "@/components/alumnos/AlumnoFormDialog";
 import { isBankRemittancePaymentMethod, normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
@@ -46,6 +47,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
   Table,
   TableBody,
@@ -250,7 +252,7 @@ function CentroMultiFilter({
 function AlumnosPage() {
   const { alumnoId, tab } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { rol, centerId } = useActiveTenant();
+  const { rol, centerId, tenantId } = useActiveTenant();
   const { centrosOrdenados, showCentroFilter } = useAdminCentroFilter();
   const [selectedCentros, setSelectedCentros] = useState<string[]>([]);
   const selectedCentrosKey = [...selectedCentros].sort().join(",");
@@ -281,6 +283,11 @@ function AlumnosPage() {
   const showCentroSelector = shouldShowAlumnoCentroSelector(rol, centrosOrdenados.length);
   const assignedCenterId = centerId ?? null;
   const defaultCreateCenterId = selectedCentros.length === 1 ? selectedCentros[0] : null;
+  const canMatriculaOnlineStaff =
+    isMasterRole(rol) ||
+    isAdminRole(rol) ||
+    isSecretariaRole(rol) ||
+    isDireccionRole(rol);
 
   const alumnos = asArray<AlumnoTree>(list.data);
 
@@ -341,6 +348,10 @@ function AlumnosPage() {
   const grupoSlots = useMemo(
     () => asArray<GrupoHorarioSlot>(gruposHorarios.list.data),
     [gruposHorarios.list.data],
+  );
+  const centroNombreById = useMemo(
+    () => new Map(centrosOrdenados.map((centro) => [centro.ID_CENTRO, centro.NOMBRE_CENTRO])),
+    [centrosOrdenados],
   );
   const isPageLoading = list.isLoading || gruposHorarios.list.isLoading;
 
@@ -544,9 +555,19 @@ function AlumnosPage() {
             : `${filtered.length} en total · activos primero, luego alfabético`
         }
         actions={
-          <Button variant="brand" onClick={() => setCreating(true)} disabled={isPageLoading}>
-            <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
-          </Button>
+          <>
+            <NuevaMatriculaEnBlancoButton
+              idCliente={tenantId!}
+              centros={centrosOrdenados}
+              assignedCenterId={assignedCenterId}
+              defaultCenterId={defaultCreateCenterId}
+              canWrite={canMatriculaOnlineStaff}
+              disabled={isPageLoading}
+            />
+            <Button variant="brand" onClick={() => setCreating(true)} disabled={isPageLoading}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo alumno
+            </Button>
+          </>
         }
       />
 
@@ -608,7 +629,7 @@ function AlumnosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -701,6 +722,70 @@ function AlumnosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {isPageLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-14 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay alumnos."}
+            </li>
+          ) : (
+            filtered.map((a) => (
+              <li key={a.ID_ALUMNO} className="flex items-stretch gap-1">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                  aria-label={`Ver detalle de ${a.NOMBRE_ALUMNO}`}
+                  onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "detail")}
+                >
+                  <PersonAvatar
+                    name={a.NOMBRE_ALUMNO}
+                    photoUrl={a.FOTO}
+                    className="h-10 w-10 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{a.NOMBRE_ALUMNO}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {a.ID_CENTRO ? centroNombreById.get(a.ID_CENTRO) ?? "—" : "—"}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    status={isAlumnoActivo(a.ESTADO_ALUMNO) ? "success" : "neutral"}
+                    className="shrink-0"
+                  >
+                    {isAlumnoActivo(a.ESTADO_ALUMNO) ? "Activo" : "Inactivo"}
+                  </StatusBadge>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                </button>
+                <div
+                  className="flex shrink-0 items-center pr-2"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => handleOpenAlumnoOverlay(a.ID_ALUMNO, "edit")}
+                      >
+                        Editar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
       </Card>
 
       <AlumnoDetailOverlay

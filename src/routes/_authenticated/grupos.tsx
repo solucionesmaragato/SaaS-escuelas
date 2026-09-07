@@ -3,8 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
+  ChevronRight,
   Loader2,
   MoreHorizontal,
+  MoreVertical,
   Plus,
   Search,
   Settings2,
@@ -37,7 +39,7 @@ import {
 } from "@/components/alumnos/AlumnoFormDialog";
 import type { GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { supabase } from "@/integrations/supabase/client";
-import { isAdminRole, isMasterRole, isProfesorRole } from "@/lib/tenantQuery";
+import { isAdminRole, isDireccionRole, isMasterRole, isProfesorRole, isSecretariaRole } from "@/lib/tenantQuery";
 import { hasPermission } from "@/lib/rbac";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -51,6 +53,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { EnviarMatriculaOnlineButton } from "@/components/matricula/EnviarMatriculaOnlineButton";
 import {
   Select,
   SelectContent,
@@ -184,6 +187,14 @@ function formatHorarioSlotCell(horario: GrupoData["GRUPOS_HORARIOS"][number]): s
   const fin = formatHora(horario.HORA_FIN);
   if (inicio === "—" && fin === "—") return dia;
   return `${dia} ${inicio} - ${fin}`;
+}
+
+function formatHorarioResumen(g: GrupoData): string {
+  const horarios = sortedHorariosForGrupo(g);
+  if (horarios.length === 0) return "—";
+  const first = formatHorarioSlotCell(horarios[0]);
+  if (horarios.length === 1) return first;
+  return `${first} (+${horarios.length - 1})`;
 }
 
 function occupancyBadge(count: number, max: number | null) {
@@ -519,6 +530,11 @@ function GruposPage() {
   const isMaster = isMasterRole(rol);
   const isProfesor = isProfesorRole(rol);
   const canViewStudents = canWrite || isProfesor;
+  const canMatriculaOnlineStaff =
+    isMasterRole(rol) ||
+    isAdminRole(rol) ||
+    isSecretariaRole(rol) ||
+    isDireccionRole(rol);
 
   const {
     centrosOrdenados,
@@ -703,6 +719,45 @@ function GruposPage() {
       .filter((a) => a.nombre !== "—")
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
   }, [localAlumnoIds, alumnoNombreById]);
+
+  const enrolledMatriculaIdsKey = useMemo(
+    () => [...localAlumnoIds].sort().join(","),
+    [localAlumnoIds],
+  );
+
+  const { data: enrolledMatriculaRows = [], isLoading: enrolledMatriculaLoading } = useQuery({
+    queryKey: ["grupos-alumnos-matricula-online", tenantId, enrolledMatriculaIdsKey],
+    enabled: Boolean(managing && localAlumnoIds.length > 0 && canMatriculaOnlineStaff),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ALUMNOS")
+        .select("ID_ALUMNO, TLF_COMUNICACION, ESTADO_ALUMNO, NOMBRE_MADRE, NOMBRE_PADRE")
+        .in("ID_ALUMNO", localAlumnoIds);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const enrolledMatriculaById = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        TLF_COMUNICACION: string | null;
+        ESTADO_ALUMNO: string | null;
+        NOMBRE_MADRE: string | null;
+        NOMBRE_PADRE: string | null;
+      }
+    >();
+    for (const row of enrolledMatriculaRows) {
+      map.set(row.ID_ALUMNO, {
+        TLF_COMUNICACION: row.TLF_COMUNICACION,
+        ESTADO_ALUMNO: row.ESTADO_ALUMNO,
+        NOMBRE_MADRE: row.NOMBRE_MADRE,
+        NOMBRE_PADRE: row.NOMBRE_PADRE,
+      });
+    }
+    return map;
+  }, [enrolledMatriculaRows]);
 
   const availableAlumnos = useMemo(() => {
     const enrolled = new Set(localAlumnoIds);
@@ -1116,6 +1171,82 @@ function GruposPage() {
     }
   };
 
+  const renderGroupActionsMenu = (g: GrupoData) => {
+    if (!canWrite) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setEditing(g)}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            Editar Grupo
+          </DropdownMenuItem>
+          {canDelete && (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setDeleting(g)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar grupo
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  const renderGroupMobileCard = (g: GrupoData) => (
+    <li key={g.ID_GRUPO} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors",
+          canViewStudents && "hover:bg-muted/50",
+        )}
+        aria-label={`Gestionar grupo ${g.NOMBRE_GRUPO ?? ""}`}
+        onClick={canViewStudents ? () => setManaging(g) : undefined}
+        disabled={!canViewStudents}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{g.NOMBRE_GRUPO}</p>
+          <p className="truncate text-sm text-muted-foreground">{formatHorarioResumen(g)}</p>
+          <p className="truncate text-xs text-muted-foreground">{g.TEXTO_ESPECIALIDAD}</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {occupancyBadge(g.ID_ALUMNOS.length, g.PLAZAS_MAXIMAS)}
+          <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()} role="presentation">
+            {canWrite ? (
+              <GrupoEstadoToggle
+                estado={g.ESTADO}
+                loading={togglingEstadoGrupoId === g.ID_GRUPO}
+                disabled={!!togglingEstadoGrupoId && togglingEstadoGrupoId !== g.ID_GRUPO}
+                onToggle={() => void handleToggleGrupoEstado(g)}
+              />
+            ) : (
+              <GrupoEstadoBadge estado={g.ESTADO} />
+            )}
+          </div>
+        </div>
+        {canViewStudents ? (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        ) : null}
+      </button>
+      {canWrite ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderGroupActionsMenu(g)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   const renderGroupRow = (g: GrupoData) => {
     const horarios = sortedHorariosForGrupo(g);
     return (
@@ -1293,68 +1424,85 @@ function GruposPage() {
                 {query ? "Sin grupos activos para esta búsqueda." : "No hay grupos activos."}
               </p>
             ) : (
-              <div className="w-full overflow-x-auto">
-                <Table className="w-full min-w-[800px] md:min-w-full table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
-                      <TableHead className="w-[18%]">Grupo</TableHead>
-                      <TableHead className="w-[12%]">Horario</TableHead>
-                      <TableHead className="w-[16%]">Profesor</TableHead>
-                      <TableHead className="w-[12%]">Aula</TableHead>
-                      <TableHead className="w-[16%]">Especialidad</TableHead>
-                      <TableHead className="w-[14%]">Ocupación</TableHead>
-                      <TableHead className="w-[88px]">
-                        <span className="hidden md:inline">Estado</span>
-                        <span className="md:sr-only">Estado</span>
-                      </TableHead>
-                      {canWrite && <TableHead className="w-12" />}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>{activeGruposSorted.map(renderGroupRow)}</TableBody>
-                </Table>
-              </div>
+              <>
+                <div className="hidden w-full overflow-x-auto md:block">
+                  <Table className="w-full md:min-w-full table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
+                        <TableHead className="w-[18%]">Grupo</TableHead>
+                        <TableHead className="w-[12%]">Horario</TableHead>
+                        <TableHead className="w-[16%]">Profesor</TableHead>
+                        <TableHead className="w-[12%]">Aula</TableHead>
+                        <TableHead className="w-[16%]">Especialidad</TableHead>
+                        <TableHead className="w-[14%]">Ocupación</TableHead>
+                        <TableHead className="w-[88px]">
+                          <span className="hidden md:inline">Estado</span>
+                          <span className="md:sr-only">Estado</span>
+                        </TableHead>
+                        {canWrite && <TableHead className="w-12" />}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>{activeGruposSorted.map(renderGroupRow)}</TableBody>
+                  </Table>
+                </div>
+                <ul className="divide-y md:hidden">
+                  {activeGruposSorted.map(renderGroupMobileCard)}
+                </ul>
+              </>
             )}
 
             {inactiveGruposSorted.length > 0 && (
               <section className="border-t pt-6">
-                <button
-                  type="button"
-                  onClick={() => setIsInactiveOpen((open) => !open)}
-                  className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/50"
-                >
-                  <span>Ver grupos inactivos ({inactiveGruposSorted.length})</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                      isInactiveOpen && "rotate-180",
-                    )}
-                  />
-                </button>
+                <div className="hidden md:block">
+                  <button
+                    type="button"
+                    onClick={() => setIsInactiveOpen((open) => !open)}
+                    className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-muted/50"
+                  >
+                    <span>Ver grupos inactivos ({inactiveGruposSorted.length})</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                        isInactiveOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
 
-                {isInactiveOpen && (
-                  <div className="mt-4 w-full overflow-x-auto rounded-md border">
-                    <Table className="w-full min-w-[800px] md:min-w-full table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
-                          <TableHead className="w-[18%]">Grupo</TableHead>
-                          <TableHead className="w-[12%]">Horario</TableHead>
-                          <TableHead className="w-[16%]">Profesor</TableHead>
-                          <TableHead className="w-[12%]">Aula</TableHead>
-                          <TableHead className="w-[16%]">Especialidad</TableHead>
-                          <TableHead className="w-[14%]">Ocupación</TableHead>
-                          <TableHead className="w-[88px]">
-                            <span className="hidden md:inline">Estado</span>
-                            <span className="md:sr-only">Estado</span>
-                          </TableHead>
-                          {canWrite && <TableHead className="w-12" />}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>{inactiveGruposSorted.map(renderGroupRow)}</TableBody>
-                    </Table>
-                  </div>
-                )}
+                  {isInactiveOpen && (
+                    <div className="mt-4 w-full overflow-x-auto rounded-md border">
+                      <Table className="w-full md:min-w-full table-fixed">
+                        <TableHeader>
+                          <TableRow>
+                            {isMaster && <TableHead className="w-[100px]">Cliente</TableHead>}
+                            <TableHead className="w-[18%]">Grupo</TableHead>
+                            <TableHead className="w-[12%]">Horario</TableHead>
+                            <TableHead className="w-[16%]">Profesor</TableHead>
+                            <TableHead className="w-[12%]">Aula</TableHead>
+                            <TableHead className="w-[16%]">Especialidad</TableHead>
+                            <TableHead className="w-[14%]">Ocupación</TableHead>
+                            <TableHead className="w-[88px]">
+                              <span className="hidden md:inline">Estado</span>
+                              <span className="md:sr-only">Estado</span>
+                            </TableHead>
+                            {canWrite && <TableHead className="w-12" />}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>{inactiveGruposSorted.map(renderGroupRow)}</TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+
+                <details className="group md:hidden">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-md border bg-muted/30 px-3 py-3 text-sm font-medium text-muted-foreground [&::-webkit-details-marker]:hidden">
+                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+                    Ver grupos inactivos ({inactiveGruposSorted.length})
+                  </summary>
+                  <ul className="divide-y border-t bg-muted/20">
+                    {inactiveGruposSorted.map(renderGroupMobileCard)}
+                  </ul>
+                </details>
               </section>
             )}
           </div>
@@ -1430,25 +1578,49 @@ function GruposPage() {
                     No hay alumnos en este grupo.
                   </li>
                 ) : (
-                  enrolledAlumnos.map((alumno) => (
-                    <li key={alumno.id} className="flex items-center gap-3 rounded-md px-2 py-2">
-                      <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                          {alumno.nombre
-                            .split(/\s+/)
-                            .slice(0, 2)
-                            .map((part) => part[0])
-                            .join("")
-                            .toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-sm truncate">
-                        <EntityLink type="alumno" id={alumno.id}>
-                          {alumno.nombre}
-                        </EntityLink>
-                      </span>
+                  enrolledAlumnos.map((alumno) => {
+                    const matricula = enrolledMatriculaById.get(alumno.id);
+                    return (
+                    <li
+                      key={alumno.id}
+                      className="flex items-center justify-between gap-2 rounded-md px-2 py-2"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="h-8 w-8 shrink-0">
+                          <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                            {alumno.nombre
+                              .split(/\s+/)
+                              .slice(0, 2)
+                              .map((part) => part[0])
+                              .join("")
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm truncate">
+                          <EntityLink type="alumno" id={alumno.id}>
+                            {alumno.nombre}
+                          </EntityLink>
+                        </span>
+                      </div>
+                      {canMatriculaOnlineStaff ? (
+                        enrolledMatriculaLoading ? (
+                          <Skeleton className="h-8 w-32 shrink-0" />
+                        ) : (
+                        <EnviarMatriculaOnlineButton
+                          idAlumno={alumno.id}
+                          telefono={matricula?.TLF_COMUNICACION}
+                          nombreAlumno={alumno.nombre}
+                          nombreMadre={matricula?.NOMBRE_MADRE}
+                          nombrePadre={matricula?.NOMBRE_PADRE}
+                          estadoAlumno={matricula?.ESTADO_ALUMNO}
+                          canWrite={canMatriculaOnlineStaff}
+                          className="shrink-0 gap-1"
+                        />
+                        )
+                      ) : null}
                     </li>
-                  ))
+                    );
+                  })
                 )}
               </ul>
             </div>
@@ -1467,28 +1639,49 @@ function GruposPage() {
                       No hay alumnos en este grupo.
                     </li>
                   ) : (
-                    enrolledAlumnos.map((alumno) => (
+                    enrolledAlumnos.map((alumno) => {
+                      const matricula = enrolledMatriculaById.get(alumno.id);
+                      return (
                       <li
                         key={alumno.id}
-                        className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                        className="flex flex-col gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between"
                       >
-                        <span className="text-sm truncate">
+                        <span className="min-w-0 flex-1 truncate text-sm">
                           <EntityLink type="alumno" id={alumno.id}>
                             {alumno.nombre}
                           </EntityLink>
                         </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                          onClick={() => setPendingRemove({ id: alumno.id, nombre: alumno.nombre })}
-                          disabled={update.isPending}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-end gap-1 shrink-0">
+                          {canMatriculaOnlineStaff ? (
+                            enrolledMatriculaLoading ? (
+                              <Skeleton className="h-8 w-32" />
+                            ) : (
+                            <EnviarMatriculaOnlineButton
+                              idAlumno={alumno.id}
+                              telefono={matricula?.TLF_COMUNICACION}
+                              nombreAlumno={alumno.nombre}
+                              nombreMadre={matricula?.NOMBRE_MADRE}
+                              nombrePadre={matricula?.NOMBRE_PADRE}
+                              estadoAlumno={matricula?.ESTADO_ALUMNO}
+                              canWrite={canMatriculaOnlineStaff}
+                              className="gap-1"
+                            />
+                            )
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                            onClick={() => setPendingRemove({ id: alumno.id, nombre: alumno.nombre })}
+                            disabled={update.isPending}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </li>
-                    ))
+                      );
+                    })
                   )}
                 </ul>
               </div>

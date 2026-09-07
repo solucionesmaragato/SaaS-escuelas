@@ -22,7 +22,7 @@ type Props = {
 export function EnrollmentDetailsModal({ matricula, open, onClose }: Props) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Detalle de matrícula</DialogTitle>
           <DialogDescription>Información de la inscripción</DialogDescription>

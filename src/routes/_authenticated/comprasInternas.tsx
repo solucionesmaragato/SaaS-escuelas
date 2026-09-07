@@ -38,7 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/comprasInternas")({
   component: ComprasInternasPage,
@@ -81,6 +81,37 @@ function ComprasInternasPage() {
   const rows = list.data ?? [];
   const tableColCount = showCentroFilter ? 9 : 8;
   const canEditCargoExtra = canEditCargoExtraRole(rol);
+
+  const openCargoDetail = (row: CargoExtraListRow) => {
+    setSelectedCargoExtra(row);
+    setCargoExtraDetailOpen(true);
+  };
+
+  const renderCargoMobileCard = (row: CargoExtraListRow) => (
+    <li key={row.ID_CARGO}>
+      <button
+        type="button"
+        className="flex w-full min-w-0 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver cargo de ${row.ALUMNOS?.NOMBRE_ALUMNO?.trim() || "alumno"}`}
+        onClick={() => openCargoDetail(row)}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">
+            {row.ALUMNOS?.NOMBRE_ALUMNO?.trim() || "Sin nombre"}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{row.CONCEPTO}</p>
+          <p className="text-sm font-medium">{formatCurrency(calcCargoExtraRowTotal(row))}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <StatusBadge status={cargoExtraEstadoStatus(row.ESTADO)} className="capitalize">
+              {row.ESTADO ?? "—"}
+            </StatusBadge>
+            <span className="text-xs text-muted-foreground">{formatCargoExtraFecha(row)}</span>
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+    </li>
+  );
 
   if (!hasPermission(rol, "recibos:read")) {
     return (
@@ -130,7 +161,7 @@ function ComprasInternasPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto rounded-md border">
+        <div className="hidden overflow-x-auto rounded-md border md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -178,10 +209,7 @@ function ComprasInternasPage() {
                   <TableRow
                     key={row.ID_CARGO}
                     className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => {
-                      setSelectedCargoExtra(row);
-                      setCargoExtraDetailOpen(true);
-                    }}
+                    onClick={() => openCargoDetail(row)}
                   >
                     <TableCell>
                       <EntityLink type="alumno" id={row.ID_ALUMNO}>
@@ -226,6 +254,26 @@ function ComprasInternasPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y rounded-md border md:hidden">
+          {list.isLoading || centrosLoading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <li key={index} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : list.isError ? (
+            <li className="py-6 text-center text-sm text-destructive">
+              {(list.error as Error)?.message ?? "Error al cargar los cargos extra."}
+            </li>
+          ) : rows.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              No hay cargos extra registrados.
+            </li>
+          ) : (
+            rows.map((row) => renderCargoMobileCard(row))
+          )}
+        </ul>
       </Card>
 
       <CargoExtraCreateDialog

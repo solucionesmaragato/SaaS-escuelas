@@ -5,6 +5,20 @@ import {
 } from "@/lib/alumnoPaymentUtils";
 import type { FirmarSolicitudMatriculaPayload } from "@/lib/solicitudMatricula";
 
+function normalizeStringArray(value: string[] | null | undefined): string[] | null {
+  if (!value?.length) return null;
+  const cleaned = value.map((item) => item.trim()).filter(Boolean);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function normalizeEspecialidadesIdsForEvidence(
+  ids: string[] | null | undefined,
+): string[] | undefined {
+  const cleaned = normalizeStringArray(ids);
+  if (!cleaned) return undefined;
+  return [...cleaned].sort();
+}
+
 function canonicalizeJsonValue(value: unknown): unknown {
   if (value === null || typeof value !== "object") {
     return value;
@@ -52,6 +66,9 @@ export function normalizePayloadForEvidence(
     IBAN: showSepaFields ? raw.IBAN?.trim() || null : null,
     TITULAR_CUENTA: showSepaFields ? raw.TITULAR_CUENTA?.trim() || null : null,
     TLF_BIZUM: showBizumField ? raw.TLF_BIZUM?.trim() || null : null,
+    ID_CURSO: raw.ID_CURSO?.trim() || null,
+    ESPECIALIDADES_IDS: normalizeEspecialidadesIdsForEvidence(raw.ESPECIALIDADES_IDS),
+    OBSERVACIONES: raw.OBSERVACIONES?.trim() || null,
     DNI_FIRMANTE: raw.DNI_FIRMANTE?.trim() ?? "",
     acepta_regimen: raw.acepta_regimen,
     AUT_MEDIOS: raw.AUT_MEDIOS,

@@ -14,6 +14,8 @@ export type CrearSolicitudMatriculaDesdeLeadResult = {
 
 export type CrearSolicitudMatriculaDesdeAlumnoResult = CrearSolicitudMatriculaDesdeLeadResult;
 
+export type CrearSolicitudMatriculaDesdeCeroResult = CrearSolicitudMatriculaDesdeLeadResult;
+
 export type SolicitudMatriculaStatus = {
   hasPending: boolean;
   hasFirmada: boolean;
@@ -58,6 +60,20 @@ export async function crearSolicitudMatriculaDesdeAlumno(
   });
   if (error) throw error;
   return data as CrearSolicitudMatriculaDesdeAlumnoResult;
+}
+
+export async function crearSolicitudMatriculaDesdeCero(params: {
+  idCliente: string;
+  idCentro: string;
+  idCurso?: string | null;
+}): Promise<CrearSolicitudMatriculaDesdeCeroResult> {
+  const { data, error } = await supabase.rpc("crear_solicitud_matricula_desde_cero", {
+    p_id_cliente: params.idCliente,
+    p_id_centro: params.idCentro,
+    p_id_curso: params.idCurso?.trim() || null,
+  });
+  if (error) throw error;
+  return data as CrearSolicitudMatriculaDesdeCeroResult;
 }
 
 function resolveMatriculaNombreContacto(
@@ -173,14 +189,59 @@ export async function sendMatriculaOnlineForAlumno(alumno: {
   return { reused: result.reused === true };
 }
 
-/** Preinscripción: primera firma; Activo: re-firma/renovación sin degradar estado al firmar. */
-export function canSendMatriculaOnlineForAlumno(
+export function canShowMatriculaOnlineForLead(
+  estadoLead: string | null | undefined,
+): boolean {
+  const estado = estadoLead?.trim().toLowerCase() ?? "";
+  return (
+    estado !== "matriculado" &&
+    estado !== "cerrado" &&
+    estado !== "cerrado (no matriculado)"
+  );
+}
+
+export function canWhatsAppMatriculaForLead(telefono: string | null | undefined): boolean {
+  return Boolean(telefono?.trim());
+}
+
+export async function resolveLeadMatriculaSignUrl(idLead: string): Promise<string> {
+  const status = await fetchLeadSolicitudMatriculaStatus(idLead);
+  const existingToken = status.tokenPublico?.trim();
+  if (existingToken) {
+    return buildMatriculaSignLink(existingToken);
+  }
+
+  const result = await crearSolicitudMatriculaDesdeLead(idLead);
+  if (!result.ok || !result.token_publico?.trim()) {
+    throw new Error(result.error ?? "No se pudo generar el enlace de matrícula.");
+  }
+
+  return buildMatriculaSignLink(result.token_publico);
+}
+
+/** Preinscripción o Activo: mostrar acciones de matrícula online (copiar enlace; WhatsApp si hay teléfono). */
+export function canShowMatriculaOnlineForAlumno(
+  estadoAlumno: string | null | undefined,
+): boolean {
+  const estado = estadoAlumno?.trim().toLowerCase() ?? "";
+  return estado === "activo" || estado === "preinscripción" || estado === "preinscripcion";
+}
+
+/** WhatsApp solo si estado válido y hay teléfono de comunicación. */
+export function canWhatsAppMatriculaForAlumno(
   estadoAlumno: string | null | undefined,
   telefono: string | null | undefined,
 ): boolean {
-  const estado = estadoAlumno?.trim().toLowerCase() ?? "";
-  if (estado !== "activo" && estado !== "preinscripción" && estado !== "preinscripcion") {
-    return false;
+  return canShowMatriculaOnlineForAlumno(estadoAlumno) && Boolean(telefono?.trim());
+}
+
+/** @deprecated Usar canShowMatriculaOnlineForAlumno / canWhatsAppMatriculaForAlumno */
+export function canSendMatriculaOnlineForAlumno(
+  estadoAlumno: string | null | undefined,
+  telefono?: string | null | undefined,
+): boolean {
+  if (telefono !== undefined) {
+    return canWhatsAppMatriculaForAlumno(estadoAlumno, telefono);
   }
-  return Boolean(telefono?.trim());
+  return canShowMatriculaOnlineForAlumno(estadoAlumno);
 }

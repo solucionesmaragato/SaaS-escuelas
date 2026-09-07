@@ -6,6 +6,7 @@ import jsQR from "jsqr";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ArrowLeft,
+  ChevronRight,
   Clock,
   FilePenLine,
   MapPin,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { CorrectionRequestDialog } from "@/components/fichajes/CorrectionRequestDialog";
 import { FichajeIncidenciasPanel } from "@/components/fichajes/FichajeIncidenciasPanel";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -668,7 +669,7 @@ function JornadaDetailOverlay({
       >
         {mode === "rectify" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -725,7 +726,7 @@ function JornadaDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="jornada-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -1477,7 +1478,7 @@ function FicharView({
 
       <Card className="p-4">
         <h2 className="text-sm font-semibold mb-3">Mi historial de fichajes</h2>
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -1562,6 +1563,78 @@ function FicharView({
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : ownRecords.length === 0 ? (
+            <li className="py-8 text-center text-sm text-muted-foreground">
+              Aún no tienes fichajes registrados.
+            </li>
+          ) : (
+            ownRecords.slice(0, 20).map((f) => {
+              const showCorrection = canRequestCorrection(f, ownRecords);
+              const anulado = isFichajeAnulado(f.ESTADO_LEGAL);
+
+              return (
+                <li
+                  key={f.ID_FICHAJE}
+                  className={cn("flex items-stretch gap-1", anuladoRowClass(anulado))}
+                >
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                    aria-label={`Ver fichaje ${f.TIPO_MOVIMIENTO}`}
+                    onClick={() => setViewing(f)}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">
+                          {formatFechaHora(fichajeRealTimestamp(f))}
+                        </p>
+                        {anulado && (
+                          <Badge variant="outline" className="text-[10px] shrink-0">
+                            Anulado
+                          </Badge>
+                        )}
+                      </div>
+                      <Badge
+                        variant={movimientoBadgeVariant(f.TIPO_MOVIMIENTO)}
+                        className="text-[10px] capitalize"
+                      >
+                        {f.TIPO_MOVIMIENTO}
+                      </Badge>
+                      <p className="text-xs text-muted-foreground">{f.METODO ?? "—"}</p>
+                      <p className="font-mono text-xs">
+                        {f.TOTAL_HORAS_ACUMULADAS_DIA != null
+                          ? `${Number(f.TOTAL_HORAS_ACUMULADAS_DIA).toFixed(2)}h acumuladas`
+                          : "—"}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  </button>
+                  {showCorrection ? (
+                    <div className="flex shrink-0 items-center pr-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => setCorrectionTarget(f)}
+                      >
+                        Solicitar Corrección
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })
+          )}
+        </ul>
       </Card>
 
       <QrScannerOverlay
@@ -1701,7 +1774,7 @@ function ControlHorarioView({
     linkedCorrections?: LinkedConciliacionCorrection[];
   } | null>(null);
   const deepLinkHandledRef = useRef<string | null>(null);
-  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
+  const highlightRowRef = useRef<HTMLElement | null>(null);
 
   const handleCloseOverlay = useCallback(() => setOverlay(null), []);
   const handleRectifyOverlay = useCallback(() => {
@@ -1981,6 +2054,96 @@ function ControlHorarioView({
 
   const tableColCount = canManual ? 7 : 6;
 
+  const openJornadaRectify = useCallback((jornada: ConciliacionJornadaRow) => {
+    setOverlay({ id: jornada.id, mode: "rectify", linkedCorrections: undefined });
+    void resolveLinkedCorrectionsForJornada(jornada).then((linkedCorrections) => {
+      setOverlay((prev) => (prev && prev.id === jornada.id ? { ...prev, linkedCorrections } : prev));
+    });
+  }, []);
+
+  const renderJornadaActionsMenu = (jornada: ConciliacionJornadaRow) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones de la jornada">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => openJornadaRectify(jornada)}>Rectificar</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderJornadaMobileCard = (jornada: ConciliacionJornadaRow) => {
+    const isHighlighted =
+      Boolean(highlightFichajeId) &&
+      (jornada.entrada.ID_FICHAJE === highlightFichajeId ||
+        jornada.salida?.ID_FICHAJE === highlightFichajeId ||
+        jornada.entrada.ID_FICHAJE === fichajeJornadaLookupId ||
+        jornada.salida?.ID_FICHAJE === fichajeJornadaLookupId);
+    const entradaNotas = fichajesHistorial.find(
+      (f) => f.ID_FICHAJE === jornada.entrada.ID_FICHAJE,
+    )?.NOTAS;
+    const salidaNotas = jornada.salida
+      ? fichajesHistorial.find((f) => f.ID_FICHAJE === jornada.salida?.ID_FICHAJE)?.NOTAS
+      : null;
+    const rowHasIncidencias =
+      fichajeHasIncidencias(entradaNotas) || fichajeHasIncidencias(salidaNotas);
+
+    return (
+      <li
+        key={jornada.id}
+        ref={isHighlighted ? highlightRowRef : undefined}
+        className={cn(
+          "flex items-stretch gap-1",
+          anuladoRowClass(jornada.anulado),
+          isHighlighted && "bg-primary/5 ring-2 ring-primary/40",
+        )}
+      >
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver jornada de ${jornada.nombreProfesor}`}
+          onClick={() => void handleJornadaRowClick(jornada)}
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-sm font-semibold">{jornada.nombreProfesor}</p>
+              {jornada.anulado && (
+                <Badge variant="outline" className="text-[10px] shrink-0">Anulado</Badge>
+              )}
+              {rowHasIncidencias && (
+                <Badge variant="destructive" className="text-[10px] shrink-0">Incidencia</Badge>
+              )}
+            </div>
+            <p className="text-sm font-medium">
+              {formatFechaCorta(jornada.entrada.FECHA_HORA_REAL)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatConciliacionHoraReal(jornada.entrada.FECHA_HORA_REAL)}
+              {" – "}
+              {jornada.salida
+                ? formatConciliacionHoraReal(jornada.salida.FECHA_HORA_REAL)
+                : "En curso"}
+            </p>
+            <p className="font-mono text-sm">{formatHorasBlock(jornada.totalHoras)}</p>
+            <ToleranciaBadge estado={jornada.estadoTolerancia} />
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        {canManual ? (
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {renderJornadaActionsMenu(jornada)}
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {pendingCorreccionesAvisos.length > 0 && (
@@ -2137,7 +2300,7 @@ function ControlHorarioView({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -2233,35 +2396,7 @@ function ControlHorarioView({
                       </TableCell>
                       {canManual && (
                         <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setOverlay({
-                                    id: jornada.id,
-                                    mode: "rectify",
-                                    linkedCorrections: undefined,
-                                  });
-                                  void resolveLinkedCorrectionsForJornada(jornada).then(
-                                    (linkedCorrections) => {
-                                      setOverlay((prev) =>
-                                        prev && prev.id === jornada.id
-                                          ? { ...prev, linkedCorrections }
-                                          : prev,
-                                      );
-                                    },
-                                  );
-                                }}
-                              >
-                                Rectificar
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {renderJornadaActionsMenu(jornada)}
                         </TableCell>
                       )}
                     </TableRow>
@@ -2271,6 +2406,22 @@ function ControlHorarioView({
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : jornadas.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              Sin jornadas de conciliación en el rango seleccionado.
+            </li>
+          ) : (
+            jornadas.map((jornada) => renderJornadaMobileCard(jornada))
+          )}
+        </ul>
       </Card>
 
       <JornadaDetailOverlay

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
   useHorarioComercial,
   sortHorarios,
@@ -61,7 +61,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -109,6 +109,28 @@ function formatDiaSemana(dia: string | null | undefined): string {
 function formatTime(value: string | null | undefined): string {
   if (!value) return "—";
   return value.length >= 5 ? value.slice(0, 5) : value;
+}
+
+function formatFranjaBlock(
+  abre: string | null | undefined,
+  cierra: string | null | undefined,
+): string | null {
+  const inicio = formatTime(abre);
+  const fin = formatTime(cierra);
+  if (inicio === "—" && fin === "—") return null;
+  if (inicio !== "—" && fin !== "—") return `${inicio}–${fin}`;
+  if (inicio !== "—") return inicio;
+  if (fin !== "—") return fin;
+  return null;
+}
+
+function formatHorarioFranjasResumen(h: HorarioData): string {
+  const manana = formatFranjaBlock(h.ABRE_MAÑANA, h.CIERRA_MAÑANA);
+  const tarde = formatFranjaBlock(h.ABRE_TARDE, h.CIERRA_TARDE);
+  const parts: string[] = [];
+  if (manana) parts.push(`Mañana ${manana}`);
+  if (tarde) parts.push(`Tarde ${tarde}`);
+  return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
 function toTimeInputValue(value: string | null | undefined): string {
@@ -211,7 +233,7 @@ function HorarioDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -260,7 +282,7 @@ function HorarioDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="horario-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -419,6 +441,47 @@ function MensajesAutomaticosPage() {
 
   const colSpan = isMaster ? 9 : canMutate ? 6 : 5;
 
+  const renderHorarioActionsMenu = (h: HorarioData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: h.ID_HORARIO, mode: "edit" })}>
+          <Pencil className="mr-2 h-4 w-4" /> Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderHorarioMobileCard = (h: HorarioData) => (
+    <li key={h.ID_HORARIO} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver horario de ${formatDiaSemana(h.DIA_SEMANA)}`}
+        onClick={() => setOverlay({ id: h.ID_HORARIO, mode: "detail" })}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{formatDiaSemana(h.DIA_SEMANA)}</p>
+          <p className="truncate text-sm text-muted-foreground">{formatHorarioFranjasResumen(h)}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canMutate ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderHorarioActionsMenu(h)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <PageHeader
@@ -450,7 +513,7 @@ function MensajesAutomaticosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -505,20 +568,7 @@ function MensajesAutomaticosPage() {
                     )}
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: h.ID_HORARIO, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderHorarioActionsMenu(h)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -527,6 +577,22 @@ function MensajesAutomaticosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-16 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay horarios registrados."}
+            </li>
+          ) : (
+            filtered.map((h) => renderHorarioMobileCard(h))
+          )}
+        </ul>
       </Card>
 
       {isMaster && (

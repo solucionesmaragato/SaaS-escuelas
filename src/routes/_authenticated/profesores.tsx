@@ -1,6 +1,6 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MoreVertical, Plus, Search, UserCircle } from "lucide-react";
+import { ChevronRight, MoreVertical, Plus, Search, UserCircle } from "lucide-react";
 import {
   findProfesorByPerfilId,
   ProfesorEmailSyncError,
@@ -68,6 +68,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ProfesorDetailOverlay } from "@/components/profesores/ProfesorDetailOverlay";
 import { ProfesorForm } from "@/components/profesores/ProfesorForm";
 import {
@@ -249,8 +250,8 @@ function DireccionProfesoresTable({
         </div>
       )}
 
-      <div className="w-full overflow-x-auto">
-        <Table className="w-full min-w-[960px] md:min-w-full table-fixed">
+      <div className="hidden w-full overflow-x-auto md:block">
+        <Table className="w-full md:min-w-full table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="h-9 text-xs font-semibold w-[14%]">Nombre</TableHead>
@@ -325,6 +326,38 @@ function DireccionProfesoresTable({
           </TableBody>
         </Table>
       </div>
+
+      <ul className="divide-y md:hidden">
+        {list.isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <li key={i} className="p-3">
+              <Skeleton className="h-20 w-full rounded-lg" />
+            </li>
+          ))
+        ) : filtered.length === 0 ? (
+          <li className="py-10 text-center text-sm text-muted-foreground">
+            {query ? "Sin resultados." : "Aún no hay profesores."}
+          </li>
+        ) : (
+          filtered.map((p) => (
+            <li key={p.ID_PROFESOR} className="p-3">
+              <p className="font-medium">{p.NOMBRE_PROFESOR}</p>
+              <div className="mt-1 text-sm">
+                <ContactCompactCell phone={p.TELEFONO} email={p.EMAIL_PROFESORES} />
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>Saldo AP: {formatSaldoDisplay(p.SALDO_AP)}</span>
+                <span>Vacaciones: {formatSaldoDisplay(p.SALDO_VACACIONES)}</span>
+                <span className="col-span-2">Nac.: {formatFechaDisplay(p.NACIMIENTO)}</span>
+              </div>
+              <div className="mt-2 space-y-1">
+                <TagBadges text={p.TEXTO_ESPECIALIDADES} />
+                <TagBadges text={p.TEXTO_AULAS} />
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
     </Card>
   );
 }
@@ -492,6 +525,81 @@ function ProfesoresPage() {
 
   const tableColCount = canManage ? 9 : 8;
 
+  const renderProfesorActionsMenu = (p: ProfesorData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: p.ID_PROFESOR, mode: "edit" })}>
+          Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderProfesorMobileCard = (p: ProfesorData) => (
+    <li key={p.ID_PROFESOR} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors",
+          canManage && "hover:bg-muted/50",
+        )}
+        aria-label={`Ver detalle de ${p.NOMBRE_PROFESOR}`}
+        onClick={
+          canManage ? () => setOverlay({ id: p.ID_PROFESOR, mode: "detail" }) : undefined
+        }
+        disabled={!canManage}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{p.NOMBRE_PROFESOR}</p>
+          <p className="truncate text-sm text-muted-foreground">
+            {formatCentroNombre(p.ID_CENTRO, centroNombreById)}
+          </p>
+          <div
+            className="mt-0.5"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            role="presentation"
+          >
+            <ContactCompactCell phone={p.TELEFONO} email={p.EMAIL_PROFESORES} />
+          </div>
+        </div>
+        <div
+          className="shrink-0"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          role="presentation"
+        >
+          {canManage ? (
+            <EstadoProfesorToggle
+              fechaBaja={p.FECHA_BAJA}
+              onClick={() => setStatusConfirming(p)}
+              disabled={update.isPending}
+            />
+          ) : (
+            <EstadoProfesorBadge fechaBaja={p.FECHA_BAJA} />
+          )}
+        </div>
+        {canManage ? (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        ) : null}
+      </button>
+      {canManage ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderProfesorActionsMenu(p)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   if (isPersonalDataView) {
     return (
       <ProfesorPersonalDataView
@@ -571,7 +679,7 @@ function ProfesoresPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -673,6 +781,24 @@ function ProfesoresPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-16 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query || (showCentroFilter && selectedCenterId)
+                ? "Sin resultados."
+                : "Aún no hay profesores."}
+            </li>
+          ) : (
+            filtered.map((p) => renderProfesorMobileCard(p))
+          )}
+        </ul>
       </Card>
 
       <ProfesorFormDialog

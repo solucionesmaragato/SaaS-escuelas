@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  ChevronRight,
   MoreHorizontal,
   Plus,
   Search,
@@ -78,7 +79,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { cn } from "@/lib/utils";
@@ -245,6 +246,84 @@ function FirmaCell({
   return <span className="text-muted-foreground text-xs">Pendiente de firma</span>;
 }
 
+function DocumentoAperturaBadge({
+  doc,
+  rol,
+  perfilProfesorId,
+}: {
+  doc: DocumentoData;
+  rol: string | null | undefined;
+  perfilProfesorId: string | null | undefined;
+}) {
+  const abierto = isAbiertoForViewer(doc, rol, perfilProfesorId);
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        abierto
+          ? "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-400"
+          : "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/30 dark:text-red-400",
+      )}
+    >
+      {abierto ? "Abierto" : "Sin abrir"}
+    </Badge>
+  );
+}
+
+function DocumentoFirmaBadge({
+  doc,
+  rol,
+  perfilProfesorId,
+}: {
+  doc: DocumentoData;
+  rol: string | null | undefined;
+  perfilProfesorId: string | null | undefined;
+}) {
+  if (!doc.REQUIERE_FIRMA) {
+    return (
+      <Badge variant="secondary" className="text-muted-foreground">
+        Solo lectura
+      </Badge>
+    );
+  }
+
+  const estado = estadoFirmaKey(doc.ESTADO_FIRMA);
+
+  if (estado === "firmado") {
+    return (
+      <Badge
+        className="border border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-400"
+      >
+        Firmado
+      </Badge>
+    );
+  }
+
+  if (isOwnDocument(doc, perfilProfesorId)) {
+    return (
+      <Badge
+        className="border border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-400"
+      >
+        Pendiente firma
+      </Badge>
+    );
+  }
+
+  if (usesManagerDocumentView(rol, doc, perfilProfesorId)) {
+    return (
+      <Badge variant="destructive" className="gap-1">
+        Falta Firma Prof.
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="secondary" className="text-muted-foreground">
+      Pendiente de firma
+    </Badge>
+  );
+}
+
 function DocumentoDetailOverlay({
   open,
   mode,
@@ -338,7 +417,7 @@ function DocumentoDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -387,7 +466,7 @@ function DocumentoDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="documento-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -598,6 +677,60 @@ function DocumentosPage() {
 
   const colSpan = canMutate ? (isMaster ? 7 : 5) : isMaster ? 6 : 4;
 
+  const renderDocumentoActionsMenu = (d: DocumentoData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: d.ID_DOCUMENTO, mode: "edit" })}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setDeleting(d)}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Eliminar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderDocumentoMobileCard = (d: DocumentoData) => (
+    <li key={d.ID_DOCUMENTO} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver documento de ${d.NOMBRE_PROFESOR}`}
+        onClick={() => setOverlay({ id: d.ID_DOCUMENTO, mode: "detail" })}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{d.NOMBRE_PROFESOR}</p>
+          <p className="truncate text-sm">{d.CATEGORIA}</p>
+          <p className="text-sm text-muted-foreground">{d.FECHA_SUBIDA ?? "—"}</p>
+          <div className="mt-1.5 flex max-w-full flex-wrap gap-1">
+            <DocumentoAperturaBadge doc={d} rol={rol} perfilProfesorId={perfil?.ID_PROFESOR} />
+            <DocumentoFirmaBadge doc={d} rol={rol} perfilProfesorId={perfil?.ID_PROFESOR} />
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canMutate ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderDocumentoActionsMenu(d)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -640,7 +773,7 @@ function DocumentosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -718,28 +851,7 @@ function DocumentosPage() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: d.ID_DOCUMENTO, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setDeleting(d)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderDocumentoActionsMenu(d)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -748,6 +860,22 @@ function DocumentosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "No hay documentos registrados."}
+            </li>
+          ) : (
+            filtered.map((d) => renderDocumentoMobileCard(d))
+          )}
+        </ul>
       </Card>
 
       <DocumentoFormDialog

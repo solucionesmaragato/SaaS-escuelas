@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  ChevronRight,
   MoreVertical,
   Plus,
   Search,
@@ -66,7 +67,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
@@ -183,7 +184,7 @@ function TarifaDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -230,7 +231,7 @@ function TarifaDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="tarifa-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -375,6 +376,79 @@ function TarifasPage() {
     );
   }
 
+  const renderTarifaActionsMenu = (t: TarifaData) => {
+    if (!canWrite && !canDelete) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0"
+            aria-label="Acciones de la tarifa"
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {canWrite && (
+            <DropdownMenuItem onClick={() => setOverlay({ id: t.ID_TARIFA, mode: "edit" })}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Editar
+            </DropdownMenuItem>
+          )}
+          {canDelete && (
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => setDeleting(t)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  const renderTarifaMobileCard = (t: TarifaData) => (
+    <li key={t.ID_TARIFA} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver detalle de ${t.SERVICIO}`}
+        onClick={() => setOverlay({ id: t.ID_TARIFA, mode: "detail" })}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{t.SERVICIO}</p>
+          <p className="truncate text-sm text-muted-foreground">
+            <span className="font-mono tabular-nums">{formatPrecio(t.PRECIO)}</span>
+            {t.FORMATO_VENTA ? (
+              <>
+                {" · "}
+                <Badge variant="secondary" className="inline px-1.5 py-0 text-xs font-normal">
+                  {t.FORMATO_VENTA}
+                </Badge>
+              </>
+            ) : null}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">{t.TIPO_COBRO ?? "—"}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {(canWrite || canDelete) ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderTarifaActionsMenu(t)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -412,7 +486,7 @@ function TarifasPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -516,6 +590,22 @@ function TarifasPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-14 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "No hay ninguna tarifa registrada."}
+            </li>
+          ) : (
+            filtered.map((t) => renderTarifaMobileCard(t))
+          )}
+        </ul>
       </Card>
 
       <TarifaFormDialog

@@ -18,7 +18,7 @@ import { hasPermission } from "@/lib/rbac";
 import { isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
 import {
@@ -74,8 +74,10 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import {
-  crearSolicitudMatriculaDesdeLead,
+  canShowMatriculaOnlineForLead,
+  canWhatsAppMatriculaForLead,
   fetchLeadSolicitudMatriculaStatus,
+  resolveLeadMatriculaSignUrl,
   sendMatriculaOnlineForLead,
 } from "@/lib/matriculaWhatsApp";
 import { buildMatriculaSignLink } from "@/lib/solicitudMatricula";
@@ -469,24 +471,22 @@ function LeadMatriculaOnlineActions({
       return buildMatriculaSignLink(cachedToken);
     }
 
-    const result = await crearSolicitudMatriculaDesdeLead(lead.ID_LEAD);
-    if (!result.ok) {
-      if (result.error?.toLowerCase().includes("firmada")) {
+    try {
+      const url = await resolveLeadMatriculaSignUrl(lead.ID_LEAD);
+      const token = url.split("token=").pop()?.trim();
+      if (token) {
+        setCachedToken(token);
+        setHasPendingSolicitud(true);
+      }
+      return url;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "No se pudo generar el enlace de matrícula.";
+      if (message.toLowerCase().includes("firmada")) {
         setHasFirmadaSolicitud(true);
       }
-      toast.error(result.error ?? "No se pudo generar el enlace de matrícula.");
+      toast.error(message);
       return null;
     }
-
-    const token = result.token_publico?.trim();
-    if (!token) {
-      toast.error("No se recibió el token de matrícula.");
-      return null;
-    }
-
-    setCachedToken(token);
-    setHasPendingSolicitud(true);
-    return buildMatriculaSignLink(token);
   }, [cachedToken, lead.ID_LEAD]);
 
   const handleSend = async () => {
@@ -546,8 +546,9 @@ function LeadMatriculaOnlineActions({
   return (
     <div className="col-span-2 mt-4 space-y-2 border-t pt-4">
       <p className="text-sm font-medium">Matrícula online</p>
-      <div className="flex flex-wrap gap-2">
-        {phone ? (
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+        {canWhatsAppMatriculaForLead(phone) ? (
           <Button
             type="button"
             variant="brand-outline"
@@ -564,7 +565,7 @@ function LeadMatriculaOnlineActions({
         ) : null}
         <Button
           type="button"
-          variant="outline"
+          variant="brand-outline"
           size="sm"
           className="gap-2"
           disabled={isSending || isCopying}
@@ -579,12 +580,13 @@ function LeadMatriculaOnlineActions({
             </>
           )}
         </Button>
+        </div>
+        {!canWhatsAppMatriculaForLead(phone) ? (
+          <p className="text-xs text-muted-foreground">
+            Sin teléfono en el lead: use «Copiar enlace» para compartir la matrícula por otro canal.
+          </p>
+        ) : null}
       </div>
-      {!phone ? (
-        <p className="text-xs text-muted-foreground">
-          Sin teléfono en el lead: use «Copiar enlace» para compartir la matrícula por otro canal.
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -739,11 +741,11 @@ function LeadDetailOverlay({
         role="dialog"
         aria-modal="true"
         aria-labelledby="lead-overlay-title"
-        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-xl p-6")}
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "max-w-xl p-4 md:p-6")}
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -794,7 +796,7 @@ function LeadDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="lead-overlay-title" className="truncate text-xl font-semibold">
                   {lead.NOMBRE ?? "Lead"}
@@ -1007,16 +1009,108 @@ function LeadsPage() {
     }
   };
 
-  const canSendMatriculaOnline = (lead: LeadData) => {
-    const estado = lead.ESTADO?.trim().toLowerCase() ?? "";
-    if (
-      estado === "matriculado" ||
-      estado === "cerrado" ||
-      estado === "cerrado (no matriculado)"
-    ) {
-      return false;
+  const handleCopyMatriculaOnline = async (lead: LeadData) => {
+    try {
+      const url = await resolveLeadMatriculaSignUrl(lead.ID_LEAD);
+      await navigator.clipboard.writeText(url);
+      toast.success("Enlace copiado al portapapeles.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo copiar el enlace.");
     }
-    return Boolean(lead.TELEFONO?.trim());
+  };
+
+  const openLeadDetail = (id: string) => {
+    setOverlay({ id, mode: "detail" });
+  };
+
+  const renderLeadActionsMenu = (lead: LeadData) => {
+    if (!canWrite) return null;
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "edit" })}>
+            Editar
+          </DropdownMenuItem>
+          {canShowMatriculaOnlineForLead(lead.ESTADO) ? (
+            <>
+              {canWhatsAppMatriculaForLead(lead.TELEFONO) ? (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleSendMatriculaOnline(lead);
+                  }}
+                >
+                  <Link2 className="mr-2 h-4 w-4" />
+                  Enviar matrícula online
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleCopyMatriculaOnline(lead);
+                }}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copiar enlace
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  const renderLeadMobileCard = (lead: LeadData) => (
+    <li key={lead.ID_LEAD} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver detalle de ${lead.NOMBRE ?? "lead"}`}
+        onClick={() => openLeadDetail(lead.ID_LEAD)}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{lead.NOMBRE ?? "—"}</p>
+          <p className="truncate text-sm text-muted-foreground">
+            {lead.NOMBRE_CONTACTO?.trim() ||
+              lead.TELEFONO?.trim() ||
+              lead.EMAIL_LEAD?.trim() ||
+              "—"}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {lead.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}
+          </p>
+        </div>
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()} role="presentation">
+          <EstadoStatusDropdown
+            lead={lead}
+            canWrite={canWrite}
+            isPending={update.isPending}
+            onStatusChange={handleStatusChange}
+          />
+        </div>
+      </button>
+      <div className="flex shrink-0 items-center pr-2" onClick={(e) => e.stopPropagation()}>
+        {renderLeadActionsMenu(lead)}
+      </div>
+    </li>
+  );
+
+  const renderLeadMobileCollapsibleSection = (rows: LeadData[], label: string) => {
+    if (rows.length === 0) return null;
+    return (
+      <details className="group border-t">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-sm text-muted-foreground [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+          {label} ({rows.length})
+        </summary>
+        <ul className="divide-y border-t bg-muted/20">{rows.map((lead) => renderLeadMobileCard(lead))}</ul>
+      </details>
+    );
   };
 
   const renderLeadTableRow = (lead: LeadData) => (
@@ -1049,31 +1143,7 @@ function LeadsPage() {
         />
       </TableCell>
       <TableCell onClick={(e) => e.stopPropagation()}>
-        {canWrite ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "edit" })}>
-                Editar
-              </DropdownMenuItem>
-              {canSendMatriculaOnline(lead) ? (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleSendMatriculaOnline(lead);
-                  }}
-                >
-                  <Link2 className="mr-2 h-4 w-4" />
-                  Enviar matrícula online
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
+        {renderLeadActionsMenu(lead)}
       </TableCell>
     </TableRow>
   );
@@ -1156,7 +1226,7 @@ function LeadsPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1192,6 +1262,28 @@ function LeadsPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="md:hidden">
+          {list.isLoading ? (
+            <ul className="divide-y">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <li key={i} className="p-3">
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </li>
+              ))}
+            </ul>
+          ) : pageRows.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "No hay leads registrados."}
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y">{activePageRows.map((lead) => renderLeadMobileCard(lead))}</ul>
+              {renderLeadMobileCollapsibleSection(cerradoPageRows, "Cerrado (No matriculado)")}
+              {renderLeadMobileCollapsibleSection(matriculadoPageRows, "Matriculado")}
+            </>
+          )}
         </div>
 
         {filtered.length > PAGE_SIZE && (

@@ -6,6 +6,7 @@ import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { AvisosWidget } from "@/components/dashboard/AvisosWidget";
 import { CalendarWidget } from "@/components/sesiones/CalendarWidget";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
+import { useIsAdminCompactDashboard } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +52,36 @@ function LiveStatCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CompactLiveStatButton({
+  label,
+  value,
+  icon: Icon,
+  loading,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Users;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md border bg-card px-1.5 py-2 text-center transition-colors hover:bg-muted/50"
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="w-full truncate text-[10px] font-medium text-muted-foreground">{label}</span>
+      {loading ? (
+        <Skeleton className="h-4 w-12" />
+      ) : (
+        <span className="w-full truncate text-xs font-semibold">{value}</span>
+      )}
+    </button>
   );
 }
 
@@ -196,6 +227,7 @@ function TwoColumnLiveList({
 function AdminLiveDashboard() {
   const navigate = useNavigate();
   const { rol, centerId } = useActiveTenant();
+  const isCompactDashboard = useIsAdminCompactDashboard();
   const showCorrectionsPanel = isAdminRole(rol) || isMasterRole(rol);
   const showCalendarWidget = isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
   const showAvisosWidget = isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
@@ -249,30 +281,60 @@ function AdminLiveDashboard() {
 
   return (
     <div className="-m-4 flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:-m-6 sm:p-6">
-      <div className="mb-2 grid shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {showAvisosWidget && <AvisosWidget filterCenterId={avisosFilterCenterId} />}
-        <LiveStatCard
-          label="Alumnos"
-          value={`${liveData?.alumnos?.presentes_count ?? 0} / ${liveData?.alumnos?.totales_count ?? 0}`}
-          icon={Users}
-          loading={isLoading}
-          onClick={() => setAlumnosOpen(true)}
-        />
-        <LiveStatCard
-          label="Profesores"
-          value={profesoresCardValue}
-          icon={GraduationCap}
-          loading={isLoading}
-          onClick={() => setProfesoresOpen(true)}
-        />
-        <LiveStatCard
-          label="Aulas"
-          value={`${liveData?.aulas?.ocupadas_count ?? 0} / ${aulasTotal}`}
-          icon={Building2}
-          loading={isLoading}
-          onClick={() => setAulasOpen(true)}
-        />
-      </div>
+      {isCompactDashboard ? (
+        <div className="mb-2 flex shrink-0 gap-1.5">
+          <CompactLiveStatButton
+            label="Alumnos"
+            value={`${liveData?.alumnos?.presentes_count ?? 0}/${liveData?.alumnos?.totales_count ?? 0}`}
+            icon={Users}
+            loading={isLoading}
+            onClick={() => setAlumnosOpen(true)}
+          />
+          <CompactLiveStatButton
+            label="Profesores"
+            value={
+              profesoresAlertas > 0
+                ? `${profesoresEnClase}·${profesoresAlertas}!`
+                : `${profesoresEnClase}/${profesoresTotal}`
+            }
+            icon={GraduationCap}
+            loading={isLoading}
+            onClick={() => setProfesoresOpen(true)}
+          />
+          <CompactLiveStatButton
+            label="Aulas"
+            value={`${liveData?.aulas?.ocupadas_count ?? 0}/${aulasTotal}`}
+            icon={Building2}
+            loading={isLoading}
+            onClick={() => setAulasOpen(true)}
+          />
+        </div>
+      ) : (
+        <div className="mb-2 grid shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {showAvisosWidget && <AvisosWidget filterCenterId={avisosFilterCenterId} />}
+          <LiveStatCard
+            label="Alumnos"
+            value={`${liveData?.alumnos?.presentes_count ?? 0} / ${liveData?.alumnos?.totales_count ?? 0}`}
+            icon={Users}
+            loading={isLoading}
+            onClick={() => setAlumnosOpen(true)}
+          />
+          <LiveStatCard
+            label="Profesores"
+            value={profesoresCardValue}
+            icon={GraduationCap}
+            loading={isLoading}
+            onClick={() => setProfesoresOpen(true)}
+          />
+          <LiveStatCard
+            label="Aulas"
+            value={`${liveData?.aulas?.ocupadas_count ?? 0} / ${aulasTotal}`}
+            icon={Building2}
+            loading={isLoading}
+            onClick={() => setAulasOpen(true)}
+          />
+        </div>
+      )}
 
       {showCalendarWidget && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">

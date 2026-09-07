@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
   usePerfiles,
   type PerfilCreateInput,
@@ -63,7 +63,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { cn } from "@/lib/utils";
@@ -367,7 +367,7 @@ function PerfilDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -416,7 +416,7 @@ function PerfilDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="perfil-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -584,6 +584,52 @@ function UsuariosPage() {
 
   const colSpan = isMaster ? 9 : canMutate ? 7 : 6;
 
+  const renderPerfilActionsMenu = (p: PerfilData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: p.ID_PERFIL, mode: "edit" })}>
+          <Pencil className="mr-2 h-4 w-4" /> Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderPerfilMobileCard = (p: PerfilData) => (
+    <li key={p.ID_PERFIL} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver usuario ${p.NOMBRE}`}
+        onClick={() => setOverlay({ id: p.ID_PERFIL, mode: "detail" })}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{p.NOMBRE}</p>
+          <p className="truncate text-sm text-muted-foreground">{p.EMAIL}</p>
+          <p className="truncate text-sm">{formatRol(p.ROL)}</p>
+          <p className="truncate text-sm text-muted-foreground">
+            {formatCentroNombre(p.ID_CENTRO, centroNombreById)}
+          </p>
+          <p className="text-sm">{formatEstado(p.ESTADO)}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canMutate ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderPerfilActionsMenu(p)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <PageHeader
@@ -615,7 +661,7 @@ function UsuariosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -676,20 +722,7 @@ function UsuariosPage() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: p.ID_PERFIL, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderPerfilActionsMenu(p)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -698,6 +731,22 @@ function UsuariosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay usuarios registrados."}
+            </li>
+          ) : (
+            filtered.map((p) => renderPerfilMobileCard(p))
+          )}
+        </ul>
       </Card>
 
       {canMutate && (

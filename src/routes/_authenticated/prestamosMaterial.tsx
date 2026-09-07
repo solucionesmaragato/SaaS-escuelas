@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
   ChevronsUpDown,
   Clock,
   MoreVertical,
@@ -34,7 +35,10 @@ import { toProfesorEntityOptions } from "@/lib/profesorSelector";
 import { useActiveTenant } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import {
+  ALUMNO_OVERLAY_PANEL_CLASS,
+  OVERLAY_PANEL_HEADER_CLASS_P6,
+} from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
 import { EntityLink } from "@/components/navigation/EntityLink";
@@ -627,7 +631,7 @@ function PrestamoOverlayHeader({
   edit?: { onClick: () => void; visible: boolean };
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+    <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
       <div className="flex min-w-0 items-center gap-3">
         {back ? (
           <Button
@@ -1134,6 +1138,71 @@ function PrestamosMaterialPage() {
 
   const colSpan = isMaster ? 12 : 10;
 
+  const renderPrestamoActionsMenu = (row: PrestamoMaterialData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {canMutate && (
+          <DropdownMenuItem onClick={() => setOverlay({ id: row.ID_PRESTAMO, mode: "edit" })}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Editar
+          </DropdownMenuItem>
+        )}
+        {isAdmin && (
+          <DropdownMenuItem
+            onClick={() => setDeleting(row)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Eliminar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderPrestamoMobileCard = (row: PrestamoMaterialData) => {
+    const receptorNombre = resolveReceptorNombre(row, alumnoById, profesorById) || "—";
+
+    return (
+      <li key={row.ID_PRESTAMO} className="flex items-stretch gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver detalle de ${formatText(row.ELEMENTO)}`}
+          onClick={() => setOverlay({ id: row.ID_PRESTAMO, mode: "detail" })}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{formatText(row.ELEMENTO)}</p>
+            <p className="truncate text-sm text-muted-foreground">{receptorNombre}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              Préstamo: {formatDate(row.FECHA_PRESTAMO)}
+              {row.FECHA_FIN_PRESTAMO
+                ? ` · Prev.: ${formatDate(row.FECHA_FIN_PRESTAMO)}`
+                : ""}
+              {row.FECHA_DEVOLUCION ? ` · Dev.: ${formatDate(row.FECHA_DEVOLUCION)}` : ""}
+            </p>
+            <div className="mt-1.5">
+              <EstadoDevolucionBadge estado={row.ESTADO_DEVOLUCION} />
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderPrestamoActionsMenu(row)}
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -1220,7 +1289,7 @@ function PrestamosMaterialPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -1298,32 +1367,7 @@ function PrestamosMaterialPage() {
                       />
                     </TableCell>
                     <TableCell onClick={(ev) => ev.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {canMutate && (
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: row.ID_PRESTAMO, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                          )}
-                          {isAdmin && (
-                            <DropdownMenuItem
-                              onClick={() => setDeleting(row)}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Eliminar
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {renderPrestamoActionsMenu(row)}
                     </TableCell>
                   </TableRow>
                 ))
@@ -1331,6 +1375,24 @@ function PrestamosMaterialPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query || filtroCategoria || filtroEstado
+                ? "Sin resultados."
+                : "Aún no hay préstamos de material registrados."}
+            </li>
+          ) : (
+            filtered.map((row) => renderPrestamoMobileCard(row))
+          )}
+        </ul>
       </Card>
 
       {canMutate && (

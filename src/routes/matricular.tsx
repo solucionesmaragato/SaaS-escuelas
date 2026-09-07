@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -35,10 +36,13 @@ import {
 } from "@/lib/generateMatriculaPdf";
 import {
   type FirmarSolicitudMatriculaPayload,
+  type MatriculaEspecialidadOption,
   type SolicitudMatriculaDatos,
   type SolicitudMatriculaPublica,
   type SolicitudMatriculaTextos,
   isSolicitudFirmada,
+  parseSolicitudMatriculaPublica,
+  parseStringArray,
 } from "@/lib/solicitudMatricula";
 import {
   buildMatriculaPdfTextosLegalesFromSolicitud,
@@ -51,7 +55,9 @@ type MatricularSearch = {
   token?: string;
 };
 
-type FormState = SolicitudMatriculaDatos & {
+type FormState = Omit<SolicitudMatriculaDatos, "ESPECIALIDADES_IDS" | "ESPECIALIDADES_LABELS"> & {
+  ESPECIALIDADES_IDS: string[];
+  ESPECIALIDADES_LABELS: string[];
   nombreFirmante: string;
   dniFirmante: string;
   aceptaRegimen: boolean;
@@ -99,6 +105,10 @@ const EMPTY_FORM: FormState = {
   IBAN: "",
   TITULAR_CUENTA: "",
   TLF_BIZUM: "",
+  ID_CURSO: "",
+  ESPECIALIDADES_IDS: [],
+  ESPECIALIDADES_LABELS: [],
+  OBSERVACIONES: "",
   nombreFirmante: "",
   dniFirmante: "",
   aceptaRegimen: false,
@@ -131,6 +141,58 @@ function datosToForm(datos: SolicitudMatriculaDatos | undefined): Partial<FormSt
     IBAN: datos.IBAN ?? "",
     TITULAR_CUENTA: datos.TITULAR_CUENTA ?? "",
     TLF_BIZUM: datos.TLF_BIZUM ?? "",
+    OBSERVACIONES: datos.OBSERVACIONES ?? "",
+  };
+}
+
+function buildAcademicFormDefaults(
+  datos: SolicitudMatriculaDatos | undefined,
+  cursos: { id_curso: string }[],
+  especialidades: MatriculaEspecialidadOption[],
+): Pick<FormState, "ID_CURSO" | "ESPECIALIDADES_IDS" | "ESPECIALIDADES_LABELS" | "OBSERVACIONES"> {
+  let idCurso = datos?.ID_CURSO?.trim() ?? "";
+  if (!idCurso && cursos.length === 1) {
+    idCurso = cursos[0].id_curso;
+  }
+
+  let ids: string[] = [];
+  let labels: string[] = [];
+  const prefillIds = parseStringArray(datos?.ESPECIALIDADES_IDS);
+  const prefillLabels = parseStringArray(datos?.ESPECIALIDADES_LABELS);
+
+  if (prefillIds.length > 0) {
+    ids = prefillIds;
+    labels = prefillLabels.length > 0
+      ? prefillLabels
+      : prefillIds.map(
+          (id) => especialidades.find((esp) => esp.id_especialidad === id)?.especialidad ?? id,
+        );
+  } else if (datos?.ESPECIALIDAD?.trim()) {
+    const legacy = datos.ESPECIALIDAD.trim();
+    const byId = especialidades.find((esp) => esp.id_especialidad === legacy);
+    const byName = especialidades.find(
+      (esp) => esp.especialidad.trim().toLowerCase() === legacy.toLowerCase(),
+    );
+    const matched = byId ?? byName;
+    if (matched) {
+      ids = [matched.id_especialidad];
+      labels = [matched.especialidad];
+    }
+  }
+
+  const orderedIds = especialidades
+    .filter((esp) => ids.includes(esp.id_especialidad))
+    .map((esp) => esp.id_especialidad);
+  const labelById = new Map(ids.map((id, index) => [id, labels[index] ?? id]));
+
+  return {
+    ID_CURSO: idCurso,
+    ESPECIALIDADES_IDS: orderedIds.length > 0 ? orderedIds : ids,
+    ESPECIALIDADES_LABELS:
+      orderedIds.length > 0
+        ? orderedIds.map((id) => labelById.get(id) ?? id)
+        : labels,
+    OBSERVACIONES: datos?.OBSERVACIONES ?? "",
   };
 }
 
@@ -195,7 +257,7 @@ function MatricularPage() {
         return;
       }
 
-      const row = data as SolicitudMatriculaPublica;
+      const row = parseSolicitudMatriculaPublica(data);
       if (!row?.ok) {
         setLoadState("error");
         setLoadError(row?.error ?? "No se pudo cargar la solicitud.");
@@ -204,9 +266,15 @@ function MatricularPage() {
       }
 
       setSolicitud(row);
+      const academicDefaults = buildAcademicFormDefaults(
+        row.datos,
+        row.cursos ?? [],
+        row.especialidades ?? [],
+      );
       setForm((current) => ({
         ...EMPTY_FORM,
         ...datosToForm(row.datos),
+        ...academicDefaults,
         nombreFirmante: row.firma?.nombre_firmante ?? current.nombreFirmante,
         dniFirmante: row.firma?.dni_firmante ?? current.dniFirmante,
       }));
@@ -235,6 +303,8 @@ function MatricularPage() {
   const academyName = displayValue(solicitud?.escuela?.nombre_escuela);
   const centroName = displayValue(solicitud?.centro?.nombre_centro);
   const textos = solicitud?.textos;
+  const cursos = solicitud?.cursos ?? [];
+  const especialidades = solicitud?.especialidades ?? [];
   const metodoPago = normalizeMetodoPago(form.METODO_PAGO);
   const showSepaFields = isBankRemittancePaymentMethod(metodoPago);
   const showBizumField = isBizumPaymentMethod(metodoPago);
@@ -313,6 +383,36 @@ function MatricularPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const toggleEspecialidad = (id: string, label: string, checked: boolean) => {
+    setForm((prev) => {
+      const selected = new Set(prev.ESPECIALIDADES_IDS);
+      const labelById = new Map(
+        prev.ESPECIALIDADES_IDS.map((selectedId, index) => [
+          selectedId,
+          prev.ESPECIALIDADES_LABELS[index] ?? selectedId,
+        ]),
+      );
+
+      if (checked) {
+        selected.add(id);
+        labelById.set(id, label);
+      } else {
+        selected.delete(id);
+        labelById.delete(id);
+      }
+
+      const orderedIds = especialidades
+        .filter((esp) => selected.has(esp.id_especialidad))
+        .map((esp) => esp.id_especialidad);
+
+      return {
+        ...prev,
+        ESPECIALIDADES_IDS: orderedIds,
+        ESPECIALIDADES_LABELS: orderedIds.map((selectedId) => labelById.get(selectedId) ?? selectedId),
+      };
+    });
+  };
+
   const handleSign = async () => {
     if (!token?.trim() || !canSubmit) return;
 
@@ -324,6 +424,9 @@ function MatricularPage() {
       const userAgent = navigator.userAgent;
       const firmadoAt = new Date().toISOString();
       const metodo = normalizeMetodoPago(form.METODO_PAGO) || form.METODO_PAGO?.trim() || null;
+
+      const especialidadLabels = form.ESPECIALIDADES_LABELS.filter(Boolean);
+      const cursoId = form.ID_CURSO?.trim() || null;
 
       const payload: FirmarSolicitudMatriculaPayload = {
         NOMBRE_ALUMNO: form.NOMBRE_ALUMNO?.trim() || null,
@@ -344,6 +447,15 @@ function MatricularPage() {
         IBAN: showSepaFields ? form.IBAN?.trim() || null : null,
         TITULAR_CUENTA: showSepaFields ? form.TITULAR_CUENTA?.trim() || null : null,
         TLF_BIZUM: showBizumField ? form.TLF_BIZUM?.trim() || null : null,
+        ID_CURSO: cursoId,
+        NOMBRE_CURSO:
+          solicitud?.cursos?.find((curso) => curso.id_curso === cursoId)?.nombre_curso ?? null,
+        ESPECIALIDADES_IDS:
+          form.ESPECIALIDADES_IDS.length > 0 ? form.ESPECIALIDADES_IDS : undefined,
+        ESPECIALIDADES_LABELS:
+          especialidadLabels.length > 0 ? especialidadLabels : undefined,
+        ESPECIALIDAD: form.ESPECIALIDADES_IDS[0] ?? null,
+        OBSERVACIONES: form.OBSERVACIONES?.trim() || null,
         DNI_FIRMANTE: form.dniFirmante.trim(),
         acepta_regimen: form.aceptaRegimen,
         AUT_MEDIOS: form.autMedios,
@@ -414,16 +526,58 @@ function MatricularPage() {
     }
   };
 
-  const handleDownloadPdf = useCallback(() => {
+  const handleDownloadPdf = useCallback(async () => {
     if (isDownloading || !solicitud) return;
     setIsDownloading(true);
     try {
-      downloadMatriculaPdf({
+      const cursoId = form.ID_CURSO?.trim() || solicitud.datos?.ID_CURSO?.trim() || "";
+      const nombreCurso =
+        solicitud.datos?.NOMBRE_CURSO?.trim() ||
+        solicitud.cursos?.find((curso) => curso.id_curso === cursoId)?.nombre_curso ||
+        cursoId ||
+        null;
+      const especialidadLabels =
+        form.ESPECIALIDADES_LABELS.filter(Boolean).length > 0
+          ? form.ESPECIALIDADES_LABELS.filter(Boolean)
+          : solicitud.datos?.ESPECIALIDADES_LABELS?.filter(Boolean) ?? [];
+      const legacyEspecialidad = solicitud.datos?.ESPECIALIDAD?.trim();
+      const legacyEspecialidadLegible =
+        legacyEspecialidad &&
+        !legacyEspecialidad.includes(",") &&
+        !/^ESP_/i.test(legacyEspecialidad) &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          legacyEspecialidad,
+        )
+          ? legacyEspecialidad
+          : null;
+      const especialidades =
+        especialidadLabels.length > 0
+          ? especialidadLabels.join(", ")
+          : legacyEspecialidadLegible;
+
+      await downloadMatriculaPdf({
+        logoUrl: solicitud.escuela?.app_logo,
         nombreEscuela: solicitud.escuela?.nombre_escuela,
         cif: solicitud.escuela?.cif,
         direccionEscuela: solicitud.escuela?.direccion,
         nombreCentro: solicitud.centro?.nombre_centro,
         nombreAlumno: form.NOMBRE_ALUMNO,
+        dniAlumno: form.DNI,
+        email: form.MAIL,
+        tlfAlumno: form.TLF_ALUMNO,
+        tlfComunicacion: form.TLF_COMUNICACION,
+        nacimiento: form.NACIMIENTO,
+        direccion: form.DIRECCION,
+        cp: form.CP,
+        municipio: form.MUNICIPIO,
+        provincia: form.PROVINCIA,
+        nombreMadre: form.NOMBRE_MADRE,
+        tlfMadre: form.TLF_MADRE,
+        nombrePadre: form.NOMBRE_PADRE,
+        tlfPadre: form.TLF_PADRE,
+        nombreCurso,
+        especialidades,
+        observaciones: form.OBSERVACIONES?.trim() || solicitud.datos?.OBSERVACIONES || null,
         nombreFirmante: signedMeta?.nombreFirmante ?? form.nombreFirmante,
         dniFirmante: signedMeta?.dniFirmante ?? form.dniFirmante,
         token,
@@ -432,6 +586,9 @@ function MatricularPage() {
         userAgent: signedMeta?.userAgent,
         hashEvidencia: signedMeta?.hashEvidencia,
         metodoPago: normalizeMetodoPago(form.METODO_PAGO) || form.METODO_PAGO,
+        iban: form.IBAN,
+        titularCuenta: form.TITULAR_CUENTA,
+        tlfBizum: form.TLF_BIZUM,
         autorizaciones: autorizacionesLabels.map((item) => item.label),
         textosLegales: buildMatriculaPdfTextosLegalesFromSolicitud(
           signedMeta?.textosLegales ?? solicitud.datos?.TEXTOS_LEGALES ?? solicitud.textos,
@@ -597,6 +754,79 @@ function MatricularPage() {
                       <Input
                         value={form.PROVINCIA ?? ""}
                         onChange={(e) => setField("PROVINCIA", e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                </section>
+
+                <section className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/90 p-4 sm:p-5">
+                  <h2 className="text-sm font-semibold text-slate-800">Datos académicos</h2>
+                  <div className="grid gap-4">
+                    <FormField label="Curso escolar">
+                      {cursos.length > 0 ? (
+                        <Select
+                          value={form.ID_CURSO || undefined}
+                          onValueChange={(value) => setField("ID_CURSO", value)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecciona curso escolar" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cursos.map((curso) => (
+                              <SelectItem key={curso.id_curso} value={curso.id_curso}>
+                                {curso.nombre_curso}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <p className="text-sm text-slate-500">
+                          No hay cursos configurados para este centro. Puede continuar con la firma.
+                        </p>
+                      )}
+                    </FormField>
+
+                    <div className="space-y-3">
+                      <Label>Especialidades</Label>
+                      {especialidades.length > 0 ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {especialidades.map((esp) => {
+                            const checked = form.ESPECIALIDADES_IDS.includes(esp.id_especialidad);
+                            return (
+                              <label
+                                key={esp.id_especialidad}
+                                className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(value) =>
+                                    toggleEspecialidad(
+                                      esp.id_especialidad,
+                                      esp.especialidad,
+                                      value === true,
+                                    )
+                                  }
+                                />
+                                <span className="text-sm leading-relaxed text-slate-700">
+                                  {esp.especialidad}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500">
+                          No hay especialidades configuradas. Puede continuar con la firma.
+                        </p>
+                      )}
+                    </div>
+
+                    <FormField label="Observaciones / horarios">
+                      <Textarea
+                        value={form.OBSERVACIONES ?? ""}
+                        onChange={(e) => setField("OBSERVACIONES", e.target.value)}
+                        placeholder="Indique preferencias de horario u otras observaciones académicas"
+                        rows={4}
                       />
                     </FormField>
                   </div>

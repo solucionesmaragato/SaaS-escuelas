@@ -58,7 +58,15 @@ import {
 } from "@/components/ui/table";
 
 export const ALUMNO_OVERLAY_PANEL_CLASS =
-  "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl max-h-[85vh] overflow-y-auto bg-card text-card-foreground border border-border shadow-xl rounded-lg z-50";
+  "fixed top-1/2 left-1/2 z-50 w-[calc(100vw-1rem)] max-h-[92dvh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-border bg-card text-card-foreground shadow-xl md:w-full md:max-h-[85vh] md:max-w-5xl";
+
+/** Sticky header for panels with `p-4 md:p-6` (keeps X visible while scrolling on mobile). */
+export const OVERLAY_PANEL_HEADER_CLASS =
+  "sticky top-0 z-10 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 pb-4 md:-mx-6 md:px-6";
+
+/** Sticky header for panels with `p-6`. */
+export const OVERLAY_PANEL_HEADER_CLASS_P6 =
+  "sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center justify-between gap-3 border-b bg-card px-6 pb-4";
 
 type LookupMaps = {
   profesorById: Map<string, string>;
@@ -276,7 +284,7 @@ export function AlumnoDetailOverlay({
           aria-label="Cerrar"
           onClick={onClose}
         />
-        <div className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "flex items-center justify-center p-6")}>
+        <div className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "flex items-center justify-center p-4 md:p-6")}>
           <Skeleton className="h-8 w-48" />
         </div>
       </>,
@@ -303,11 +311,11 @@ export function AlumnoDetailOverlay({
         role="dialog"
         aria-modal="true"
         aria-labelledby="alumno-overlay-title"
-        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "p-6")}
+        className={cn(ALUMNO_OVERLAY_PANEL_CLASS, "p-4 md:p-6")}
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -361,7 +369,7 @@ export function AlumnoDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS}>
               <div className="flex min-w-0 items-center gap-3">
                 <PersonAvatar
                   name={alumno.NOMBRE_ALUMNO}
@@ -373,17 +381,6 @@ export function AlumnoDetailOverlay({
                 </h2>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {canMatriculaOnlineStaff && (
-                  <EnviarMatriculaOnlineButton
-                    idAlumno={alumno.ID_ALUMNO}
-                    telefono={alumno.TLF_COMUNICACION}
-                    nombreAlumno={alumno.NOMBRE_ALUMNO}
-                    nombreMadre={alumno.NOMBRE_MADRE}
-                    nombrePadre={alumno.NOMBRE_PADRE}
-                    estadoAlumno={alumno.ESTADO_ALUMNO}
-                    canWrite={canMatriculaOnlineStaff}
-                  />
-                )}
                 {canMatriculaOnlineStaff && (
                   <MatriculaFirmadaPdfButton idAlumno={alumno.ID_ALUMNO} />
                 )}
@@ -404,11 +401,19 @@ export function AlumnoDetailOverlay({
             </header>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="mb-4 grid w-full grid-cols-4">
-                <TabsTrigger value="resumen">Resumen</TabsTrigger>
-                <TabsTrigger value="personales">Datos personales</TabsTrigger>
-                <TabsTrigger value="pago">Datos de pago</TabsTrigger>
-                <TabsTrigger value="matricula">Académico</TabsTrigger>
+              <TabsList className="mb-4 grid h-auto w-full grid-cols-2 gap-1 p-1 md:mb-4 md:h-9 md:grid-cols-4 md:gap-0">
+                <TabsTrigger value="resumen" className="text-xs md:text-sm">
+                  Resumen
+                </TabsTrigger>
+                <TabsTrigger value="personales" className="text-xs md:text-sm">
+                  Datos personales
+                </TabsTrigger>
+                <TabsTrigger value="pago" className="text-xs md:text-sm">
+                  Datos de pago
+                </TabsTrigger>
+                <TabsTrigger value="matricula" className="text-xs md:text-sm">
+                  Académico
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -544,6 +549,25 @@ export function AlumnoDetailOverlay({
                   El ajuste manual pendiente se convertirá en una línea del próximo recibo al
                   generar la remesa; no modifica recibos ya emitidos.
                 </p>
+
+                {canMatriculaOnlineStaff && (
+                  <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/50 p-4">
+                    <h3 className="text-sm font-semibold tracking-tight">Matrícula online</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Envíe o copie el enlace para que la familia complete o renueve la matrícula
+                      online. Los datos de pago del alumno se precargarán en el formulario.
+                    </p>
+                    <EnviarMatriculaOnlineButton
+                      idAlumno={alumno.ID_ALUMNO}
+                      telefono={alumno.TLF_COMUNICACION}
+                      nombreAlumno={alumno.NOMBRE_ALUMNO}
+                      nombreMadre={alumno.NOMBRE_MADRE}
+                      nombrePadre={alumno.NOMBRE_PADRE}
+                      estadoAlumno={alumno.ESTADO_ALUMNO}
+                      canWrite={canMatriculaOnlineStaff}
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-3 border-t pt-4">
                   <h3 className="text-sm font-semibold tracking-tight">Cargos extra</h3>

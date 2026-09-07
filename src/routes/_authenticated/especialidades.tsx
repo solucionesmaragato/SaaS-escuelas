@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, MoreVertical, Plus, Search, Pencil, Trash2, X } from "lucide-react";
 import {
   useEspecialidades,
   type EspecialidadCreateInput,
@@ -55,7 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -147,7 +147,7 @@ function EspecialidadDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -195,7 +195,7 @@ function EspecialidadDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="especialidad-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -315,6 +315,54 @@ function EspecialidadesPage() {
 
   const colSpan = isMaster ? 4 : canMutate ? 2 : 1;
 
+  const renderEspecialidadActionsMenu = (e: EspecialidadData, withDelete = false) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {canMutate && (
+          <DropdownMenuItem onClick={() => setOverlay({ id: e.ID_ESPECIALIDAD, mode: "edit" })}>
+            <Pencil className="mr-2 h-4 w-4" /> Editar
+          </DropdownMenuItem>
+        )}
+        {withDelete && isMaster && (
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={() => setDeleting(e)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderEspecialidadMobileCard = (e: EspecialidadData) => (
+    <li key={e.ID_ESPECIALIDAD} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver detalle de ${e.ESPECIALIDAD}`}
+        onClick={() => setOverlay({ id: e.ID_ESPECIALIDAD, mode: "detail" })}
+      >
+        <p className="min-w-0 flex-1 truncate font-medium">{e.ESPECIALIDAD}</p>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {(canMutate || isMaster) ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(ev) => ev.stopPropagation()}
+          onKeyDown={(ev) => ev.stopPropagation()}
+        >
+          {renderEspecialidadActionsMenu(e, true)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   if (!hasPermission(rol, "especialidades:write")) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -354,7 +402,7 @@ function EspecialidadesPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -395,20 +443,7 @@ function EspecialidadesPage() {
                     <TableCell className="font-medium">{e.ESPECIALIDAD}</TableCell>
                     {canMutate && (
                       <TableCell onClick={(ev) => ev.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: e.ID_ESPECIALIDAD, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderEspecialidadActionsMenu(e)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -417,6 +452,22 @@ function EspecialidadesPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-12 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay especialidades registradas."}
+            </li>
+          ) : (
+            filtered.map((e) => renderEspecialidadMobileCard(e))
+          )}
+        </ul>
       </Card>
 
       {canMutate && (

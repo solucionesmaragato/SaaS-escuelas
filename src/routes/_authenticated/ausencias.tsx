@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  ChevronRight,
   MoreVertical,
   Plus,
   Search,
@@ -80,7 +81,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -371,7 +372,7 @@ function PermisoDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -421,7 +422,7 @@ function PermisoDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="permiso-overlay-title" className="truncate text-xl font-semibold">
                   Detalle del permiso
@@ -676,6 +677,67 @@ function PermisosPage() {
 
   const colSpan = 5 + (isManagementRole ? 1 : 0) + (isMaster ? 2 : 0) + (canMutate ? 1 : 0);
 
+  const renderAusenciaActionsMenu = (a: AusenciaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: a.ID_PERMISO, mode: "edit" })}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+        {isMaster && (
+          <DropdownMenuItem
+            onClick={() => setDeleting(a)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Eliminar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderAusenciaMobileCard = (a: AusenciaData) => (
+    <li key={a.ID_PERMISO} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver permiso de ${a.NOMBRE_PROFESOR}`}
+        onClick={() => setOverlay({ id: a.ID_PERMISO, mode: "detail" })}
+      >
+        <div className="min-w-0 flex-1">
+          {isManagementRole && (
+            <p className="truncate font-medium">{a.NOMBRE_PROFESOR}</p>
+          )}
+          <p className={cn("truncate text-sm", isManagementRole ? "" : "font-medium")}>
+            {a.TIPO}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">
+            {a.FECHA_INICIO} — {a.FECHA_FIN}
+          </p>
+          <div className="mt-1.5">
+            <EstadoBadge estado={a.ESTADO} />
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canMutate ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderAusenciaActionsMenu(a)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -734,7 +796,7 @@ function PermisosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -809,30 +871,7 @@ function PermisosPage() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: a.ID_PERMISO, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" />
-                              Editar
-                            </DropdownMenuItem>
-                            {isMaster && (
-                              <DropdownMenuItem
-                                onClick={() => setDeleting(a)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Eliminar
-                              </DropdownMenuItem>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderAusenciaActionsMenu(a)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -841,6 +880,22 @@ function PermisosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "No hay permisos registrados."}
+            </li>
+          ) : (
+            filtered.map((a) => renderAusenciaMobileCard(a))
+          )}
+        </ul>
       </Card>
 
       <PermisoFormDialog

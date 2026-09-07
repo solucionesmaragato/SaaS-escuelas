@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Loader2,
   MoreHorizontal,
+  MoreVertical,
   Plus,
   Search,
   Trash2,
@@ -29,6 +30,7 @@ import { useGruposHorarios, type GrupoHorarioSlot } from "@/hooks/useGruposHorar
 import { toProfesorEntityOptions } from "@/lib/profesorSelector";
 import type { HorarioMatricula } from "@/types/database";
 import { cn } from "@/lib/utils";
+import { OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useMatriculas, formatMatriculaEstadoError } from "@/hooks/useMatriculas";
@@ -556,7 +558,7 @@ function MatriculaOverlayHeader({
   edit?: { onClick: () => void; visible: boolean };
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+    <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
       <div className="min-w-0">
         <h2 id={titleId} className="text-xl font-semibold">
           {title}
@@ -849,7 +851,7 @@ function MatriculaHorariosTable({
 
   return (
     <>
-      <div className="space-y-2 sm:hidden">
+      <div className="space-y-2 md:hidden">
         {sortedHorarios.map((horario) => (
           <div
             key={horario.ID_HORARIO}
@@ -864,11 +866,22 @@ function MatriculaHorariosTable({
                 {resolveHorarioEspecialidad(horario, matricula, especialidadById)}
               </span>
               <div className="flex shrink-0 items-center gap-2">
+              {canWrite && onToggleHorarioEstado ? (
+                <HorarioEstadoControl
+                  horarioId={horario.ID_HORARIO}
+                  estado={resolveHorarioEstado(horario)}
+                  canWrite={canWrite}
+                  loading={togglingHorarioId === horario.ID_HORARIO}
+                  disabled={togglingHorarioId !== null}
+                  onToggle={onToggleHorarioEstado}
+                />
+              ) : (
                 <MatriculaEstadoBadge estado={resolveHorarioEstado(horario)} />
-                <span className="text-muted-foreground">
-                  {horario.SALDO != null ? horario.SALDO : "—"}
-                </span>
-              </div>
+              )}
+              <span className="text-muted-foreground">
+                {horario.SALDO != null ? horario.SALDO : "—"}
+              </span>
+            </div>
             </div>
             <p className="mt-1 text-muted-foreground">
               {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
@@ -876,7 +889,7 @@ function MatriculaHorariosTable({
           </div>
         ))}
       </div>
-      <div className="hidden overflow-x-auto sm:block">
+      <div className="hidden overflow-x-auto md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -1310,6 +1323,113 @@ function MatriculasPage() {
     }
   }, [matriculaId, matriculas]);
 
+  const renderMatriculaActionsMenu = (m: MatriculaRow) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setViewing(m)}>
+          <Eye className="mr-2 h-4 w-4" /> Ver detalle
+        </DropdownMenuItem>
+        {canWrite && (
+          <DropdownMenuItem onClick={() => setEditing(m)}>
+            <Pencil className="mr-2 h-4 w-4" /> Editar
+          </DropdownMenuItem>
+        )}
+        {canWrite && (
+          <DropdownMenuItem
+            onClick={() => setDeleting(m)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderMatriculaMobileCard = (m: MatriculaRow) => {
+    const isExpanded = expandedIds.has(m.ID_MATRICULA);
+    const horarios = matriculaHorariosRows(m);
+
+    return (
+      <li key={m.ID_MATRICULA} className="bg-background">
+        <div className="flex items-stretch gap-1">
+          <MatriculaAlertSlot active={m.ALERTA_SUBPROGRAMADO === true} />
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 p-3 text-left transition-colors hover:bg-muted/50"
+            aria-expanded={isExpanded}
+            onClick={() => toggleExpanded(m.ID_MATRICULA)}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">
+                {m.ALUMNOS?.NOMBRE_ALUMNO ?? m.ID_ALUMNO ?? "—"}
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                {m.ESPECIALIDADES?.ESPECIALIDAD ?? m.ESPECIALIDAD ?? "—"}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {m.PROFESOR?.NOMBRE_PROFESOR ?? "Sin asignar"}
+              </p>
+            </div>
+            <div
+              className="flex shrink-0 flex-col items-end gap-1.5"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              role="presentation"
+            >
+              {canWrite ? (
+                <MatriculaEstadoToggle
+                  estado={m.ESTADO}
+                  disabled={update.isPending}
+                  onClick={() => setStatusConfirming(m)}
+                />
+              ) : (
+                <MatriculaEstadoBadge estado={m.ESTADO} />
+              )}
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-muted-foreground transition-transform",
+                  isExpanded && "rotate-180",
+                )}
+                aria-hidden
+              />
+            </div>
+          </button>
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {renderMatriculaActionsMenu(m)}
+          </div>
+        </div>
+        {isExpanded &&
+          (horarios.length === 0 ? (
+            <p className="border-t bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+              Esta matrícula no tiene horarios registrados.
+            </p>
+          ) : (
+            <div className="border-t bg-muted/20 px-3 py-3">
+              <MatriculaHorariosTable
+                layout="nested"
+                matricula={m}
+                especialidadById={especialidadById}
+                onRowClick={() => setViewing(m)}
+                canWrite={canWrite}
+                togglingHorarioId={togglingHorarioId}
+                onToggleHorarioEstado={handleRequestHorarioEstadoToggle}
+              />
+            </div>
+          ))}
+      </li>
+    );
+  };
+
   if (!hasPermission(rol, "matriculas:read")) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -1514,7 +1634,7 @@ function MatriculasPage() {
           </div>
         )}
 
-        <div className="w-full overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="hidden w-full overflow-x-auto md:block">
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
@@ -1725,6 +1845,68 @@ function MatriculasPage() {
               )}
             </TableBody>
           </Table>
+        </div>
+
+        <div className="md:hidden">
+          {list.isLoading ? (
+            <ul className="divide-y">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <li key={i} className="p-3">
+                  <Skeleton className="h-16 w-full rounded-lg" />
+                </li>
+              ))}
+            </ul>
+          ) : filtered.length === 0 ? (
+            <p className="py-10 text-center text-sm text-muted-foreground">
+              {hasActiveFilters
+                ? "Sin resultados para los filtros aplicados."
+                : "No hay ninguna matrícula registrada."}
+            </p>
+          ) : (
+            <div className="divide-y">
+              {matriculasGrouped.map((group) => {
+                const isCursoExpanded = expandedCursoIds.has(group.idCurso);
+
+                return (
+                  <div key={group.idCurso}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCursoGroup(group.idCurso)}
+                      className="flex w-full items-center justify-between gap-3 bg-muted/30 px-3 py-2.5 text-left transition-colors hover:bg-muted/40"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                            isCursoExpanded && "rotate-180",
+                          )}
+                          aria-hidden
+                        />
+                        <span className="font-semibold">{group.nombre}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {group.matriculas.length}{" "}
+                          {group.matriculas.length === 1 ? "matrícula" : "matrículas"}
+                        </span>
+                        {!group.cursoVigente ? (
+                          <span className="rounded-full border border-muted-foreground/30 px-2 py-0.5 text-xs text-muted-foreground">
+                            Curso acabado
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {isCursoExpanded ? "Ocultar" : "Expandir"}
+                      </span>
+                    </button>
+                    {isCursoExpanded ? (
+                      <ul className="divide-y border-t bg-muted/10">
+                        {group.matriculas.map((m) => renderMatriculaMobileCard(m))}
+                      </ul>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </Card>
 

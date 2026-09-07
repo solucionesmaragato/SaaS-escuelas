@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Building2,
   ChevronDown,
+  ChevronRight,
   MapPin,
   MoreVertical,
   Pencil,
@@ -77,7 +78,7 @@ import {
   verifyCursoDeleteOtp,
 } from "@/services/cursoDeleteVerification";
 import { toast } from "sonner";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge, type StatusBadgeVariant } from "@/components/ui/StatusBadge";
 
@@ -214,7 +215,7 @@ function CentroDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -260,7 +261,7 @@ function CentroDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="centro-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -674,72 +675,98 @@ function CursoEscolarHistoryTable({
   onEdit: (cursoId: string) => void;
   onDelete: (curso: CursoEscolarData) => void;
 }) {
-  return (
-    <div className="overflow-x-auto rounded-md border bg-background/60">
-      <div
-        className={cn(
-          CURSO_ESCOLAR_GRID,
-          "border-b bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground",
-        )}
+  const renderCursoActions = (curso: CursoEscolarData) => (
+    <span className="flex shrink-0 justify-end gap-0.5">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8"
+        aria-label={`Editar ${curso.NOMBRE_CURSO}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(curso.ID_CURSO);
+        }}
       >
-        <span>Nombre del curso</span>
-        <span>Estado</span>
-        <span>Inicio</span>
-        <span>Fin</span>
-        <span className="sr-only">Acciones</span>
-      </div>
-      {cursos.map((curso) => (
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 text-destructive hover:text-destructive"
+        aria-label={`Eliminar ${curso.NOMBRE_CURSO}`}
+        disabled={sendingOtp || deletingCourseId === curso.ID_CURSO}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete(curso);
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </span>
+  );
+
+  return (
+    <>
+      <div className="hidden overflow-x-auto rounded-md border bg-background/60 md:block">
         <div
-          key={curso.ID_CURSO}
           className={cn(
             CURSO_ESCOLAR_GRID,
-            "border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-muted/30",
+            "border-b bg-muted/40 px-3 py-2 text-xs font-semibold text-muted-foreground",
           )}
         >
-          <span className="truncate font-medium">{curso.NOMBRE_CURSO}</span>
-          <span>
-            <StatusBadge status={estadoBadgeStatus(curso.ESTADO)}>
-              {curso.ESTADO?.trim() || "—"}
-            </StatusBadge>
-          </span>
-          <span className="tabular-nums text-muted-foreground">
-            {formatDisplayDate(curso.FECHA_INICIO)}
-          </span>
-          <span className="tabular-nums text-muted-foreground">
-            {formatDisplayDate(curso.FECHA_FIN)}
-          </span>
-          <span className="flex justify-end gap-0.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              aria-label={`Editar ${curso.NOMBRE_CURSO}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(curso.ID_CURSO);
-              }}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              aria-label={`Eliminar ${curso.NOMBRE_CURSO}`}
-              disabled={sendingOtp || deletingCourseId === curso.ID_CURSO}
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete(curso);
-              }}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </span>
+          <span>Nombre del curso</span>
+          <span>Estado</span>
+          <span>Inicio</span>
+          <span>Fin</span>
+          <span className="sr-only">Acciones</span>
         </div>
-      ))}
-    </div>
+        {cursos.map((curso) => (
+          <div
+            key={curso.ID_CURSO}
+            className={cn(
+              CURSO_ESCOLAR_GRID,
+              "border-b px-3 py-2.5 text-sm last:border-b-0 hover:bg-muted/30",
+            )}
+          >
+            <span className="truncate font-medium">{curso.NOMBRE_CURSO}</span>
+            <span>
+              <StatusBadge status={estadoBadgeStatus(curso.ESTADO)}>
+                {curso.ESTADO?.trim() || "—"}
+              </StatusBadge>
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {formatDisplayDate(curso.FECHA_INICIO)}
+            </span>
+            <span className="tabular-nums text-muted-foreground">
+              {formatDisplayDate(curso.FECHA_FIN)}
+            </span>
+            {renderCursoActions(curso)}
+          </div>
+        ))}
+      </div>
+
+      <ul className="divide-y rounded-md border bg-background/60 md:hidden">
+        {cursos.map((curso) => (
+          <li key={curso.ID_CURSO} className="p-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <p className="truncate font-medium">{curso.NOMBRE_CURSO}</p>
+                <StatusBadge status={estadoBadgeStatus(curso.ESTADO)}>
+                  {curso.ESTADO?.trim() || "—"}
+                </StatusBadge>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                  <span>Inicio: {formatDisplayDate(curso.FECHA_INICIO)}</span>
+                  <span>Fin: {formatDisplayDate(curso.FECHA_FIN)}</span>
+                </div>
+              </div>
+              {renderCursoActions(curso)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -1418,6 +1445,40 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
     [centroOverlay?.id, canCreateCentro, list],
   );
 
+  const renderCentroActionsMenu = (centro: CentroData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          aria-label="Acciones de la sede"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => setCentroOverlay({ id: centro.ID_CENTRO, mode: "detail" })}
+        >
+          Ver detalle
+        </DropdownMenuItem>
+        {canCreateCentro && (
+          <DropdownMenuItem
+            onClick={() => setCentroOverlay({ id: centro.ID_CENTRO, mode: "edit" })}
+          >
+            Editar
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const toggleCentroExpanded = (centroId: string) => {
+    setExpandedCentroId((current) => (current === centroId ? null : centroId));
+  };
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <PageHeader
@@ -1477,7 +1538,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -1519,11 +1580,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
                           "cursor-pointer transition-colors",
                           isExpanded ? "bg-muted/40 hover:bg-muted/40" : "hover:bg-muted/30",
                         )}
-                        onClick={() =>
-                          setExpandedCentroId((current) =>
-                            current === centro.ID_CENTRO ? null : centro.ID_CENTRO,
-                          )
-                        }
+                        onClick={() => toggleCentroExpanded(centro.ID_CENTRO)}
                       >
                         <TableCell className="py-2.5 font-medium">
                           <div className="flex items-center gap-2">
@@ -1549,37 +1606,7 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
                           className="py-2.5 text-right"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                aria-label="Acciones de la sede"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setCentroOverlay({ id: centro.ID_CENTRO, mode: "detail" })
-                                }
-                              >
-                                Ver detalle
-                              </DropdownMenuItem>
-                              {canCreateCentro && (
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setCentroOverlay({ id: centro.ID_CENTRO, mode: "edit" })
-                                  }
-                                >
-                                  Editar
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                          {renderCentroActionsMenu(centro)}
                         </TableCell>
                       </TableRow>
 
@@ -1605,6 +1632,79 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-8 text-center text-sm text-muted-foreground">
+              {query.trim()
+                ? "No hay sedes que coincidan con la búsqueda."
+                : "Aún no hay sedes registradas."}
+            </li>
+          ) : (
+            filtered.map((centro) => {
+              const isExpanded = expandedCentroId === centro.ID_CENTRO;
+
+              return (
+                <li key={centro.ID_CENTRO}>
+                  <div
+                    className={cn(
+                      "flex items-stretch gap-1",
+                      isExpanded && "bg-muted/40",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+                      aria-label={`Ver sede ${centro.NOMBRE_CENTRO}`}
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleCentroExpanded(centro.ID_CENTRO)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium">{centro.NOMBRE_CENTRO}</p>
+                        <p className="truncate text-sm text-muted-foreground">
+                          {centro.DIRECCION || "—"}
+                        </p>
+                        <p className="truncate text-sm">{centro.TELEFONO_CENTRO || "—"}</p>
+                      </div>
+                      <ChevronRight
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-300",
+                          isExpanded && "rotate-90",
+                        )}
+                        aria-hidden
+                      />
+                    </button>
+                    <div
+                      className="flex shrink-0 items-center pr-2"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {renderCentroActionsMenu(centro)}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="animate-in fade-in-0 slide-in-from-top-2 duration-300 border-t">
+                      <CentroExpandedDetail
+                        centro={centro}
+                        savingCurso={createCurso.isPending || updateCurso.isPending}
+                        onCreateCurso={handleCreateCurso}
+                        onUpdateCurso={handleUpdateCurso}
+                        onCoursesReload={handleCoursesReload}
+                      />
+                    </div>
+                  )}
+                </li>
+              );
+            })
+          )}
+        </ul>
       </Card>
 
       <CentroFormDialog

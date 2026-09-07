@@ -684,6 +684,103 @@ function RemesasPage() {
     );
   }
 
+  const renderRemesaFileActions = (r: ControlRemesaRow) => (
+    <>
+      <RemesaVaultIconButton
+        available={Boolean(r.LINK_XML_SEPA)}
+        label="Descargar XML SEPA"
+        icon={FileCode}
+        onClick={
+          r.LINK_XML_SEPA ? () => void handleDownloadXML(r.LINK_XML_SEPA as string) : undefined
+        }
+      />
+      <RemesaVaultIconButton
+        available={isRemesaExcelDownloadable(r.ESTADO)}
+        label="Descargar Excel contable"
+        icon={FileSpreadsheet}
+        loading={generatingExcelRemesaId === r.ID_REMESA}
+        onClick={
+          isRemesaExcelDownloadable(r.ESTADO) ? () => void handleDownloadExcelRemesa(r) : undefined
+        }
+      />
+      <RemesaVaultIconButton
+        available={normalizeRemesaEstado(r.ESTADO) === "Enviada"}
+        label="Descargar facturas ZIP"
+        icon={FileArchive}
+        loading={generatingZipRemesaId === r.ID_REMESA}
+        onClick={
+          normalizeRemesaEstado(r.ESTADO) === "Enviada"
+            ? () => void handleDownloadZipRemesa(r)
+            : undefined
+        }
+      />
+    </>
+  );
+
+  const renderRemesaMobileCard = (r: ControlRemesaRow) => {
+    const remesaEstado = normalizeRemesaEstado(r.ESTADO);
+
+    return (
+      <li
+        key={r.ID_REMESA}
+        className={cn(
+          "border-b last:border-b-0",
+          remesaId === r.ID_REMESA && "bg-primary/5 ring-2 ring-primary ring-inset",
+        )}
+      >
+        <button
+          type="button"
+          className={cn(
+            "w-full p-3 text-left transition-colors",
+            canWrite && "hover:bg-muted/50",
+          )}
+          onClick={canWrite ? () => setEditing(r) : undefined}
+          disabled={!canWrite}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 font-semibold capitalize text-slate-900">
+                <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{r.MES_PERIODO || "—"}</span>
+              </div>
+              <p className="mt-1 truncate text-sm text-slate-700">
+                {centroNameById.get(r.ID_CENTRO ?? "") ?? r.ID_CENTRO ?? "—"}
+              </p>
+              <p className="truncate text-sm text-slate-700">
+                {cursoNameById.get(r.ID_CURSO ?? "") ?? r.ID_CURSO ?? "—"}
+              </p>
+            </div>
+            <StatusBadge status={remesaEstadoStatus(remesaEstado)} className="shrink-0 capitalize text-[10px]">
+              {remesaEstado}
+            </StatusBadge>
+          </div>
+        </button>
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/10 px-3 py-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-1">{renderRemesaFileActions(r)}</div>
+          {canWrite && isRemesaGenerada(r.ESTADO) ? (
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              disabled={sendingRemesaId === r.ID_REMESA || validatingRemesaId === r.ID_REMESA}
+              onClick={() => void requestEnviarRemesa(r)}
+            >
+              {sendingRemesaId === r.ID_REMESA || validatingRemesaId === r.ID_REMESA ? (
+                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="mr-1 h-3.5 w-3.5" />
+              )}
+              Enviar
+            </Button>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       {/* Cabecera del panel */}
@@ -736,7 +833,7 @@ function RemesasPage() {
         )}
 
         {/* Tabla de operaciones bancarias */}
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -801,7 +898,6 @@ function RemesasPage() {
                         </StatusBadge>
                       </TableCell>
 
-                      {/* Enlace XML SEPA */}
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-center">
                           <RemesaVaultIconButton
@@ -817,7 +913,6 @@ function RemesasPage() {
                         </div>
                       </TableCell>
 
-                      {/* Enlace Excel Contabilidad */}
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-center">
                           <RemesaVaultIconButton
@@ -834,7 +929,6 @@ function RemesasPage() {
                         </div>
                       </TableCell>
 
-                      {/* Enlace Recibos ZIP */}
                       <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-center">
                           <RemesaVaultIconButton
@@ -881,6 +975,24 @@ function RemesasPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </li>
+            ))
+          ) : pageRows.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query
+                ? "Sin resultados para tu búsqueda."
+                : "No hay lotes de recibos borrador registrados."}
+            </li>
+          ) : (
+            pageRows.map((r) => renderRemesaMobileCard(r))
+          )}
+        </ul>
 
         {/* Paginación real */}
         {filtered.length > PAGE_SIZE && (

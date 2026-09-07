@@ -30,7 +30,7 @@ export function CentroTableFilter({
   return (
     <div
       className={cn(
-        hideLabel ? "min-w-0 w-full max-w-[140px]" : "min-w-[200px] space-y-1.5 sm:max-w-xs",
+        hideLabel ? "min-w-0 w-full max-w-full sm:max-w-[180px]" : "min-w-[200px] space-y-1.5 sm:max-w-xs",
       )}
     >
       {!hideLabel ? <Label htmlFor={id}>Centro</Label> : null}

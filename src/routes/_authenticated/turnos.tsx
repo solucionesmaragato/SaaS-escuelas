@@ -1,7 +1,7 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, MoreHorizontal, Plus, Search, Trash2, Pencil, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, MoreHorizontal, MoreVertical, Plus, Search, Trash2, Pencil, X } from "lucide-react";
 import {
   useTurnos,
   type TurnoData,
@@ -61,7 +61,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { cn } from "@/lib/utils";
@@ -299,7 +299,7 @@ function TurnoDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -353,7 +353,7 @@ function TurnoDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="turno-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -486,6 +486,82 @@ function TurnosPage() {
     );
   }
 
+  const tableColSpan = canDelete ? 6 : 5;
+
+  const renderTurnoActionsMenu = (t: TurnoData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            setOverlay({ id: t.ID_TURNO, mode: "edit" });
+          }}
+        >
+          <Pencil className="mr-2 h-4 w-4" />
+          Editar
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            setDeleting(t);
+          }}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Eliminar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderTurnoMobileCard = (t: TurnoData) => {
+    const manana = formatTimeBlock(t.ABRE_MAÑANA, t.CIERRA_MAÑANA);
+    const tarde = formatTimeBlock(t.ABRE_TARDE, t.CIERRA_TARDE);
+
+    return (
+      <li key={t.ID_TURNO} className="flex items-stretch gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver disponibilidad de ${t.NOMBRE_PROFESOR}`}
+          onClick={() => setOverlay({ id: t.ID_TURNO, mode: "detail" })}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{t.NOMBRE_PROFESOR}</p>
+            <p className="truncate text-sm text-muted-foreground">
+              {t.DIA_SEMANA}
+              {manana ? ` · Mañana ${manana}` : ""}
+              {tarde ? ` · Tarde ${tarde}` : ""}
+            </p>
+            <div className="mt-1 max-w-full overflow-hidden">
+              <TagBadges text={t.TEXTO_ESPECIALIDADES} />
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        {canDelete ? (
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {renderTurnoActionsMenu(t)}
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-4">
       <PageHeader
@@ -518,7 +594,7 @@ function TurnosPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -538,7 +614,7 @@ function TurnosPage() {
               {list.isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={canDelete ? 6 : 5} className="py-2">
+                    <TableCell colSpan={tableColSpan} className="py-2">
                       <Skeleton className="h-7 w-full" />
                     </TableCell>
                   </TableRow>
@@ -546,7 +622,7 @@ function TurnosPage() {
               ) : filtered.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={canDelete ? 6 : 5}
+                    colSpan={tableColSpan}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     {query ? "Sin resultados." : "Aún no hay disponibilidad registrada."}
@@ -621,6 +697,22 @@ function TurnosPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay disponibilidad registrada."}
+            </li>
+          ) : (
+            filtered.map((t) => renderTurnoMobileCard(t))
+          )}
+        </ul>
       </Card>
 
       <TurnoFormDialog

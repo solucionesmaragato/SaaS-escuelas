@@ -7,7 +7,10 @@ import {
   type CargoExtraRow,
   type CargoExtraUpdateInput,
 } from "@/hooks/useCargosExtra";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import {
+  ALUMNO_OVERLAY_PANEL_CLASS,
+  OVERLAY_PANEL_HEADER_CLASS_P6,
+} from "@/components/alumnos/AlumnoDetailOverlay";
 import { CargoExtraFormFields } from "@/components/alumnos/CargoExtraFormFields";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -132,7 +135,7 @@ export function CargoExtraDetailOverlay({
       >
         {isEditing ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -199,7 +202,7 @@ export function CargoExtraDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="cargo-extra-overlay-title" className="truncate text-xl font-semibold">
                   Detalle del cargo extra

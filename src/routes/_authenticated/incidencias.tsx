@@ -1,7 +1,7 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Calendar, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
+import { ArrowLeft, Calendar, ChevronRight, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
 import { useIncidencias, type IncidenciaData } from "@/hooks/useIncidencias";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
@@ -9,7 +9,7 @@ import { useActiveTenant } from "@/context/AppContext";
 import { canWriteUi, hasPermission } from "@/lib/rbac";
 import { appendCenterFilter, appendIdInFilter, fetchAlumnoIdsForCenter } from "@/lib/centroFilter";
 import { isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EntityLink } from "@/components/navigation/EntityLink";
@@ -206,7 +206,7 @@ function IncidenciaDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -254,7 +254,7 @@ function IncidenciaDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="incidencia-overlay-title" className="truncate text-xl font-semibold">
                   Detalle de la incidencia
@@ -547,121 +547,16 @@ function IncidenciasPage() {
           </TabsContent>
 
           <TabsContent value="consultas" className="mt-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha Registro</TableHead>
-                    <TableHead>Alumno</TableHead>
-                    <TableHead>Profesor</TableHead>
-                    <TableHead>Especialidad</TableHead>
-                    <TableHead>Notas / Detalle</TableHead>
-                    <TableHead>Estado Consulta</TableHead>
-                    <TableHead className="w-[50px]" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {list.isLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={7}>
-                          <Skeleton className="h-8 w-full" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : consultasPageRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                        {query ? "Sin resultados." : "No hay consultas registradas."}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    consultasPageRows.map((inc) => (
-                      <TableRow
-                        key={inc.ID_INCIDENCIA}
-                        className="cursor-pointer transition-colors hover:bg-muted/50"
-                        onClick={() => setOverlay({ id: inc.ID_INCIDENCIA, mode: "detail" })}
-                      >
-                        <TableCell className="text-sm">
-                          {formatFechaCreacion(inc.FECHA_CREACION)}
-                        </TableCell>
-                        <TableCell>
-                          {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
-                            <EntityLink type="alumno" id={inc.ID_ALUMNO}>
-                              {inc.ALUMNOS.NOMBRE_ALUMNO}
-                            </EntityLink>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">
-                              {inc.ID_ALUMNO || "—"}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {inc.PROFESOR?.NOMBRE_PROFESOR ? (
-                            <EntityLink type="profesor" id={inc.ID_PROFESOR}>
-                              {inc.PROFESOR.NOMBRE_PROFESOR}
-                            </EntityLink>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">
-                              {inc.ID_PROFESOR || "—"}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs text-sm text-muted-foreground">
-                          <span className="line-clamp-2">{inc.NOTAS?.trim() || "—"}</span>
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Select
-                            value={inc.ESTADO_CONSULTA ?? "Pendiente"}
-                            disabled={!canWrite || updatingEstadoId === inc.ID_INCIDENCIA}
-                            onValueChange={(val) => {
-                              if (val === (inc.ESTADO_CONSULTA ?? "Pendiente")) return;
-                              void handleEstadoConsultaChange(inc.ID_INCIDENCIA, val);
-                            }}
-                          >
-                            <SelectTrigger className="h-8 w-[120px] border-0 bg-muted/50 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {ESTADO_CONSULTA_OPTIONS.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {canWrite ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setOverlay({ id: inc.ID_INCIDENCIA, mode: "edit" })
-                                  }
-                                >
-                                  Editar
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : null}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            <IncidenciaConsultasTable
+              rows={consultasPageRows}
+              isLoading={list.isLoading}
+              emptyMessage={query ? "Sin resultados." : "No hay consultas registradas."}
+              canWrite={canWrite}
+              updatingEstadoId={updatingEstadoId}
+              onOpenDetail={(id) => setOverlay({ id, mode: "detail" })}
+              onOpenEdit={(id) => setOverlay({ id, mode: "edit" })}
+              onEstadoChange={handleEstadoConsultaChange}
+            />
           </TabsContent>
         </Tabs>
 
@@ -965,99 +860,342 @@ function IncidenciaScheduleTable({
 }) {
   const colCount = 6;
 
+  const renderActionsMenu = (inc: IncidenciaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onOpenEdit(inc.ID_INCIDENCIA)}>Editar</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderMobileCard = (inc: IncidenciaData) => (
+    <li key={inc.ID_INCIDENCIA} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver incidencia de ${inc.ALUMNOS?.NOMBRE_ALUMNO ?? "alumno"}`}
+        onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
+      >
+        <div className="min-w-0 flex-1 space-y-1">
+          <IncidenciaFechaHorarioCell inc={inc} />
+          <p className="truncate text-sm font-medium">
+            {inc.ALUMNOS?.NOMBRE_ALUMNO ?? inc.ID_ALUMNO ?? "—"}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">
+            {inc.PROFESOR?.NOMBRE_PROFESOR ?? inc.ID_PROFESOR ?? "—"}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">
+            {inc.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}
+          </p>
+          <div className="flex flex-wrap items-center gap-1">
+            <StatusBadge status={incidenciaTipoBadgeStatus(inc.TIPO_INCIDENCIA)}>
+              {inc.TIPO_INCIDENCIA ?? "—"}
+            </StatusBadge>
+            {inc.TIPO_FALTA && (
+              <span className="text-xs text-muted-foreground">· {inc.TIPO_FALTA}</span>
+            )}
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canWrite ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderActionsMenu(inc)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Fecha / Horario</TableHead>
-            <TableHead>Alumno</TableHead>
-            <TableHead>Profesor</TableHead>
-            <TableHead>Especialidad</TableHead>
-            <TableHead>Tipo Incidencia</TableHead>
-            <TableHead className="w-[50px]" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <TableRow key={i}>
-                <TableCell colSpan={colCount}>
-                  <Skeleton className="h-8 w-full" />
-                </TableCell>
-              </TableRow>
-            ))
-          ) : rows.length === 0 ? (
+    <>
+      <div className="hidden overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={colCount} className="py-10 text-center text-muted-foreground">
-                {emptyMessage}
-              </TableCell>
+              <TableHead>Fecha / Horario</TableHead>
+              <TableHead>Alumno</TableHead>
+              <TableHead>Profesor</TableHead>
+              <TableHead>Especialidad</TableHead>
+              <TableHead>Tipo Incidencia</TableHead>
+              <TableHead className="w-[50px]" />
             </TableRow>
-          ) : (
-            rows.map((inc) => (
-              <TableRow
-                key={inc.ID_INCIDENCIA}
-                className="cursor-pointer transition-colors hover:bg-muted/50"
-                onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
-              >
-                <TableCell className="text-sm">
-                  <IncidenciaFechaHorarioCell inc={inc} />
-                </TableCell>
-                <TableCell>
-                  {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
-                    <EntityLink type="alumno" id={inc.ID_ALUMNO}>
-                      {inc.ALUMNOS.NOMBRE_ALUMNO}
-                    </EntityLink>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {inc.PROFESOR?.NOMBRE_PROFESOR ? (
-                    <EntityLink type="profesor" id={inc.ID_PROFESOR}>
-                      {inc.PROFESOR.NOMBRE_PROFESOR}
-                    </EntityLink>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">{inc.ID_PROFESOR || "—"}</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm">
-                  {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  )}
-                </TableCell>
-                <TableCell className="text-sm">
-                  <StatusBadge status={incidenciaTipoBadgeStatus(inc.TIPO_INCIDENCIA)}>
-                    {inc.TIPO_INCIDENCIA ?? "—"}
-                  </StatusBadge>
-                  {inc.TIPO_FALTA && (
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      Detalle: {inc.TIPO_FALTA}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  {canWrite ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onOpenEdit(inc.ID_INCIDENCIA)}>
-                          Editar
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={colCount}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={colCount} className="py-10 text-center text-muted-foreground">
+                  {emptyMessage}
                 </TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+            ) : (
+              rows.map((inc) => (
+                <TableRow
+                  key={inc.ID_INCIDENCIA}
+                  className="cursor-pointer transition-colors hover:bg-muted/50"
+                  onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
+                >
+                  <TableCell className="text-sm">
+                    <IncidenciaFechaHorarioCell inc={inc} />
+                  </TableCell>
+                  <TableCell>
+                    {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
+                      <EntityLink type="alumno" id={inc.ID_ALUMNO}>
+                        {inc.ALUMNOS.NOMBRE_ALUMNO}
+                      </EntityLink>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {inc.PROFESOR?.NOMBRE_PROFESOR ? (
+                      <EntityLink type="profesor" id={inc.ID_PROFESOR}>
+                        {inc.PROFESOR.NOMBRE_PROFESOR}
+                      </EntityLink>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{inc.ID_PROFESOR || "—"}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <StatusBadge status={incidenciaTipoBadgeStatus(inc.TIPO_INCIDENCIA)}>
+                      {inc.TIPO_INCIDENCIA ?? "—"}
+                    </StatusBadge>
+                    {inc.TIPO_FALTA && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        Detalle: {inc.TIPO_FALTA}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {canWrite ? renderActionsMenu(inc) : null}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ul className="divide-y md:hidden">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <li key={i} className="p-3">
+              <Skeleton className="h-28 w-full rounded-lg" />
+            </li>
+          ))
+        ) : rows.length === 0 ? (
+          <li className="py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
+        ) : (
+          rows.map((inc) => renderMobileCard(inc))
+        )}
+      </ul>
+    </>
+  );
+}
+
+function IncidenciaConsultasTable({
+  rows,
+  isLoading,
+  emptyMessage,
+  canWrite,
+  updatingEstadoId,
+  onOpenDetail,
+  onOpenEdit,
+  onEstadoChange,
+}: {
+  rows: IncidenciaData[];
+  isLoading: boolean;
+  emptyMessage: string;
+  canWrite: boolean;
+  updatingEstadoId: string | null;
+  onOpenDetail: (id: string) => void;
+  onOpenEdit: (id: string) => void;
+  onEstadoChange: (incidenciaId: string, nextEstado: string) => void;
+}) {
+  const colCount = 7;
+
+  const renderActionsMenu = (inc: IncidenciaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Acciones">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => onOpenEdit(inc.ID_INCIDENCIA)}>Editar</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderMobileCard = (inc: IncidenciaData) => (
+    <li key={inc.ID_INCIDENCIA} className="flex items-stretch gap-1">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        aria-label={`Ver consulta de ${inc.ALUMNOS?.NOMBRE_ALUMNO ?? "alumno"}`}
+        onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
+      >
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="text-sm font-medium">{formatFechaCreacion(inc.FECHA_CREACION)}</p>
+          <p className="truncate text-sm font-medium">
+            {inc.ALUMNOS?.NOMBRE_ALUMNO ?? inc.ID_ALUMNO ?? "—"}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">
+            {inc.PROFESOR?.NOMBRE_PROFESOR ?? inc.ID_PROFESOR ?? "—"}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">
+            {inc.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}
+          </p>
+          <p className="text-sm">{inc.ESTADO_CONSULTA ?? "Pendiente"}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {canWrite ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderActionsMenu(inc)}
+        </div>
+      ) : null}
+    </li>
+  );
+
+  return (
+    <>
+      <div className="hidden overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha Registro</TableHead>
+              <TableHead>Alumno</TableHead>
+              <TableHead>Profesor</TableHead>
+              <TableHead>Especialidad</TableHead>
+              <TableHead>Notas / Detalle</TableHead>
+              <TableHead>Estado Consulta</TableHead>
+              <TableHead className="w-[50px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={colCount}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={colCount} className="py-10 text-center text-muted-foreground">
+                  {emptyMessage}
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((inc) => (
+                <TableRow
+                  key={inc.ID_INCIDENCIA}
+                  className="cursor-pointer transition-colors hover:bg-muted/50"
+                  onClick={() => onOpenDetail(inc.ID_INCIDENCIA)}
+                >
+                  <TableCell className="text-sm">
+                    {formatFechaCreacion(inc.FECHA_CREACION)}
+                  </TableCell>
+                  <TableCell>
+                    {inc.ALUMNOS?.NOMBRE_ALUMNO ? (
+                      <EntityLink type="alumno" id={inc.ID_ALUMNO}>
+                        {inc.ALUMNOS.NOMBRE_ALUMNO}
+                      </EntityLink>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">{inc.ID_ALUMNO || "—"}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {inc.PROFESOR?.NOMBRE_PROFESOR ? (
+                      <EntityLink type="profesor" id={inc.ID_PROFESOR}>
+                        {inc.PROFESOR.NOMBRE_PROFESOR}
+                      </EntityLink>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">
+                        {inc.ID_PROFESOR || "—"}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {inc.ESPECIALIDADES?.ESPECIALIDAD ?? (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-xs text-sm text-muted-foreground">
+                    <span className="line-clamp-2">{inc.NOTAS?.trim() || "—"}</span>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Select
+                      value={inc.ESTADO_CONSULTA ?? "Pendiente"}
+                      disabled={!canWrite || updatingEstadoId === inc.ID_INCIDENCIA}
+                      onValueChange={(val) => {
+                        if (val === (inc.ESTADO_CONSULTA ?? "Pendiente")) return;
+                        void onEstadoChange(inc.ID_INCIDENCIA, val);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[120px] border-0 bg-muted/50 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ESTADO_CONSULTA_OPTIONS.map((opt) => (
+                          <SelectItem key={opt} value={opt}>
+                            {opt}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {canWrite ? renderActionsMenu(inc) : null}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <ul className="divide-y md:hidden">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <li key={i} className="p-3">
+              <Skeleton className="h-24 w-full rounded-lg" />
+            </li>
+          ))
+        ) : rows.length === 0 ? (
+          <li className="py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
+        ) : (
+          rows.map((inc) => renderMobileCard(inc))
+        )}
+      </ul>
+    </>
   );
 }
 

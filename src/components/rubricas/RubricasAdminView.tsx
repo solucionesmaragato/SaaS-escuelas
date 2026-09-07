@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ListChecks, Minus, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
+import { ListChecks, ChevronRight, Minus, MoreHorizontal, Pencil, Plus, Search } from "lucide-react";
 import {
   useRubricas,
   formatSupabaseError,
@@ -94,6 +94,70 @@ export function RubricasAdminView() {
     }
   };
 
+  const tableColSpan = canMutate ? 4 : 3;
+
+  const emptyMessage = query ? "Sin resultados." : "Aún no hay rúbricas configuradas.";
+
+  const renderRubricaActionsMenu = (row: RubricaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Acciones">
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setEditing(row)}>
+          <Pencil className="mr-2 h-4 w-4" /> Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderRubricaMobileCard = (row: RubricaData) => (
+    <li key={row.ID_RUBRICA} className="flex items-stretch gap-1">
+      {canMutate ? (
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Editar rúbrica ${row.NOMBRE}`}
+          onClick={() => setEditing(row)}
+        >
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="truncate font-medium">{row.NOMBRE}</p>
+            <p className="truncate text-sm text-muted-foreground">{row.DESCRIPCION || "—"}</p>
+            <Badge
+              variant={row.ESTADO?.toLowerCase() === "activa" ? "default" : "secondary"}
+              className="text-[10px]"
+            >
+              {row.ESTADO || "—"}
+            </Badge>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1 space-y-1 p-3">
+          <p className="truncate font-medium">{row.NOMBRE}</p>
+          <p className="truncate text-sm text-muted-foreground">{row.DESCRIPCION || "—"}</p>
+          <Badge
+            variant={row.ESTADO?.toLowerCase() === "activa" ? "default" : "secondary"}
+            className="text-[10px]"
+          >
+            {row.ESTADO || "—"}
+          </Badge>
+        </div>
+      )}
+      {canMutate ? (
+        <div
+          className="flex shrink-0 items-center pr-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {renderRubricaActionsMenu(row)}
+        </div>
+      ) : null}
+    </li>
+  );
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <PageHeader
@@ -125,7 +189,7 @@ export function RubricasAdminView() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -139,18 +203,15 @@ export function RubricasAdminView() {
               {list.isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={canMutate ? 4 : 3}>
+                    <TableCell colSpan={tableColSpan}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={canMutate ? 4 : 3}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    {query ? "Sin resultados." : "Aún no hay rúbricas configuradas."}
+                  <TableCell colSpan={tableColSpan} className="py-10 text-center text-muted-foreground">
+                    {emptyMessage}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -173,18 +234,7 @@ export function RubricasAdminView() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(ev) => ev.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => setEditing(row)}>
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderRubricaActionsMenu(row)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -193,6 +243,20 @@ export function RubricasAdminView() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">{emptyMessage}</li>
+          ) : (
+            filtered.map((row) => renderRubricaMobileCard(row))
+          )}
+        </ul>
       </Card>
 
       {canMutate && (

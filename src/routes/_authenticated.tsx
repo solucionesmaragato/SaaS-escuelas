@@ -3,14 +3,17 @@ import { Outlet, Navigate, createFileRoute, Link, useRouterState } from "@tansta
 import { Home, CalendarDays, Clock } from "lucide-react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarLogoToggle } from "@/components/SidebarLogoToggle";
 import { DemoCalComBanner } from "@/components/DemoCalComBanner";
 import { DemoExpiredWall } from "@/components/DemoExpiredWall";
 import { MobileBouncer } from "@/components/MobileBouncer";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
-import { AvisosHeaderBell } from "@/components/dashboard/AvisosHeaderBell";
+import { AvisosHeaderBell, canViewAvisosHeaderBell } from "@/components/dashboard/AvisosHeaderBell";
 import { HelpVideosHeaderButton } from "@/components/help/HelpVideosHeaderButton";
-import { useApp, ACTIVE_PERFIL_STORAGE_KEY } from "@/context/AppContext";
+import { useApp, useActiveTenant, ACTIVE_PERFIL_STORAGE_KEY } from "@/context/AppContext";
 import { useProfesorMobileShell } from "@/hooks/useProfesorMobileShell";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { isProfesorRole } from "@/lib/tenantQuery";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -139,7 +142,11 @@ function AuthenticatedShellContent({
   showMobileShell: boolean;
 }) {
   const { activePerfil, session } = useApp();
+  const { rol } = useActiveTenant();
+  const isMobile = useIsMobile();
   const isAppRoute = useRouterState({ select: (s) => s.location.pathname.startsWith("/app") });
+  const showAvisosBell =
+    canViewAvisosHeaderBell(rol) && (isProfesorRole(rol) ? isAppRoute : true);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-muted/30">
@@ -147,11 +154,12 @@ function AuthenticatedShellContent({
         {!showMobileShell && <AppSidebar isOpen={isSidebarOpen} />}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
+            {!showMobileShell && isMobile ? <SidebarLogoToggle className="shrink-0" /> : null}
             <div className="min-w-0 flex-1">
               <WorkspaceSwitcher />
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              {isAppRoute ? <AvisosHeaderBell className="shrink-0" /> : null}
+              {showAvisosBell ? <AvisosHeaderBell className="shrink-0" /> : null}
               {!showMobileShell ? <HelpVideosHeaderButton /> : null}
             </div>
             {activePerfil ? (

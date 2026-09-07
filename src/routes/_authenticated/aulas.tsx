@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, MoreVertical, Plus, Search, Pencil, X } from "lucide-react";
 import {
   useAulas,
   type AulaCreateInput,
@@ -57,7 +57,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
+import { ALUMNO_OVERLAY_PANEL_CLASS, OVERLAY_PANEL_HEADER_CLASS_P6 } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -193,7 +193,7 @@ function AulaDetailOverlay({
       >
         {mode === "edit" ? (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <Button
                   type="button"
@@ -241,7 +241,7 @@ function AulaDetailOverlay({
           </>
         ) : (
           <>
-            <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+            <header className={OVERLAY_PANEL_HEADER_CLASS_P6}>
               <div className="flex min-w-0 items-center gap-3">
                 <h2 id="aula-overlay-title" className="truncate text-xl font-semibold">
                   Vista detalle
@@ -413,6 +413,57 @@ function AulasPage() {
 
   const colSpan = isMaster ? 7 : canMutate ? 5 : 4;
 
+  const renderAulaActionsMenu = (a: AulaData) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
+          <MoreVertical className="h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => setOverlay({ id: a.ID_AULA, mode: "edit" })}>
+          <Pencil className="mr-2 h-4 w-4" /> Editar
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderAulaMobileCard = (a: AulaData) => {
+    const especialidadesLabel =
+      a.TEXTO_ESPECIALIDADES ||
+      formatEspecialidadNombres(a.ESPECIALIDAD, especialidadNombreById);
+
+    return (
+      <li key={a.ID_AULA} className="flex items-stretch gap-1">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+          aria-label={`Ver detalle de ${a.NOMBRE_AULA}`}
+          onClick={() => setOverlay({ id: a.ID_AULA, mode: "detail" })}
+        >
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{a.NOMBRE_AULA}</p>
+            <p className="truncate text-sm text-muted-foreground">
+              {formatCentroNombre(a.ID_CENTRO, centroNombreById)} · Cap.{" "}
+              {formatCapacidad(a.CAPACIDAD)}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{especialidadesLabel}</p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
+        {canMutate ? (
+          <div
+            className="flex shrink-0 items-center pr-2"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {renderAulaActionsMenu(a)}
+          </div>
+        ) : null}
+      </li>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <PageHeader
@@ -444,7 +495,7 @@ function AulasPage() {
           </div>
         )}
 
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -491,20 +542,7 @@ function AulasPage() {
                     </TableCell>
                     {canMutate && (
                       <TableCell onClick={(ev) => ev.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => setOverlay({ id: a.ID_AULA, mode: "edit" })}
-                            >
-                              <Pencil className="mr-2 h-4 w-4" /> Editar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {renderAulaActionsMenu(a)}
                       </TableCell>
                     )}
                   </TableRow>
@@ -513,6 +551,22 @@ function AulasPage() {
             </TableBody>
           </Table>
         </div>
+
+        <ul className="divide-y md:hidden">
+          {list.isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <li key={i} className="p-3">
+                <Skeleton className="h-14 w-full rounded-lg" />
+              </li>
+            ))
+          ) : filtered.length === 0 ? (
+            <li className="py-10 text-center text-sm text-muted-foreground">
+              {query ? "Sin resultados." : "Aún no hay aulas registradas."}
+            </li>
+          ) : (
+            filtered.map((a) => renderAulaMobileCard(a))
+          )}
+        </ul>
       </Card>
 
       {canMutate && (

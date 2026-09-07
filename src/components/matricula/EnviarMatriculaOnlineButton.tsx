@@ -5,7 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  canSendMatriculaOnlineForAlumno,
+  canShowMatriculaOnlineForAlumno,
+  canWhatsAppMatriculaForAlumno,
   crearSolicitudMatriculaDesdeAlumno,
   fetchAlumnoSolicitudMatriculaStatus,
   sendMatriculaOnlineForAlumno,
@@ -43,7 +44,7 @@ export function EnviarMatriculaOnlineButton({
   const enabled =
     canWrite &&
     Boolean(alumnoId) &&
-    canSendMatriculaOnlineForAlumno(estadoAlumno, telefono);
+    canShowMatriculaOnlineForAlumno(estadoAlumno);
 
   const { data: status, isLoading } = useQuery({
     queryKey: ["matricula-online-alumno-status", alumnoId],
@@ -102,9 +103,13 @@ export function EnviarMatriculaOnlineButton({
   const handleCopyLink = async () => {
     setIsCopying(true);
     try {
+      const hadToken = Boolean(status?.tokenPublico?.trim());
       const url = await resolveSignUrl();
       if (!url) return;
       await navigator.clipboard.writeText(url);
+      if (!hadToken) {
+        await queryClient.invalidateQueries({ queryKey: ["matricula-online-alumno-status", alumnoId] });
+      }
       toast.success("Enlace copiado al portapapeles.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo copiar el enlace.");
@@ -113,9 +118,30 @@ export function EnviarMatriculaOnlineButton({
     }
   };
 
+  const showWhatsApp = canWhatsAppMatriculaForAlumno(estadoAlumno, telefono);
+
   return (
-    <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      {phone ? (
+    <div className={cn("flex flex-col gap-1", className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        {showWhatsApp ? (
+          <Button
+            type="button"
+            variant="brand-outline"
+            size="sm"
+            className="gap-2"
+            disabled={isSending || isCopying}
+            onClick={() => {
+              void handleSend();
+            }}
+          >
+            <MessageCircle className="h-4 w-4" aria-hidden />
+            {isSending
+              ? "Generando enlace…"
+              : status?.hasPending
+                ? "Reenviar matrícula"
+                : "Enviar matrícula"}
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="brand-outline"
@@ -123,30 +149,18 @@ export function EnviarMatriculaOnlineButton({
           className="gap-2"
           disabled={isSending || isCopying}
           onClick={() => {
-            void handleSend();
+            void handleCopyLink();
           }}
         >
-          <MessageCircle className="h-4 w-4" aria-hidden />
-          {isSending
-            ? "Generando enlace…"
-            : status?.hasPending
-              ? "Reenviar matrícula"
-              : "Enviar matrícula"}
+          <Copy className="h-4 w-4" aria-hidden />
+          {isCopying ? "Copiando…" : "Copiar enlace"}
         </Button>
+      </div>
+      {!showWhatsApp ? (
+        <p className="text-xs text-muted-foreground">
+          Sin teléfono de comunicación: use «Copiar enlace» para compartir la matrícula por otro canal.
+        </p>
       ) : null}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-2"
-        disabled={isSending || isCopying}
-        onClick={() => {
-          void handleCopyLink();
-        }}
-      >
-        <Copy className="h-4 w-4" aria-hidden />
-        {isCopying ? "Copiando…" : "Copiar enlace"}
-      </Button>
     </div>
   );
 }

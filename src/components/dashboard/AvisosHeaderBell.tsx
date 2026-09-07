@@ -1,20 +1,35 @@
 import { useState } from "react";
 import { Bell } from "lucide-react";
 import { useActiveTenant } from "@/context/AppContext";
-import { isProfesorRole } from "@/lib/tenantQuery";
+import {
+  isAdminRole,
+  isDireccionRole,
+  isMasterRole,
+  isProfesorRole,
+  isSecretariaRole,
+} from "@/lib/tenantQuery";
 import { cn } from "@/lib/utils";
 import {
   AvisosPendientesDialog,
   usePendingAvisosInternos,
 } from "@/components/dashboard/AvisosWidget";
 
+export function canViewAvisosHeaderBell(rol: string | null | undefined): boolean {
+  return (
+    isProfesorRole(rol) ||
+    isAdminRole(rol) ||
+    isMasterRole(rol) ||
+    isSecretariaRole(rol) ||
+    isDireccionRole(rol)
+  );
+}
+
 export function AvisosHeaderBell({ className }: { className?: string }) {
   const { rol } = useActiveTenant();
-  const isProfesor = isProfesorRole(rol);
   const { count } = usePendingAvisosInternos();
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  if (!isProfesor) return null;
+  if (!canViewAvisosHeaderBell(rol)) return null;
 
   const badgeLabel = count > 99 ? "99+" : String(count);
 
