@@ -57,9 +57,7 @@ export function CargoExtraFormFields({
   onAlumnoIdChange,
 }: CargoExtraFormFieldsProps) {
   const computedTotal =
-    total !== undefined
-      ? total
-      : calcCargoExtraTotal(cantidad, precioUnitario, porcentajeIva);
+    total !== undefined ? total : calcCargoExtraTotal(cantidad, precioUnitario, porcentajeIva);
 
   return (
     <div className="space-y-4">
@@ -72,7 +70,10 @@ export function CargoExtraFormFields({
               onValueChange={(value) => onAlumnoIdChange?.(value)}
               disabled={disabled}
             >
-              <SelectTrigger id={`${idPrefix}-alumno`} className="h-9 w-full min-w-0 [&>span]:truncate">
+              <SelectTrigger
+                id={`${idPrefix}-alumno`}
+                className="h-9 w-full min-w-0 [&>span]:truncate"
+              >
                 <SelectValue placeholder="Seleccionar alumno" />
               </SelectTrigger>
               <SelectContent>

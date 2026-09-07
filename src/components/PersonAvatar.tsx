@@ -11,12 +11,7 @@ type PersonAvatarProps = {
   fallbackClassName?: string;
 };
 
-export function PersonAvatar({
-  name,
-  photoUrl,
-  className,
-  fallbackClassName,
-}: PersonAvatarProps) {
+export function PersonAvatar({ name, photoUrl, className, fallbackClassName }: PersonAvatarProps) {
   const trimmedUrl = photoUrl?.trim() ?? "";
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -38,9 +33,7 @@ export function PersonAvatar({
           onError={() => setImageFailed(true)}
         />
       ) : null}
-      <AvatarFallback
-        className={cn("font-semibold", palette, fallbackClassName)}
-      >
+      <AvatarFallback className={cn("font-semibold", palette, fallbackClassName)}>
         {initials}
       </AvatarFallback>
     </Avatar>

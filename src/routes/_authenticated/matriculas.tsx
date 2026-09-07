@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createPortal } from "react-dom";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   ChevronDown,
@@ -15,30 +15,23 @@ import {
   Calendar,
   X,
 } from "lucide-react";
-import type {
-  HorarioMatriculaRowInput,
-  HorarioMatriculaSyncInput,
-  MatriculaRow,
-} from "@/hooks/useMatriculas";
+import type { MatriculaRow } from "@/hooks/useMatriculas";
+import type { HorarioCreateInput, HorarioUpdateInput } from "@/hooks/useAlumnosTree";
 import {
   buildScheduleAssignmentContext,
-  checkGrupoPlazasWarning,
-  GRUPO_COMPLETO_PROMPT,
-  validateScheduleAssignmentHard,
-  type ScheduleAssignmentCheck,
+  isIndividualHorarioForOccupancy,
+  MatriculaHorariosGroup,
   type ScheduleAssignmentContext,
   type SesionOccupancyRow,
 } from "@/components/alumnos/AlumnoFormDialog";
-import { useGruposHorarios } from "@/hooks/useGruposHorarios";
+import { useAlumnosTree } from "@/hooks/useAlumnosTree";
+import { useGruposHorarios, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
+import { toProfesorEntityOptions } from "@/lib/profesorSelector";
 import type { HorarioMatricula } from "@/types/database";
 import { cn } from "@/lib/utils";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
-import {
-  useMatriculas,
-  formatMatriculaEstadoError,
-  validateHorarioRowsForSync,
-} from "@/hooks/useMatriculas";
+import { useMatriculas, formatMatriculaEstadoError } from "@/hooks/useMatriculas";
 import { useAlumnos } from "@/hooks/useAlumnos";
 import { useAulas, type AulaData } from "@/hooks/useAulas";
 import { useEspecialidades } from "@/hooks/useEspecialidades";
@@ -49,6 +42,7 @@ import { cursosForCentro, resolveCursoIdForCentro } from "@/lib/matriculaCursoUt
 import { useActiveTenant } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { canWriteUi, hasPermission } from "@/lib/rbac";
+import { tenantListKey } from "@/lib/tenantQuery";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
@@ -156,21 +150,6 @@ const MATRICULA_LIST_HEAD = {
   actions: "w-12",
 } as const;
 
-type HorarioEditRow = {
-  clientKey: string;
-  ID_HORARIO: string | null;
-  /** Group membership inherited from the DB row (read-only), used only to exclude group-mates from collision checks. */
-  ID_GRUPO: string | null;
-  ID_GRUPO_HORARIO: string | null;
-  idEspecialidad: string;
-  idProfesor: string;
-  idAula: string;
-  dia: string;
-  horaInicio: string;
-  horaFin: string;
-  saldo: string;
-};
-
 const DIA_SEMANA_WEIGHT: Record<string, number> = {
   Lunes: 1,
   Martes: 2,
@@ -215,10 +194,6 @@ function sortHorariosMatriculasChronologically<T extends HorarioMatricula>(horar
   return [...horarios].sort(compareHorariosChronologically);
 }
 
-function sortHorarioEditRowsChronologically(rows: HorarioEditRow[]): HorarioEditRow[] {
-  return [...rows].sort(compareHorariosChronologically);
-}
-
 type MatriculaFormValues = {
   ID_ALUMNO: string;
   ID_CENTRO: string | null;
@@ -229,7 +204,6 @@ type MatriculaFormValues = {
   FECHA_ALTA: string | null;
   FECHA_BAJA: string | null;
   ID_PROFESOR: string | null;
-  horariosSync?: HorarioMatriculaSyncInput;
 };
 
 function normalizeMatriculaEstado(estado: string | null | undefined): MatriculaEstado {
@@ -375,9 +349,7 @@ function HorarioEstadoControl({
       }}
       disabled={disabled || loading}
       aria-label={
-        active
-          ? "Horario activo. Pulsa para desactivar."
-          : "Horario inactivo. Pulsa para activar."
+        active ? "Horario activo. Pulsa para desactivar." : "Horario inactivo. Pulsa para activar."
       }
       className={cn(
         "inline-flex h-7 w-20 shrink-0 items-center justify-center rounded-full border text-xs font-semibold shadow-sm transition-all hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
@@ -433,7 +405,6 @@ type MatriculaFormSelectState = {
   fechaAlta: string;
   fechaBaja: string;
   idProfesor: string;
-  horarioRows: HorarioEditRow[];
 };
 
 function selectId(value: unknown): string {
@@ -455,11 +426,9 @@ function sortMatriculasActivasPrimero(a: MatriculaRow, b: MatriculaRow): number 
   const aActivo = isMatriculaActiva(a.ESTADO) ? 0 : 1;
   const bActivo = isMatriculaActiva(b.ESTADO) ? 0 : 1;
   if (aActivo !== bActivo) return aActivo - bActivo;
-  return (a.ALUMNOS?.NOMBRE_ALUMNO ?? "").localeCompare(
-    b.ALUMNOS?.NOMBRE_ALUMNO ?? "",
-    "es",
-    { sensitivity: "base" },
-  );
+  return (a.ALUMNOS?.NOMBRE_ALUMNO ?? "").localeCompare(b.ALUMNOS?.NOMBRE_ALUMNO ?? "", "es", {
+    sensitivity: "base",
+  });
 }
 
 function localTodayDateKey(): string {
@@ -550,9 +519,6 @@ function matriculaFormStateFromRow(
     fechaAlta: toDateInputValue(initial?.FECHA_ALTA),
     fechaBaja: toDateInputValue(initial?.FECHA_BAJA),
     idProfesor,
-    horarioRows: initial
-      ? matriculaHorariosRows(initial).map((horario) => horarioToEditRow(horario, initial))
-      : [],
   };
 }
 
@@ -599,13 +565,7 @@ function MatriculaOverlayHeader({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {edit?.visible ? (
-          <Button
-            type="button"
-            variant="brand"
-            size="sm"
-            className="gap-2"
-            onClick={edit.onClick}
-          >
+          <Button type="button" variant="brand" size="sm" className="gap-2" onClick={edit.onClick}>
             <Pencil className="h-4 w-4" />
             Editar
           </Button>
@@ -794,10 +754,7 @@ function MatriculaHorariosTable({
 }) {
   const horarios = matricula.HORARIOS_MATRICULAS ?? [];
 
-  const sortedHorarios = useMemo(
-    () => sortHorariosMatriculasChronologically(horarios),
-    [horarios],
-  );
+  const sortedHorarios = useMemo(() => sortHorariosMatriculasChronologically(horarios), [horarios]);
 
   if (sortedHorarios.length === 0) {
     return (
@@ -830,10 +787,7 @@ function MatriculaHorariosTable({
                 {formatHorarioSchedule(horario.DIA, horario.HORA_INICIO, horario.HORA_FIN)}
               </span>
             </TableCell>
-            <TableCell
-              className={MATRICULA_LIST_COL.estado}
-              onClick={(e) => e.stopPropagation()}
-            >
+            <TableCell className={MATRICULA_LIST_COL.estado} onClick={(e) => e.stopPropagation()}>
               <div className="flex justify-center">
                 <HorarioEstadoControl
                   horarioId={horario.ID_HORARIO}
@@ -975,491 +929,11 @@ function MatriculaHorariosPanel({
   );
 }
 
-function horarioToEditRow(horario: HorarioMatricula, matricula: MatriculaRow): HorarioEditRow {
-  return {
-    clientKey: horario.ID_HORARIO,
-    ID_HORARIO: horario.ID_HORARIO,
-    ID_GRUPO: horario.ID_GRUPO ?? null,
-    ID_GRUPO_HORARIO: horario.ID_GRUPO_HORARIO ?? null,
-    idEspecialidad: selectId(horario.ID_ESPECIALIDAD ?? matricula.ESPECIALIDAD),
-    idProfesor: selectId(horario.ID_PROFESOR),
-    idAula: selectId(horario.ID_AULA),
-    dia: horario.DIA ?? "",
-    horaInicio: horario.HORA_INICIO?.slice(0, 5) ?? "",
-    horaFin: horario.HORA_FIN?.slice(0, 5) ?? "",
-    saldo: horario.SALDO != null ? String(horario.SALDO) : "",
-  };
-}
-
-function createEmptyHorarioRow(defaultEspecialidad = ""): HorarioEditRow {
-  return {
-    clientKey: crypto.randomUUID(),
-    ID_HORARIO: null,
-    ID_GRUPO: null,
-    ID_GRUPO_HORARIO: null,
-    idEspecialidad: defaultEspecialidad,
-    idProfesor: "",
-    idAula: "",
-    dia: "",
-    horaInicio: "",
-    horaFin: "",
-    saldo: "",
-  };
-}
-
-function toTimeStr(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^\d{2}:\d{2}:\d{2}$/.test(trimmed)) return trimmed;
-  if (/^\d{2}:\d{2}$/.test(trimmed)) return `${trimmed}:00`;
-  return trimmed;
-}
-
-function parseSaldoInput(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function formatHorarioLimitLabel(current: number, max: number | null | undefined): string {
-  const maxLabel = max != null ? String(max) : "—";
-  return `Horarios asignados: ${current} / ${maxLabel}`;
-}
-
-function editRowsToHorarioInputs(rows: HorarioEditRow[]): HorarioMatriculaRowInput[] {
-  return rows.map((row) => {
-    const input: HorarioMatriculaRowInput = {
-      ID_ESPECIALIDAD: row.idEspecialidad?.trim() || null,
-      ID_PROFESOR: row.idProfesor.trim() || null,
-      ID_AULA: row.idAula?.trim() || null,
-      DIA: row.dia.trim() || null,
-      HORA_INICIO: toTimeStr(row.horaInicio),
-      HORA_FIN: toTimeStr(row.horaFin),
-      SALDO: parseSaldoInput(row.saldo),
-      ID_GRUPO: row.ID_GRUPO,
-      ID_GRUPO_HORARIO: row.ID_GRUPO_HORARIO,
-    };
-    if (row.ID_HORARIO) {
-      input.ID_HORARIO = row.ID_HORARIO.trim();
-    }
-    return input;
-  });
-}
-
-function horarioRowToAssignmentCheck(
-  row: HorarioMatriculaRowInput,
-  idAlumno: string,
-): ScheduleAssignmentCheck {
-  const alumnoId = idAlumno.trim();
-  return {
-    idAlumno: alumnoId,
-    idProfesor: row.ID_PROFESOR,
-    idAula: row.ID_AULA?.trim() || null,
-    dia: row.DIA ?? "",
-    horaInicio: row.HORA_INICIO?.slice(0, 5) ?? "",
-    horaFin: row.HORA_FIN?.slice(0, 5) ?? "",
-    idHorarioExcluir: row.ID_HORARIO?.trim() || null,
-    idGrupo: row.ID_GRUPO?.trim() || null,
-    idGrupoHorario: row.ID_GRUPO_HORARIO?.trim() || null,
-    isIndividual: !row.ID_GRUPO_HORARIO?.trim(),
-    extraAlumnoIds: alumnoId ? [alumnoId] : [],
-  };
-}
-
-function validateMatriculaHorarioRows(
-  ctx: ScheduleAssignmentContext,
-  idAlumno: string,
-  rows: HorarioMatriculaRowInput[],
-): string | null {
-  for (const row of rows) {
-    if (!row.DIA?.trim() || !row.HORA_INICIO || !row.HORA_FIN) continue;
-    const hard = validateScheduleAssignmentHard(
-      ctx,
-      horarioRowToAssignmentCheck(row, idAlumno),
-    );
-    if (hard) return hard;
-  }
-  return null;
-}
-
-function matriculaHorarioRowsNeedGrupoPlazasConfirm(
-  ctx: ScheduleAssignmentContext,
-  idAlumno: string,
-  rows: HorarioMatriculaRowInput[],
-): boolean {
-  const alumnoId = idAlumno.trim();
-  if (!alumnoId) return false;
-  const grupoIds = new Set<string>();
-  for (const row of rows) {
-    const grupoId = row.ID_GRUPO?.trim();
-    if (grupoId) grupoIds.add(grupoId);
-  }
-  for (const grupoId of grupoIds) {
-    if (checkGrupoPlazasWarning(ctx, grupoId, [alumnoId])) return true;
-  }
-  return false;
-}
-
-function buildHorariosSyncInput(
-  matriculaId: string,
-  values: Omit<MatriculaFormValues, "horariosSync">,
-  rows: HorarioEditRow[],
-  deletedIds: string[],
-): HorarioMatriculaSyncInput | undefined {
-  const syncRows = editRowsToHorarioInputs(rows);
-  const hasWork = syncRows.length > 0 || deletedIds.length > 0;
-  if (!hasWork) return undefined;
-
-  return {
-    matriculaId,
-    idCentro: values.ID_CENTRO,
-    idCurso: values.ID_CURSO,
-    rows: syncRows,
-    deletedIds,
-  };
-}
-
-function MatriculaHorariosEditableTable({
-  rows,
-  onChange,
-  onRemoveRow,
-  especialidades,
-  profesores,
-  aulas,
-}: {
-  rows: HorarioEditRow[];
-  onChange: (rows: HorarioEditRow[]) => void;
-  onRemoveRow: (index: number) => void;
-  especialidades: EspecialidadData[];
-  profesores: ProfesorData[];
-  aulas: AulaData[];
-}) {
-  const sortedRows = useMemo(() => sortHorarioEditRowsChronologically(rows), [rows]);
-
-  const resolveSourceIndex = (clientKey: string) =>
-    rows.findIndex((row) => row.clientKey === clientKey);
-
-  const updateRow = (sourceIndex: number, partial: Partial<HorarioEditRow>) => {
-    if (sourceIndex < 0) return;
-    onChange(rows.map((row, i) => (i === sourceIndex ? { ...row, ...partial } : row)));
-  };
-
-  if (rows.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        No hay horarios. Usa «Añadir Horario» para crear uno.
-      </p>
-    );
-  }
-
-  const especialidadField = (row: HorarioEditRow, index: number, className?: string) => (
-    <Select
-      value={row.idEspecialidad || NONE_VALUE}
-      onValueChange={(v) => updateRow(index, { idEspecialidad: v === NONE_VALUE ? "" : v })}
-    >
-      <SelectTrigger className={cn("h-9", className)}>
-        <SelectValue placeholder="Especialidad" />
-      </SelectTrigger>
-      <SelectContent className="max-h-[240px] overflow-y-auto">
-        <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
-        {especialidades.map((esp) => (
-          <SelectItem key={esp.ID_ESPECIALIDAD} value={String(esp.ID_ESPECIALIDAD)}>
-            {esp.ESPECIALIDAD}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-
-  const profesorField = (row: HorarioEditRow, index: number, className?: string) => (
-    <Select
-      value={row.idProfesor || NONE_VALUE}
-      onValueChange={(v) => updateRow(index, { idProfesor: v === NONE_VALUE ? "" : v })}
-    >
-      <SelectTrigger className={cn("h-9", className)}>
-        <SelectValue placeholder="Profesor" />
-      </SelectTrigger>
-      <SelectContent className="max-h-[240px] overflow-y-auto">
-        <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
-        {profesores.map((profesor) => (
-          <SelectItem key={profesor.ID_PROFESOR} value={String(profesor.ID_PROFESOR)}>
-            {profesor.NOMBRE_PROFESOR}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-
-  const aulaField = (row: HorarioEditRow, index: number, className?: string) => (
-    <Select
-      value={row.idAula || NONE_VALUE}
-      onValueChange={(v) => updateRow(index, { idAula: v === NONE_VALUE ? "" : v })}
-    >
-      <SelectTrigger className={cn("h-9", className)}>
-        <SelectValue placeholder="Aula" />
-      </SelectTrigger>
-      <SelectContent className="max-h-[240px] overflow-y-auto">
-        <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
-        {aulas.map((aula) => (
-          <SelectItem key={aula.ID_AULA} value={String(aula.ID_AULA)}>
-            {aula.NOMBRE_AULA}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-
-  const saldoField = (row: HorarioEditRow, index: number, className?: string) => (
-    <Input
-      type="number"
-      inputMode="decimal"
-      step="any"
-      value={row.saldo}
-      onChange={(e) => updateRow(index, { saldo: e.target.value })}
-      className={cn("h-9", className)}
-      placeholder="—"
-    />
-  );
-
-  return (
-    <>
-      <div className="space-y-3 sm:hidden">
-        {sortedRows.map((row) => {
-          const sourceIndex = resolveSourceIndex(row.clientKey);
-          if (sourceIndex < 0) return null;
-
-          return (
-          <div key={row.clientKey} className="space-y-3 rounded-md border bg-background p-3">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex-1 space-y-1">
-                <Label className="text-xs text-muted-foreground">Especialidad</Label>
-                {especialidadField(row, sourceIndex, "w-full")}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="mt-5 h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
-                onClick={() => onRemoveRow(sourceIndex)}
-                aria-label="Eliminar horario"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Día</Label>
-                <Select
-                  value={row.dia || NONE_VALUE}
-                  onValueChange={(v) => updateRow(sourceIndex, { dia: v === NONE_VALUE ? "" : v })}
-                >
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue placeholder="Día" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>— Día —</SelectItem>
-                    {DIAS_SEMANA_OPCIONES.map((dia) => (
-                      <SelectItem key={dia} value={dia}>
-                        {dia}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Inicio</Label>
-                <Input
-                  type="time"
-                  value={row.horaInicio}
-                  onChange={(e) => updateRow(sourceIndex, { horaInicio: e.target.value })}
-                  className="h-9 w-full"
-                  aria-label="Hora inicio"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Fin</Label>
-                <Input
-                  type="time"
-                  value={row.horaFin}
-                  onChange={(e) => updateRow(sourceIndex, { horaFin: e.target.value })}
-                  className="h-9 w-full"
-                  aria-label="Hora fin"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Profesor</Label>
-                {profesorField(row, sourceIndex, "w-full")}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Aula</Label>
-                {aulaField(row, sourceIndex, "w-full")}
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Saldo</Label>
-              {saldoField(row, sourceIndex, "w-full")}
-            </div>
-          </div>
-          );
-        })}
-      </div>
-      <div className="hidden overflow-x-auto sm:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Especialidad</TableHead>
-              <TableHead>Horario</TableHead>
-              <TableHead>Profesor</TableHead>
-              <TableHead>Aula</TableHead>
-              <TableHead className="w-[100px]">Saldo</TableHead>
-              <TableHead className="w-[52px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedRows.map((row) => {
-              const sourceIndex = resolveSourceIndex(row.clientKey);
-              if (sourceIndex < 0) return null;
-
-              return (
-              <TableRow key={row.clientKey}>
-                <TableCell className="align-top">
-                  {especialidadField(row, sourceIndex, "w-full min-w-[140px]")}
-                </TableCell>
-                <TableCell className="align-top">
-                  <div className="flex w-[140px] flex-col gap-2">
-                    <Select
-                      value={row.dia || NONE_VALUE}
-                      onValueChange={(v) =>
-                        updateRow(sourceIndex, { dia: v === NONE_VALUE ? "" : v })
-                      }
-                    >
-                      <SelectTrigger className="h-9 w-full">
-                        <SelectValue placeholder="Día" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE_VALUE}>— Día —</SelectItem>
-                        {DIAS_SEMANA_OPCIONES.map((dia) => (
-                          <SelectItem key={dia} value={dia}>
-                            {dia}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="time"
-                      value={row.horaInicio}
-                      onChange={(e) => updateRow(sourceIndex, { horaInicio: e.target.value })}
-                      className="h-9 w-full"
-                      aria-label="Hora inicio"
-                    />
-                    <Input
-                      type="time"
-                      value={row.horaFin}
-                      onChange={(e) => updateRow(sourceIndex, { horaFin: e.target.value })}
-                      className="h-9 w-full"
-                      aria-label="Hora fin"
-                    />
-                  </div>
-                </TableCell>
-                <TableCell className="align-top">
-                  {profesorField(row, sourceIndex, "w-full min-w-[120px]")}
-                </TableCell>
-                <TableCell className="align-top">
-                  {aulaField(row, sourceIndex, "w-full min-w-[120px]")}
-                </TableCell>
-                <TableCell className="align-top">{saldoField(row, sourceIndex, "w-full")}</TableCell>
-                <TableCell className="align-top">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemoveRow(sourceIndex)}
-                    aria-label="Eliminar horario"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
-    </>
-  );
-}
-
-function MatriculaHorariosEditablePanel({
-  rows,
-  onChange,
-  onAddRow,
-  onRemoveRow,
-  especialidades,
-  profesores,
-  aulas,
-  maxHorarios,
-}: {
-  rows: HorarioEditRow[];
-  onChange: (rows: HorarioEditRow[]) => void;
-  onAddRow: () => void;
-  onRemoveRow: (index: number) => void;
-  especialidades: EspecialidadData[];
-  profesores: ProfesorData[];
-  aulas: AulaData[];
-  maxHorarios?: number | null;
-}) {
-  const [isSchedulesOpen, setIsSchedulesOpen] = useState(true);
-
-  return (
-    <div className="border-t pt-4">
-      <div className="mb-3 flex items-center gap-1">
-        <p className="text-xs text-muted-foreground">
-          {formatHorarioLimitLabel(rows.length, maxHorarios)}
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0 text-muted-foreground"
-          aria-expanded={isSchedulesOpen}
-          aria-label={isSchedulesOpen ? "Ocultar horarios" : "Ver horarios"}
-          onClick={() => setIsSchedulesOpen((open) => !open)}
-        >
-          <ChevronDown
-            className={cn("h-4 w-4 transition-transform", isSchedulesOpen && "rotate-180")}
-          />
-        </Button>
-      </div>
-      {isSchedulesOpen && (
-        <>
-          <div className="rounded-md border bg-muted/10 p-2">
-            <MatriculaHorariosEditableTable
-              rows={rows}
-              onChange={onChange}
-              onRemoveRow={onRemoveRow}
-              especialidades={especialidades}
-              profesores={profesores}
-              aulas={aulas}
-            />
-          </div>
-          <Button type="button" size="sm" variant="brand-outline" className="mt-3" onClick={onAddRow}>
-            <Plus className="mr-2 h-4 w-4" />
-            Añadir Horario
-          </Button>
-        </>
-      )}
-    </div>
-  );
-}
-
 function MatriculasPage() {
   const { matriculaId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { rol, tenantId } = useActiveTenant();
+  const qc = useQueryClient();
   const canWrite = canWriteUi(rol, "matriculas:write");
   const {
     centrosOrdenados,
@@ -1468,15 +942,9 @@ function MatriculasPage() {
     setSelectedCenterId,
     filterCenterId,
   } = useAdminCentroFilter();
-  const {
-    list,
-    create,
-    update,
-    bulkUpdateEstadoByCurso,
-    syncHorarios,
-    remove,
-    invalidateList,
-  } = useMatriculas(filterCenterId);
+  const { list, create, update, bulkUpdateEstadoByCurso, remove, invalidateList } =
+    useMatriculas(filterCenterId);
+  const { createHorario, updateHorario, removeHorario } = useAlumnosTree(null);
   const { list: tarifasList } = useTarifas();
 
   const tarifaById = useMemo(
@@ -1504,8 +972,14 @@ function MatriculasPage() {
   const [bulkCursoId, setBulkCursoId] = useState("");
   const [bulkNuevoEstado, setBulkNuevoEstado] = useState<MatriculaEstado>("Inactivo");
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
-  const [grupoCompletoConfirmOpen, setGrupoCompletoConfirmOpen] = useState(false);
-  const grupoCompletoProceedRef = useRef<(() => Promise<void>) | null>(null);
+
+  const horarioSaving =
+    createHorario.isPending || updateHorario.isPending || removeHorario.isPending;
+
+  const invalidateHorarioSideEffects = () => {
+    invalidateList();
+    qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+  };
 
   const allMatriculasQuery = useMatriculas(null);
   const { list: grupoHorariosList } = useGruposHorarios();
@@ -1533,24 +1007,49 @@ function MatriculasPage() {
     },
   });
 
+  const grupoSlots = useMemo(
+    () => asArray<GrupoHorarioSlot>(grupoHorariosList.data),
+    [grupoHorariosList.data],
+  );
+
+  const tenantHorarios = useMemo(
+    () =>
+      (allMatriculasQuery.list.data?.rows ?? []).flatMap((mat) => mat.HORARIOS_MATRICULAS ?? []),
+    [allMatriculasQuery.list.data],
+  );
+
+  const tenantIndividualHorarios = useMemo(
+    () => tenantHorarios.filter(isIndividualHorarioForOccupancy),
+    [tenantHorarios],
+  );
+
   const scheduleAssignmentContext = useMemo((): ScheduleAssignmentContext | null => {
     if (!occupancyMetaQuery.data) return null;
-    const tenantHorarios = (allMatriculasQuery.list.data?.rows ?? []).flatMap(
-      (mat) => mat.HORARIOS_MATRICULAS ?? [],
-    );
     return buildScheduleAssignmentContext(
       grupoHorariosList.data ?? [],
       tenantHorarios,
       occupancyMetaQuery.data.sesiones,
       occupancyMetaQuery.data.aulaCapacidadById,
     );
-  }, [allMatriculasQuery.list.data, grupoHorariosList.data, occupancyMetaQuery.data]);
+  }, [grupoHorariosList.data, tenantHorarios, occupancyMetaQuery.data]);
 
   const matriculas = useMemo(() => list.data?.rows ?? [], [list.data?.rows]);
   const especialidadById = useMemo(
     () => list.data?.especialidadById ?? new Map<string, string>(),
     [list.data?.especialidadById],
   );
+
+  const liveEditing = useMemo(() => {
+    if (!editing) return null;
+    return matriculas.find((m) => m.ID_MATRICULA === editing.ID_MATRICULA) ?? editing;
+  }, [editing, matriculas]);
+
+  const editingStudentConflictHorarios = useMemo(() => {
+    if (!liveEditing?.ID_ALUMNO) return [];
+    return matriculas
+      .filter((m) => m.ID_ALUMNO === liveEditing.ID_ALUMNO)
+      .flatMap((m) => matriculaHorariosRows(m));
+  }, [liveEditing?.ID_ALUMNO, matriculas]);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -1590,9 +1089,7 @@ function MatriculasPage() {
   const bulkAffectedCount = useMemo(() => {
     if (!bulkCursoId) return 0;
     return matriculas.filter(
-      (m) =>
-        m.ID_CURSO === bulkCursoId &&
-        normalizeMatriculaEstado(m.ESTADO) !== bulkNuevoEstado,
+      (m) => m.ID_CURSO === bulkCursoId && normalizeMatriculaEstado(m.ESTADO) !== bulkNuevoEstado,
     ).length;
   }, [matriculas, bulkCursoId, bulkNuevoEstado]);
 
@@ -1673,11 +1170,7 @@ function MatriculasPage() {
       let fechaInicio: string | null = null;
 
       if (idCurso !== SIN_CURSO_GROUP_KEY) {
-        const cursoData = findCursoEscolarInCentros(
-          centrosOrdenados,
-          sample.ID_CENTRO,
-          idCurso,
-        );
+        const cursoData = findCursoEscolarInCentros(centrosOrdenados, sample.ID_CENTRO, idCurso);
         const fechaFin = normalizeCursoDateKey(cursoData?.FECHA_FIN);
         fechaInicio = normalizeCursoDateKey(cursoData?.FECHA_INICIO);
         cursoVigente = isCursoVigentePorFecha(fechaFin, todayKey);
@@ -1769,43 +1262,12 @@ function MatriculasPage() {
       );
       setHorarioStatusConfirming(null);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al actualizar el estado del horario.");
+      toast.error(
+        err instanceof Error ? err.message : "Error al actualizar el estado del horario.",
+      );
     } finally {
       setTogglingHorarioId(null);
     }
-  };
-
-  const runValidatedHorariosSave = async (
-    idAlumno: string,
-    rows: HorarioMatriculaRowInput[],
-    execute: () => Promise<void>,
-  ): Promise<void> => {
-    if (rows.length === 0) {
-      await execute();
-      return;
-    }
-    const horarioValidationError = validateHorarioRowsForSync(rows);
-    if (horarioValidationError) {
-      toast.error(horarioValidationError);
-      return;
-    }
-    if (!scheduleAssignmentContext) {
-      toast.error("Cargando datos de ocupación. Inténtalo de nuevo.");
-      return;
-    }
-    const hard = validateMatriculaHorarioRows(scheduleAssignmentContext, idAlumno, rows);
-    if (hard) {
-      toast.error(hard);
-      return;
-    }
-    if (
-      matriculaHorarioRowsNeedGrupoPlazasConfirm(scheduleAssignmentContext, idAlumno, rows)
-    ) {
-      grupoCompletoProceedRef.current = execute;
-      setGrupoCompletoConfirmOpen(true);
-      return;
-    }
-    await execute();
   };
 
   const handleCloseViewing = () => {
@@ -1918,6 +1380,7 @@ function MatriculasPage() {
           </Select>
           <Button
             type="button"
+            variant="brand"
             size="sm"
             className="h-8 shrink-0 px-3 text-xs"
             disabled={
@@ -2076,7 +1539,10 @@ function MatriculasPage() {
                 ))
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="py-10 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={MATRICULA_TABLE_COL_COUNT}
+                    className="py-10 text-center text-muted-foreground"
+                  >
                     {hasActiveFilters
                       ? "Sin resultados para los filtros aplicados."
                       : "No hay ninguna matrícula registrada."}
@@ -2121,134 +1587,137 @@ function MatriculasPage() {
                       </TableRow>
                       {isCursoExpanded &&
                         group.matriculas.map((m) => {
-                  const isExpanded = expandedIds.has(m.ID_MATRICULA);
-                  const horarios = matriculaHorariosRows(m);
+                          const isExpanded = expandedIds.has(m.ID_MATRICULA);
+                          const horarios = matriculaHorariosRows(m);
 
-                  return (
-                    <Fragment key={m.ID_MATRICULA}>
-                      <TableRow
-                        className="cursor-pointer"
-                        aria-expanded={isExpanded}
-                        onClick={() => toggleExpanded(m.ID_MATRICULA)}
-                      >
-                        <TableCell
-                          className={MATRICULA_LIST_COL.alert}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MatriculaAlertSlot active={m.ALERTA_SUBPROGRAMADO === true} />
-                        </TableCell>
-                        <TableCell className={MATRICULA_LIST_COL.expand}>
-                          <ChevronDown
-                            className={cn(
-                              "h-4 w-4 text-muted-foreground transition-transform",
-                              isExpanded && "rotate-180",
-                            )}
-                            aria-hidden
-                          />
-                        </TableCell>
-                        <TableCell className={MATRICULA_LIST_COL.alumno}>
-                          {m.ALUMNOS?.NOMBRE_ALUMNO ? (
-                            <EntityLink type="alumno" id={m.ID_ALUMNO}>
-                              {m.ALUMNOS.NOMBRE_ALUMNO}
-                            </EntityLink>
-                          ) : (
-                            <span className="text-muted-foreground text-xs font-mono">
-                              {m.ID_ALUMNO || "—"}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className={MATRICULA_LIST_COL.especialidad}>
-                          {m.ESPECIALIDADES?.ESPECIALIDAD ?? (
-                            <span className="text-muted-foreground text-xs font-mono">
-                              {m.ESPECIALIDAD || "—"}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className={MATRICULA_LIST_COL.profesor}>
-                          {m.PROFESOR?.NOMBRE_PROFESOR ? (
-                            <EntityLink type="profesor" id={m.ID_PROFESOR}>
-                              {m.PROFESOR.NOMBRE_PROFESOR}
-                            </EntityLink>
-                          ) : (
-                            <span className="text-muted-foreground">Sin asignar</span>
-                          )}
-                        </TableCell>
-                        <TableCell
-                          className={MATRICULA_LIST_COL.estado}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex justify-center">
-                            {canWrite ? (
-                              <MatriculaEstadoToggle
-                                estado={m.ESTADO}
-                                disabled={update.isPending}
-                                onClick={() => setStatusConfirming(m)}
-                              />
-                            ) : (
-                              <MatriculaEstadoBadge estado={m.ESTADO} />
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className={MATRICULA_LIST_COL.fecha}>
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" /> {m.FECHA_ALTA ?? "—"}
-                          </div>
-                        </TableCell>
-                        <TableCell
-                          className={MATRICULA_LIST_COL.actions}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={(e) => e.stopPropagation()}
+                          return (
+                            <Fragment key={m.ID_MATRICULA}>
+                              <TableRow
+                                className="cursor-pointer"
+                                aria-expanded={isExpanded}
+                                onClick={() => toggleExpanded(m.ID_MATRICULA)}
                               >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setViewing(m)}>
-                                <Eye className="mr-2 h-4 w-4" /> Ver detalle
-                              </DropdownMenuItem>
-                              {canWrite && (
-                                <DropdownMenuItem onClick={() => setEditing(m)}>
-                                  <Pencil className="mr-2 h-4 w-4" /> Editar
-                                </DropdownMenuItem>
-                              )}
-                              {canWrite && (
-                                <DropdownMenuItem
-                                  onClick={() => setDeleting(m)}
-                                  className="text-destructive focus:text-destructive"
+                                <TableCell
+                                  className={MATRICULA_LIST_COL.alert}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" /> Eliminar
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                      {isExpanded &&
-                        (horarios.length === 0 ? (
-                          <TableRow className="bg-muted/20 hover:bg-muted/20">
-                            <TableCell colSpan={MATRICULA_TABLE_COL_COUNT} className="px-6 py-4 text-sm text-muted-foreground">
-                              Esta matrícula no tiene horarios registrados.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          <MatriculaHorariosTable
-                            layout="parent-grid"
-                            matricula={m}
-                            especialidadById={especialidadById}
-                            onRowClick={() => setViewing(m)}
-                            canWrite={canWrite}
-                            togglingHorarioId={togglingHorarioId}
-                            onToggleHorarioEstado={handleRequestHorarioEstadoToggle}
-                          />
-                        ))}
-                    </Fragment>
-                  );
+                                  <MatriculaAlertSlot active={m.ALERTA_SUBPROGRAMADO === true} />
+                                </TableCell>
+                                <TableCell className={MATRICULA_LIST_COL.expand}>
+                                  <ChevronDown
+                                    className={cn(
+                                      "h-4 w-4 text-muted-foreground transition-transform",
+                                      isExpanded && "rotate-180",
+                                    )}
+                                    aria-hidden
+                                  />
+                                </TableCell>
+                                <TableCell className={MATRICULA_LIST_COL.alumno}>
+                                  {m.ALUMNOS?.NOMBRE_ALUMNO ? (
+                                    <EntityLink type="alumno" id={m.ID_ALUMNO}>
+                                      {m.ALUMNOS.NOMBRE_ALUMNO}
+                                    </EntityLink>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs font-mono">
+                                      {m.ID_ALUMNO || "—"}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className={MATRICULA_LIST_COL.especialidad}>
+                                  {m.ESPECIALIDADES?.ESPECIALIDAD ?? (
+                                    <span className="text-muted-foreground text-xs font-mono">
+                                      {m.ESPECIALIDAD || "—"}
+                                    </span>
+                                  )}
+                                </TableCell>
+                                <TableCell className={MATRICULA_LIST_COL.profesor}>
+                                  {m.PROFESOR?.NOMBRE_PROFESOR ? (
+                                    <EntityLink type="profesor" id={m.ID_PROFESOR}>
+                                      {m.PROFESOR.NOMBRE_PROFESOR}
+                                    </EntityLink>
+                                  ) : (
+                                    <span className="text-muted-foreground">Sin asignar</span>
+                                  )}
+                                </TableCell>
+                                <TableCell
+                                  className={MATRICULA_LIST_COL.estado}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <div className="flex justify-center">
+                                    {canWrite ? (
+                                      <MatriculaEstadoToggle
+                                        estado={m.ESTADO}
+                                        disabled={update.isPending}
+                                        onClick={() => setStatusConfirming(m)}
+                                      />
+                                    ) : (
+                                      <MatriculaEstadoBadge estado={m.ESTADO} />
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className={MATRICULA_LIST_COL.fecha}>
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" /> {m.FECHA_ALTA ?? "—"}
+                                  </div>
+                                </TableCell>
+                                <TableCell
+                                  className={MATRICULA_LIST_COL.actions}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <MoreHorizontal className="h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => setViewing(m)}>
+                                        <Eye className="mr-2 h-4 w-4" /> Ver detalle
+                                      </DropdownMenuItem>
+                                      {canWrite && (
+                                        <DropdownMenuItem onClick={() => setEditing(m)}>
+                                          <Pencil className="mr-2 h-4 w-4" /> Editar
+                                        </DropdownMenuItem>
+                                      )}
+                                      {canWrite && (
+                                        <DropdownMenuItem
+                                          onClick={() => setDeleting(m)}
+                                          className="text-destructive focus:text-destructive"
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                              {isExpanded &&
+                                (horarios.length === 0 ? (
+                                  <TableRow className="bg-muted/20 hover:bg-muted/20">
+                                    <TableCell
+                                      colSpan={MATRICULA_TABLE_COL_COUNT}
+                                      className="px-6 py-4 text-sm text-muted-foreground"
+                                    >
+                                      Esta matrícula no tiene horarios registrados.
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  <MatriculaHorariosTable
+                                    layout="parent-grid"
+                                    matricula={m}
+                                    especialidadById={especialidadById}
+                                    onRowClick={() => setViewing(m)}
+                                    canWrite={canWrite}
+                                    togglingHorarioId={togglingHorarioId}
+                                    onToggleHorarioEstado={handleRequestHorarioEstadoToggle}
+                                  />
+                                ))}
+                            </Fragment>
+                          );
                         })}
                     </Fragment>
                   );
@@ -2281,66 +1750,56 @@ function MatriculasPage() {
           onClose={() => setCreating(false)}
           title="Nueva Matrícula Académica"
           submitLabel="Matricular"
-          submitting={create.isPending || syncHorarios.isPending}
+          submitting={create.isPending}
           onSubmit={async (values) => {
-            const { horariosSync, ...patch } = values;
-            await runValidatedHorariosSave(
-              values.ID_ALUMNO,
-              horariosSync?.rows ?? [],
-              async () => {
-                try {
-                  const created = await create.mutateAsync(patch);
-                  const matriculaId = created?.ID_MATRICULA;
-                  if (!matriculaId) {
-                    throw new Error("No se pudo obtener el ID de la matrícula creada.");
-                  }
-                  if (horariosSync) {
-                    await syncHorarios.mutateAsync({
-                      ...horariosSync,
-                      matriculaId,
-                    });
-                  }
-                  invalidateList();
-                  toast.success("Matrícula creada con éxito");
-                  setCreating(false);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Error al guardar");
-                }
-              },
-            );
+            try {
+              await create.mutateAsync(values);
+              invalidateList();
+              toast.success("Matrícula creada con éxito");
+              setCreating(false);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Error al guardar");
+            }
           }}
         />
       ) : null}
 
       {/* Edit Modal */}
-      {editing ? (
+      {editing && liveEditing ? (
         <MatriculaFormDialog
-          key={editing.ID_MATRICULA}
+          key={liveEditing.ID_MATRICULA}
           open
           onClose={() => setEditing(null)}
           title="Modificar Matrícula"
           submitLabel="Guardar Cambios"
-          initial={editing}
-          submitting={update.isPending || syncHorarios.isPending}
+          initial={liveEditing}
+          submitting={update.isPending}
+          grupoSlots={grupoSlots}
+          scheduleAssignmentContext={scheduleAssignmentContext}
+          tenantHorarios={tenantHorarios}
+          tenantIndividualHorarios={tenantIndividualHorarios}
+          studentConflictHorarios={editingStudentConflictHorarios}
+          occupancySesiones={occupancyMetaQuery.data?.sesiones ?? []}
+          horarioSaving={horarioSaving}
+          onHorarioMutated={invalidateHorarioSideEffects}
+          onCreateHorario={async (input) => {
+            await createHorario.mutateAsync(input);
+          }}
+          onUpdateHorario={async (id, patch) => {
+            await updateHorario.mutateAsync({ id, patch });
+          }}
+          onRemoveHorario={async (id) => {
+            await removeHorario.mutateAsync(id);
+          }}
           onSubmit={async (values) => {
-            const { horariosSync, ...patch } = values;
-            await runValidatedHorariosSave(
-              values.ID_ALUMNO,
-              horariosSync?.rows ?? [],
-              async () => {
-                try {
-                  await update.mutateAsync({ id: editing.ID_MATRICULA, patch });
-                  if (horariosSync) {
-                    await syncHorarios.mutateAsync(horariosSync);
-                  }
-                  invalidateList();
-                  toast.success("Matrícula actualizada correctamente");
-                  setEditing(null);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Error al actualizar");
-                }
-              },
-            );
+            try {
+              await update.mutateAsync({ id: liveEditing.ID_MATRICULA, patch: values });
+              invalidateList();
+              toast.success("Matrícula actualizada correctamente");
+              setEditing(null);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Error al actualizar");
+            }
           }}
         />
       ) : null}
@@ -2360,10 +1819,7 @@ function MatriculasPage() {
               <strong>{bulkCursoTarget?.nombre ?? "seleccionado"}</strong> a{" "}
               <strong>{bulkNuevoEstado}</strong>.
               {showCentroFilter && selectedCenterId ? (
-                <>
-                  {" "}
-                  Solo se incluyen matrículas del centro filtrado actualmente.
-                </>
+                <> Solo se incluyen matrículas del centro filtrado actualmente.</>
               ) : null}{" "}
               {bulkNuevoEstado === "Activo" ? (
                 <>
@@ -2394,43 +1850,6 @@ function MatriculasPage() {
               ) : (
                 "Modificar matrículas"
               )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={grupoCompletoConfirmOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            grupoCompletoProceedRef.current = null;
-            setGrupoCompletoConfirmOpen(false);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Grupo completo</AlertDialogTitle>
-            <AlertDialogDescription>{GRUPO_COMPLETO_PROMPT}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              disabled={create.isPending || update.isPending || syncHorarios.isPending}
-            >
-              Cancelar
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={create.isPending || update.isPending || syncHorarios.isPending}
-              onClick={() => {
-                void (async () => {
-                  const proceed = grupoCompletoProceedRef.current;
-                  grupoCompletoProceedRef.current = null;
-                  setGrupoCompletoConfirmOpen(false);
-                  if (proceed) await proceed();
-                })();
-              }}
-            >
-              Asignar de todos modos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2491,11 +1910,12 @@ function MatriculasPage() {
                 : "¿Activar este horario?"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {horarioStatusConfirming && isMatriculaActiva(horarioStatusConfirming.currentEstado) ? (
+              {horarioStatusConfirming &&
+              isMatriculaActiva(horarioStatusConfirming.currentEstado) ? (
                 <>
-                  Atención: Esto dará de baja al alumno del grupo asociado (si lo hay) y eliminará de
-                  forma irreversible todas sus sesiones programadas en el calendario desde el día de
-                  hoy.
+                  Atención: Esto dará de baja al alumno del grupo asociado (si lo hay) y eliminará
+                  de forma irreversible todas sus sesiones programadas en el calendario desde el día
+                  de hoy.
                 </>
               ) : (
                 <>
@@ -2516,7 +1936,8 @@ function MatriculasPage() {
             >
               {togglingHorarioId
                 ? "Guardando..."
-                : horarioStatusConfirming && isMatriculaActiva(horarioStatusConfirming.currentEstado)
+                : horarioStatusConfirming &&
+                    isMatriculaActiva(horarioStatusConfirming.currentEstado)
                   ? "Desactivar"
                   : "Activar"}
             </AlertDialogAction>
@@ -2574,6 +1995,17 @@ function MatriculaFormDialog({
   initial,
   submitting,
   onSubmit,
+  grupoSlots,
+  scheduleAssignmentContext,
+  tenantHorarios,
+  tenantIndividualHorarios,
+  studentConflictHorarios,
+  occupancySesiones,
+  horarioSaving,
+  onHorarioMutated,
+  onCreateHorario,
+  onUpdateHorario,
+  onRemoveHorario,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2582,6 +2014,17 @@ function MatriculaFormDialog({
   initial?: MatriculaRow | null;
   submitting: boolean;
   onSubmit: (values: MatriculaFormValues) => void;
+  grupoSlots?: GrupoHorarioSlot[];
+  scheduleAssignmentContext?: ScheduleAssignmentContext | null;
+  tenantHorarios?: HorarioMatricula[];
+  tenantIndividualHorarios?: HorarioMatricula[];
+  studentConflictHorarios?: HorarioMatricula[];
+  occupancySesiones?: SesionOccupancyRow[];
+  horarioSaving?: boolean;
+  onHorarioMutated?: () => void;
+  onCreateHorario?: (input: HorarioCreateInput) => Promise<void>;
+  onUpdateHorario?: (id: string, patch: HorarioUpdateInput) => Promise<void>;
+  onRemoveHorario?: (id: string) => Promise<void>;
 }) {
   const { list: alumnosList } = useAlumnos();
   const { list: especialidadesList } = useEspecialidades();
@@ -2619,14 +2062,61 @@ function MatriculaFormDialog({
   const [fechaAlta, setFechaAlta] = useState(() => seedFormState().fechaAlta);
   const [fechaBaja, setFechaBaja] = useState(() => seedFormState().fechaBaja);
   const [idProfesor, setIdProfesor] = useState(() => seedFormState().idProfesor);
-  const [horarioRows, setHorarioRows] = useState<HorarioEditRow[]>(() => seedFormState().horarioRows);
-  const [deletedHorarioIds, setDeletedHorarioIds] = useState<string[]>([]);
 
   const cursoOptions = useMemo(() => cursosForCentro(centros, idCentro), [centros, idCentro]);
   const maxHorarios = useMemo(() => {
     if (!idTarifa) return null;
     return tarifas.find((tarifa) => tarifa.ID_TARIFA === idTarifa)?.SESIONES_SEMANALES ?? null;
   }, [idTarifa, tarifas]);
+
+  const horarioLookups = useMemo(
+    () => ({
+      profesorById: new Map(profesores.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR])),
+      aulaById: new Map(aulas.map((a) => [a.ID_AULA, a.NOMBRE_AULA])),
+      tarifaById: new Map(tarifas.map((t) => [t.ID_TARIFA, t.SERVICIO])),
+      especialidadById: new Map(especialidades.map((e) => [e.ID_ESPECIALIDAD, e.ESPECIALIDAD])),
+    }),
+    [profesores, aulas, tarifas, especialidades],
+  );
+
+  const horarioSelectOptions = useMemo(
+    () => ({
+      especialidades: especialidades.map((e) => ({
+        id: e.ID_ESPECIALIDAD,
+        label: e.ESPECIALIDAD,
+      })),
+      tarifas: tarifas.map((t) => ({
+        id: t.ID_TARIFA,
+        label: t.SERVICIO,
+      })),
+      profesores: toProfesorEntityOptions(profesores),
+    }),
+    [especialidades, tarifas, profesores],
+  );
+
+  const canEditHorarios = Boolean(
+    initial?.ID_MATRICULA &&
+    onCreateHorario &&
+    onUpdateHorario &&
+    onRemoveHorario &&
+    grupoSlots &&
+    scheduleAssignmentContext &&
+    tenantHorarios &&
+    tenantIndividualHorarios &&
+    studentConflictHorarios,
+  );
+
+  const matriculaForHorarios = useMemo(() => {
+    if (!initial) return null;
+    return {
+      ...initial,
+      ESPECIALIDAD: especialidad || initial.ESPECIALIDAD,
+      ID_PROFESOR: idProfesor || initial.ID_PROFESOR,
+      ID_TARIFA: idTarifa || initial.ID_TARIFA,
+      ID_CURSO: idCurso || initial.ID_CURSO,
+      ID_CENTRO: idCentro || initial.ID_CENTRO,
+    };
+  }, [initial, especialidad, idProfesor, idTarifa, idCurso, idCentro]);
 
   useEffect(() => {
     if (!open) {
@@ -2647,23 +2137,7 @@ function MatriculaFormDialog({
     setFechaAlta(next.fechaAlta);
     setFechaBaja(next.fechaBaja);
     setIdProfesor(next.idProfesor);
-    setDeletedHorarioIds([]);
-    setHorarioRows(next.horarioRows);
   }, [open, editingKey, formReady, centros, initial]);
-
-  const removeHorarioRow = (index: number) => {
-    const row = horarioRows[index];
-    if (row?.ID_HORARIO) {
-      setDeletedHorarioIds((prev) => [...prev, row.ID_HORARIO!]);
-    }
-    setHorarioRows((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const addHorarioRow = () => {
-    setHorarioRows((prev) => [...prev, createEmptyHorarioRow(especialidad)]);
-  };
-
-  const matriculaIdForSync = initial?.ID_MATRICULA ?? "";
 
   useMatriculaOverlayEffects(open, onClose);
 
@@ -2686,22 +2160,6 @@ function MatriculaFormDialog({
           onSubmit={(e) => {
             e.preventDefault();
             if (!idAlumno.trim()) return;
-            const horariosSync = buildHorariosSyncInput(
-              matriculaIdForSync,
-              {
-                ID_ALUMNO: idAlumno.trim(),
-                ID_CENTRO: idCentro || null,
-                ID_CURSO: idCurso || null,
-                ID_TARIFA: idTarifa || null,
-                ESPECIALIDAD: especialidad || null,
-                ESTADO: estado || null,
-                FECHA_ALTA: fechaAlta || null,
-                FECHA_BAJA: fechaBaja || null,
-                ID_PROFESOR: idProfesor || null,
-              },
-              horarioRows,
-              deletedHorarioIds,
-            );
             onSubmit({
               ID_ALUMNO: idAlumno.trim(),
               ID_CENTRO: idCentro || null,
@@ -2712,7 +2170,6 @@ function MatriculaFormDialog({
               FECHA_ALTA: fechaAlta || null,
               FECHA_BAJA: fechaBaja || null,
               ID_PROFESOR: idProfesor || null,
-              ...(horariosSync ? { horariosSync } : {}),
             });
           }}
           className="space-y-4"
@@ -2737,10 +2194,7 @@ function MatriculaFormDialog({
                         </SelectItem>
                       ) : (
                         alumnos.map((alumno) => (
-                          <SelectItem
-                            key={alumno.ID_ALUMNO}
-                            value={String(alumno.ID_ALUMNO)}
-                          >
+                          <SelectItem key={alumno.ID_ALUMNO} value={String(alumno.ID_ALUMNO)}>
                             {alumno.NOMBRE_ALUMNO}
                           </SelectItem>
                         ))
@@ -2843,10 +2297,7 @@ function MatriculaFormDialog({
                     <SelectContent className="max-h-[300px] overflow-y-auto">
                       <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
                       {especialidades.map((esp) => (
-                        <SelectItem
-                          key={esp.ID_ESPECIALIDAD}
-                          value={String(esp.ID_ESPECIALIDAD)}
-                        >
+                        <SelectItem key={esp.ID_ESPECIALIDAD} value={String(esp.ID_ESPECIALIDAD)}>
                           {esp.ESPECIALIDAD}
                         </SelectItem>
                       ))}
@@ -2901,10 +2352,7 @@ function MatriculaFormDialog({
                   <SelectContent className="max-h-[300px] overflow-y-auto">
                     <SelectItem value={NONE_VALUE}>— Sin asignar —</SelectItem>
                     {profesores.map((profesor) => (
-                      <SelectItem
-                        key={profesor.ID_PROFESOR}
-                        value={String(profesor.ID_PROFESOR)}
-                      >
+                      <SelectItem key={profesor.ID_PROFESOR} value={String(profesor.ID_PROFESOR)}>
                         {profesor.NOMBRE_PROFESOR}
                       </SelectItem>
                     ))}
@@ -2912,16 +2360,37 @@ function MatriculaFormDialog({
                 </Select>
               </div>
 
-              <MatriculaHorariosEditablePanel
-                rows={horarioRows}
-                onChange={setHorarioRows}
-                onAddRow={addHorarioRow}
-                onRemoveRow={removeHorarioRow}
-                especialidades={especialidades}
-                profesores={profesores}
-                aulas={aulas}
-                maxHorarios={maxHorarios}
-              />
+              {canEditHorarios && matriculaForHorarios ? (
+                <MatriculaHorariosGroup
+                  matricula={matriculaForHorarios}
+                  horarios={matriculaHorariosRows(matriculaForHorarios)}
+                  alumnoId={matriculaForHorarios.ID_ALUMNO}
+                  centros={centros}
+                  alumnoCenterId={idCentro || matriculaForHorarios.ID_CENTRO}
+                  selectOptions={horarioSelectOptions}
+                  lookups={horarioLookups}
+                  grupoSlots={grupoSlots!}
+                  maxHorarios={maxHorarios}
+                  horarioSaving={horarioSaving ?? false}
+                  studentConflictHorarios={studentConflictHorarios!}
+                  tenantIndividualHorarios={tenantIndividualHorarios!}
+                  tenantOccupancyHorarios={tenantHorarios!}
+                  occupancySesiones={occupancySesiones ?? []}
+                  scheduleAssignmentContext={scheduleAssignmentContext ?? null}
+                  onCreateHorario={async (input) => {
+                    await onCreateHorario!(input);
+                    onHorarioMutated?.();
+                  }}
+                  onUpdateHorario={async (id, patch) => {
+                    await onUpdateHorario!(id, patch);
+                    onHorarioMutated?.();
+                  }}
+                  onRemoveHorario={async (id) => {
+                    await onRemoveHorario!(id);
+                    onHorarioMutated?.();
+                  }}
+                />
+              ) : null}
             </>
           )}
         </form>

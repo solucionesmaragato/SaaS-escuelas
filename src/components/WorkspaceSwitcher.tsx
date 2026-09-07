@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { SchoolBrandAvatar } from "@/components/workspace/SchoolBrandAvatar";
-import { homePathForRole } from "@/lib/homePath";
 import { BRAND_BLUE, MYSINCOPPA_SIDEBAR_LOGO_URL } from "@/lib/brand";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { roleBadgeClass } from "@/lib/workspace";
@@ -28,7 +27,6 @@ const WORKSPACE_ROLE_LABEL: Record<string, string> = {
 };
 
 export function WorkspaceSwitcher() {
-  const navigate = useNavigate();
   const router = useRouter();
   const {
     activePerfil,
@@ -52,10 +50,8 @@ export function WorkspaceSwitcher() {
     if (perfilId === activePerfil.ID_PERFIL || switching) return;
     setSwitching(true);
     try {
-      const next = workspaceOptions.find((o) => o.perfil.ID_PERFIL === perfilId);
       await activateWorkspace(perfilId);
       await router.invalidate();
-      navigate({ to: homePathForRole(next?.perfil.ROL), replace: true });
       toast.success("Workspace activado");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo cambiar de workspace");
@@ -78,9 +74,7 @@ export function WorkspaceSwitcher() {
           {centerName ? ` · ${centerName}` : ""}
         </div>
       </div>
-      {hasMultipleProfiles && (
-        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-      )}
+      {hasMultipleProfiles && <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
       {switching && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
     </div>
   );
@@ -92,7 +86,11 @@ export function WorkspaceSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-auto max-w-[320px] px-0 py-0 hover:bg-transparent" disabled={switching}>
+        <Button
+          variant="ghost"
+          className="h-auto max-w-[320px] px-0 py-0 hover:bg-transparent"
+          disabled={switching}
+        >
           {content}
         </Button>
       </DropdownMenuTrigger>
@@ -128,9 +126,7 @@ export function WorkspaceSwitcher() {
                   </span>
                 </div>
               </div>
-              {isActive && (
-                <span className="text-xs font-medium text-primary">Activo</span>
-              )}
+              {isActive && <span className="text-xs font-medium text-primary">Activo</span>}
             </DropdownMenuItem>
           );
         })}

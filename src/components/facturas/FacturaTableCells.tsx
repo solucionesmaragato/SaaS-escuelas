@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- table cell helpers */
 import { useState, useEffect, type MouseEvent } from "react";
 import { FileText, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -80,13 +81,7 @@ export function FacturaPdfDownloadButton({
 }) {
   const downloadTitle = title ?? label;
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8 rounded-md border border-slate-200 bg-slate-50 text-slate-600 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:bg-slate-900/20 dark:border-slate-800 dark:text-slate-400 dark:hover:bg-slate-900/40"
-      asChild
-      title={downloadTitle}
-    >
+    <Button variant="brand-outline" size="icon" className="h-8 w-8" asChild title={downloadTitle}>
       <a
         href={link}
         target="_blank"
@@ -171,12 +166,16 @@ export function FacturaOficialPdfButton({
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="shrink-0 gap-2 border-emerald-300 bg-white"
+          variant="brand-outline"
+          className="shrink-0 gap-2"
           onClick={handleClick}
           disabled={loading}
         >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
           Descargar PDF
         </Button>
       </div>
@@ -186,9 +185,9 @@ export function FacturaOficialPdfButton({
   return (
     <Button
       type="button"
-      variant="ghost"
+      variant="brand-outline"
       size="icon"
-      className="h-8 w-8 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-900 dark:bg-emerald-900/20 dark:border-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-900/40"
+      className="h-8 w-8"
       title="PDF de factura"
       aria-label="PDF de factura"
       onClick={handleClick}

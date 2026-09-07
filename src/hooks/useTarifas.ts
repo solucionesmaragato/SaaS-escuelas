@@ -1,12 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  isAdminRole,
-  isMasterRole,
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 
 export type TarifaData = {
   ID_TARIFA: string;
@@ -142,11 +137,7 @@ export function useTarifas() {
     mutationFn: async (input: TarifaCreateInput) => {
       assertCanWrite(rol);
       const payload = sanitizeTarifaPayload(input);
-      const { data, error } = await supabase
-        .from("TARIFAS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("TARIFAS").insert(payload).select().single();
       if (error) throw error;
       return mapTarifaRow(data as TarifaRow);
     },

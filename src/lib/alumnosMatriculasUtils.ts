@@ -55,9 +55,7 @@ export function compareAlphabetic(a: string, b: string): number {
 }
 
 export function sortAlphabetic<T>(items: T[], getLabel: (item: T) => string): T[] {
-  return [...items].sort((x, y) =>
-    compareAlphabetic(getLabel(x) || "", getLabel(y) || ""),
-  );
+  return [...items].sort((x, y) => compareAlphabetic(getLabel(x) || "", getLabel(y) || ""));
 }
 
 export function initialsFromName(name: string | null | undefined): string {

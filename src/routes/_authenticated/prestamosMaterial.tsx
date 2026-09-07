@@ -89,7 +89,15 @@ import {
 } from "@/components/ui/command";
 import { toast } from "sonner";
 
+type PrestamosMaterialSearch = {
+  prestamoId?: string;
+};
+
 export const Route = createFileRoute("/_authenticated/prestamosMaterial")({
+  validateSearch: (search: Record<string, unknown>): PrestamosMaterialSearch => {
+    const prestamoId = search.prestamoId;
+    return typeof prestamoId === "string" && prestamoId ? { prestamoId } : {};
+  },
   component: PrestamosMaterialPage,
 });
 
@@ -639,13 +647,7 @@ function PrestamoOverlayHeader({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {edit?.visible ? (
-          <Button
-            type="button"
-            variant="brand"
-            size="sm"
-            className="gap-2"
-            onClick={edit.onClick}
-          >
+          <Button type="button" variant="brand" size="sm" className="gap-2" onClick={edit.onClick}>
             <Pencil className="h-4 w-4" />
             Editar
           </Button>
@@ -979,6 +981,8 @@ function PrestamoCreateOverlay({
 
 function PrestamosMaterialPage() {
   const { rol, centerId } = useActiveTenant();
+  const { prestamoId } = Route.useSearch();
+  const navigate = Route.useNavigate();
 
   if (isProfesorRole(rol)) {
     return <Navigate to="/app/prestamos" replace />;
@@ -1031,13 +1035,22 @@ function PrestamosMaterialPage() {
     [list.data, overlay?.id],
   );
 
-  const handleCloseOverlay = useCallback(() => setOverlay(null), []);
+  const handleCloseOverlay = useCallback(() => {
+    setOverlay(null);
+    navigate({ search: (prev) => ({ ...prev, prestamoId: undefined }), replace: true });
+  }, [navigate]);
   const handleEditOverlay = useCallback(() => {
     setOverlay((current) => (current ? { id: current.id, mode: "edit" } : null));
   }, []);
   const handleCancelEditOverlay = useCallback(() => {
     setOverlay((current) => (current ? { id: current.id, mode: "detail" } : null));
   }, []);
+
+  useEffect(() => {
+    if (!prestamoId || !(list.data ?? []).length) return;
+    const target = (list.data ?? []).find((p) => p.ID_PRESTAMO === prestamoId);
+    if (target) setOverlay({ id: target.ID_PRESTAMO, mode: "detail" });
+  }, [prestamoId, list.data]);
 
   const handleQuickEstadoUpdate = async (row: PrestamoMaterialData, nextEstado: string) => {
     if (!canMutate) return;
@@ -1510,7 +1523,9 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
   );
   const [idReceptor, setIdReceptor] = useState(() => buildFields(editInitial).idReceptor);
   const [elemento, setElemento] = useState(() => buildFields(editInitial).elemento);
-  const [estadoMaterial, setEstadoMaterial] = useState(() => buildFields(editInitial).estadoMaterial);
+  const [estadoMaterial, setEstadoMaterial] = useState(
+    () => buildFields(editInitial).estadoMaterial,
+  );
   const [numSerie, setNumSerie] = useState(() => buildFields(editInitial).numSerie);
   const [fechaPrestamo, setFechaPrestamo] = useState(() => buildFields(editInitial).fechaPrestamo);
   const [fechaFinPrestamo, setFechaFinPrestamo] = useState(
@@ -1751,7 +1766,6 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
           payload.RECOGIDO_POR = recogidoPorId.trim() || null;
         }
 
-        console.log("FINAL PAYLOAD (FORM CREATE):", payload);
         (props as PrestamoFormDialogCreateProps).onSubmit(payload);
       }}
       className="space-y-4"
@@ -1794,7 +1808,12 @@ function PrestamoFormDialog(props: PrestamoFormDialogProps) {
         <div className="grid gap-4 sm:grid-cols-2">
           <DetailField
             label="Prestado por"
-            value={displayActorNombre(editInitial.CREADO_POR, actorLookups, profesorById, alumnoById)}
+            value={displayActorNombre(
+              editInitial.CREADO_POR,
+              actorLookups,
+              profesorById,
+              alumnoById,
+            )}
           />
           <DetailField
             label="Recogido por"

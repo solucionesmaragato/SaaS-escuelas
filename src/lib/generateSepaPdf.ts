@@ -40,18 +40,9 @@ export type MandatoSepaPdfSource = {
   IP_DIRECCION?: string | null;
   USER_AGENT?: string | null;
   HASH_EVIDENCIA?: string | null;
-  ALUMNOS?:
-    | MandatoSepaAlumnoRow
-    | MandatoSepaAlumnoRow[]
-    | null;
-  CLIENTES?:
-    | MandatoSepaClienteRow
-    | MandatoSepaClienteRow[]
-    | null;
-  CENTROS?:
-    | MandatoSepaCentroRow
-    | MandatoSepaCentroRow[]
-    | null;
+  ALUMNOS?: MandatoSepaAlumnoRow | MandatoSepaAlumnoRow[] | null;
+  CLIENTES?: MandatoSepaClienteRow | MandatoSepaClienteRow[] | null;
+  CENTROS?: MandatoSepaCentroRow | MandatoSepaCentroRow[] | null;
 };
 
 export const MANDATO_SEPA_PDF_SELECT = `
@@ -275,7 +266,14 @@ export function generateSepaPdf(input: SepaPdfInput): void {
     y,
     contentWidth,
   );
-  y = writeFieldBlock(doc, "Titular de la cuenta (Account Holder):", titular, PAGE_MARGIN_MM, y, contentWidth);
+  y = writeFieldBlock(
+    doc,
+    "Titular de la cuenta (Account Holder):",
+    titular,
+    PAGE_MARGIN_MM,
+    y,
+    contentWidth,
+  );
   y = writeFieldBlock(doc, "Numero de cuenta - IBAN:", iban, PAGE_MARGIN_MM, y, contentWidth);
 
   y += 2;
@@ -296,8 +294,7 @@ export function generateSepaPdf(input: SepaPdfInput): void {
   ];
   const userAgent = pdfSafeText(input.userAgent);
   const hashEvidencia = pdfSafeText(input.hashEvidencia);
-  const signatureBoxHeight =
-    38 + (userAgent !== "-" ? 10 : 0) + (hashEvidencia !== "-" ? 12 : 0);
+  const signatureBoxHeight = 38 + (userAgent !== "-" ? 10 : 0) + (hashEvidencia !== "-" ? 12 : 0);
 
   if (y + signatureBoxHeight > pageHeight - PAGE_MARGIN_MM) {
     doc.addPage();
@@ -370,10 +367,7 @@ export function generateSepaPdf(input: SepaPdfInput): void {
 /** Accepts either a flat input or a relational MANDATOS_SEPA row. */
 export function downloadRealSepaPdf(input: SepaPdfInput | MandatoSepaPdfSource): void {
   const isRelationalRow =
-    "ALUMNOS" in input ||
-    "CLIENTES" in input ||
-    "CENTROS" in input ||
-    "TOKEN_PUBLICO" in input;
+    "ALUMNOS" in input || "CLIENTES" in input || "CENTROS" in input || "TOKEN_PUBLICO" in input;
   const flat = isRelationalRow
     ? mapMandatoToSepaPdfInput(input as MandatoSepaPdfSource)
     : (input as SepaPdfInput);

@@ -143,7 +143,13 @@ export function useArchivosProfesor(carpeta: string | null = null) {
   });
 
   const upload = useMutation({
-    mutationFn: async ({ file, carpeta: uploadCarpeta }: { file: File; carpeta: string | null }) => {
+    mutationFn: async ({
+      file,
+      carpeta: uploadCarpeta,
+    }: {
+      file: File;
+      carpeta: string | null;
+    }) => {
       const ctx = requireStorageContext(tenantId, profesorId);
       if (!ctx) throw new Error("No hay tenant o profesor asociado.");
 
@@ -197,7 +203,9 @@ export function useArchivosProfesor(carpeta: string | null = null) {
         }
 
         const pathsToRemove = entries.map((entry) => `${path}/${entry.name}`);
-        const { error } = await supabase.storage.from(ARCHIVOS_PROFESOR_BUCKET).remove(pathsToRemove);
+        const { error } = await supabase.storage
+          .from(ARCHIVOS_PROFESOR_BUCKET)
+          .remove(pathsToRemove);
         if (error) throw error;
         return pathsToRemove;
       }

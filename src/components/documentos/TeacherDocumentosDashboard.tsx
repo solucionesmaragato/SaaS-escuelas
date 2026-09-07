@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ExternalLink, FileText, Upload } from "lucide-react";
 import { toast } from "sonner";
-import {
-  useDocumentos,
-  type DocumentoData,
-} from "@/hooks/useDocumentos";
+import { useDocumentos, type DocumentoData } from "@/hooks/useDocumentos";
 import { useActiveTenant } from "@/context/AppContext";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -93,7 +90,10 @@ function DocumentoCard({
             Sin abrir
           </Badge>
         ) : (
-          <Badge variant="outline" className="text-xs font-normal text-emerald-700 border-emerald-300">
+          <Badge
+            variant="outline"
+            className="text-xs font-normal text-emerald-700 border-emerald-300"
+          >
             Abierto
           </Badge>
         )}
@@ -124,7 +124,13 @@ function DocumentoCard({
           Abrir documento
         </Button>
         {pending ? (
-          <Button type="button" size="sm" variant="brand-outline" className="gap-1" onClick={onSign}>
+          <Button
+            type="button"
+            size="sm"
+            variant="brand-outline"
+            className="gap-1"
+            onClick={onSign}
+          >
             <Upload className="h-3.5 w-3.5" />
             Subir firmado
           </Button>
@@ -226,10 +232,7 @@ export function TeacherDocumentosDashboard({
 
   const documentos = useMemo(() => list.data?.documentos ?? [], [list.data?.documentos]);
 
-  const pendingCount = useMemo(
-    () => documentos.filter(isPendingSignature).length,
-    [documentos],
-  );
+  const pendingCount = useMemo(() => documentos.filter(isPendingSignature).length, [documentos]);
 
   const filtered = useMemo(() => {
     if (filterTab === "pendientes") {

@@ -68,7 +68,10 @@ export default {
       const oauthEmail = user.email ? normalizeEmail(user.email) : "";
 
       if (!nombre || !telefono || !email) {
-        return jsonResponse({ ok: false, error: "Faltan nombre, teléfono o correo del formulario." }, 400);
+        return jsonResponse(
+          { ok: false, error: "Faltan nombre, teléfono o correo del formulario." },
+          400,
+        );
       }
 
       if (!oauthEmail || oauthEmail !== email) {
@@ -95,7 +98,10 @@ export default {
       const result = data as Record<string, unknown> | null;
       if (!result?.ok) {
         return jsonResponse(
-          { ok: false, error: (result?.error as string | undefined) ?? "No se pudo provisionar el demo." },
+          {
+            ok: false,
+            error: (result?.error as string | undefined) ?? "No se pudo provisionar el demo.",
+          },
           400,
         );
       }
@@ -109,7 +115,10 @@ export default {
       });
     } catch (error) {
       return jsonResponse(
-        { ok: false, error: error instanceof Error ? error.message : "Error fatal en provisionar-demo." },
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : "Error fatal en provisionar-demo.",
+        },
         500,
       );
     }

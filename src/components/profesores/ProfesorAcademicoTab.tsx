@@ -321,7 +321,10 @@ export function ProfesorAcademicoTab({ profesorId }: { profesorId: string }) {
   const evaluaciones = useMemo(() => evaluacionesList.data ?? [], [evaluacionesList.data]);
 
   const alumnoById = useMemo(
-    () => new Map((gruposList.data?.diccionarioAlumnos ?? []).map((a) => [a.ID_ALUMNO, a.NOMBRE_ALUMNO])),
+    () =>
+      new Map(
+        (gruposList.data?.diccionarioAlumnos ?? []).map((a) => [a.ID_ALUMNO, a.NOMBRE_ALUMNO]),
+      ),
     [gruposList.data],
   );
   const especialidadById = useMemo(
@@ -339,7 +342,10 @@ export function ProfesorAcademicoTab({ profesorId }: { profesorId: string }) {
       new Map(
         grupos.map((g) => [
           g.ID_GRUPO,
-          { nombreGrupo: g.NOMBRE_GRUPO, nombreEspecialidad: g.TEXTO_ESPECIALIDAD || g.NOMBRE_GRUPO },
+          {
+            nombreGrupo: g.NOMBRE_GRUPO,
+            nombreEspecialidad: g.TEXTO_ESPECIALIDAD || g.NOMBRE_GRUPO,
+          },
         ]),
       ),
     [grupos],

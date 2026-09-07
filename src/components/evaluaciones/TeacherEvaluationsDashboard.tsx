@@ -146,8 +146,7 @@ function seedIndividualBatches(
     if (!existing) continue;
 
     const rubricaId =
-      existing.ID_RUBRICA &&
-      activeRubricas.some((r) => r.ID_RUBRICA === existing.ID_RUBRICA)
+      existing.ID_RUBRICA && activeRubricas.some((r) => r.ID_RUBRICA === existing.ID_RUBRICA)
         ? existing.ID_RUBRICA
         : "";
 
@@ -289,7 +288,12 @@ function parseNotaMediaForSave(
 ): { ok: true; value: number | string } | { ok: false; message: string } {
   const trimmed = notaRaw.trim();
   if (!trimmed) {
-    return { ok: false, message: contextLabel ? `Introduce la nota final para ${contextLabel}` : "Introduce la nota final" };
+    return {
+      ok: false,
+      message: contextLabel
+        ? `Introduce la nota final para ${contextLabel}`
+        : "Introduce la nota final",
+    };
   }
 
   const notaNum = Number(trimmed);
@@ -328,16 +332,11 @@ function StudentEvalCard({
   onSelect: () => void;
 }) {
   return (
-    <Card
-      className="cursor-pointer p-4 transition-colors hover:bg-muted/40"
-      onClick={onSelect}
-    >
+    <Card className="cursor-pointer p-4 transition-colors hover:bg-muted/40" onClick={onSelect}>
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 max-[349px]:flex-col max-[349px]:gap-1.5">
         <div className="min-w-0 flex-1 max-[349px]:w-full">
           <p className="break-words font-medium leading-snug">{student.nombreAlumno}</p>
-          <p className="break-words text-sm text-muted-foreground">
-            {student.nombreEspecialidad}
-          </p>
+          <p className="break-words text-sm text-muted-foreground">{student.nombreEspecialidad}</p>
         </div>
         <EvaluationStatusBadge evaluated={evaluated} />
       </div>
@@ -470,7 +469,11 @@ function TeacherIndividualEvalDialog({
           ) : (
             <div className="space-y-2">
               <Label>Trimestre *</Label>
-              <Select value={localTrimestre} onValueChange={setLocalTrimestre} disabled={submitting || readOnly}>
+              <Select
+                value={localTrimestre}
+                onValueChange={setLocalTrimestre}
+                disabled={submitting || readOnly}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -534,47 +537,47 @@ function TeacherIndividualEvalDialog({
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             {readOnly ? "Cerrar" : "Cancelar"}
           </Button>
           {!readOnly && (
-          <Button
-            type="button"
-            disabled={submitting || !notaMedia.trim()}
-            onClick={() => {
-              if (!isTrimestreValue(effectiveTrimestre)) {
-                toast.error("Selecciona un trimestre válido");
-                return;
-              }
+            <Button
+              type="button"
+              disabled={submitting || !notaMedia.trim()}
+              onClick={() => {
+                if (!isTrimestreValue(effectiveTrimestre)) {
+                  toast.error("Selecciona un trimestre válido");
+                  return;
+                }
 
-              let resultadosRubrica: Record<string, string | number> | null = null;
-              if (usesRubric && criteria.length > 0) {
-                resultadosRubrica = buildResultadosRubricaByLabel(criteria, criterioValues);
-              }
+                let resultadosRubrica: Record<string, string | number> | null = null;
+                if (usesRubric && criteria.length > 0) {
+                  resultadosRubrica = buildResultadosRubricaByLabel(criteria, criterioValues);
+                }
 
-              const parsedNota = parseNotaMediaForSave(notaMedia);
-              if (!parsedNota.ok) {
-                toast.error(parsedNota.message);
-                return;
-              }
+                const parsedNota = parseNotaMediaForSave(notaMedia);
+                if (!parsedNota.ok) {
+                  toast.error(parsedNota.message);
+                  return;
+                }
 
-              onSubmit(
-                {
-                  TRIMESTRE: effectiveTrimestre,
-                  ID_CURSO: idCurso,
-                  ID_ALUMNO: student.idAlumno,
-                  ID_ESPECIALIDAD: student.idEspecialidad,
-                  NOTA_MEDIA: parsedNota.value,
-                  COMENTARIOS: comentarios.trim() || null,
-                  ID_RUBRICA: usesRubric ? rubricaId : null,
-                  RESULTADOS_RUBRICA: usesRubric ? resultadosRubrica : null,
-                },
-                existing?.ID_EVALUACION,
-              );
-            }}
-          >
-            {submitting ? "Guardando..." : existing ? "Actualizar" : "Guardar"}
-          </Button>
+                onSubmit(
+                  {
+                    TRIMESTRE: effectiveTrimestre,
+                    ID_CURSO: idCurso,
+                    ID_ALUMNO: student.idAlumno,
+                    ID_ESPECIALIDAD: student.idEspecialidad,
+                    NOTA_MEDIA: parsedNota.value,
+                    COMENTARIOS: comentarios.trim() || null,
+                    ID_RUBRICA: usesRubric ? rubricaId : null,
+                    RESULTADOS_RUBRICA: usesRubric ? resultadosRubrica : null,
+                  },
+                  existing?.ID_EVALUACION,
+                );
+              }}
+            >
+              {submitting ? "Guardando..." : existing ? "Actualizar" : "Guardar"}
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>
@@ -615,7 +618,9 @@ function IndividualRubricAssignmentPanel({
     () =>
       students
         .filter((student) => !assignedKeys.has(studentKey(student)))
-        .sort((a, b) => a.nombreAlumno.localeCompare(b.nombreAlumno, "es", { sensitivity: "base" })),
+        .sort((a, b) =>
+          a.nombreAlumno.localeCompare(b.nombreAlumno, "es", { sensitivity: "base" }),
+        ),
     [students, assignedKeys],
   );
 
@@ -1231,23 +1236,25 @@ export function TeacherEvaluationsDashboard({
   const canWriteCurso = isCursoVigente(selectedCurso);
 
   useEffect(() => {
-    if (cursos.length === 0) {
+    const items = cursosList.data ?? [];
+    if (items.length === 0) {
       if (idCurso) setIdCurso("");
       return;
     }
-    if (cursos.some((c) => c.ID_CURSO === idCurso)) return;
-    setIdCurso(pickDefaultCursoId(cursos));
-  }, [cursos, idCurso]);
+    if (items.some((c) => c.ID_CURSO === idCurso)) return;
+    setIdCurso(pickDefaultCursoId(items));
+  }, [cursosList.data, idCurso]);
 
   const { list: horariosList } = useTeacherHorarios(profesorId, {
     idCurso,
     soloActivos: true,
   });
-  const { list: evaluacionesList, create, update, batchUpsert } = useEvaluaciones(
-    undefined,
-    undefined,
-    profesorId,
-  );
+  const {
+    list: evaluacionesList,
+    create,
+    update,
+    batchUpsert,
+  } = useEvaluaciones(undefined, undefined, profesorId);
   const { list: rubricasList } = useRubricas();
   const { list: especialidadesList } = useEspecialidades();
   const { list: gruposList } = useGrupos();
@@ -1289,7 +1296,11 @@ export function TeacherEvaluationsDashboard({
   );
 
   const alumnosNombresList = useQuery({
-    queryKey: [...tenantListKey("teacherEvalAlumnos", rol, tenantId), profesorId ?? "none", alumnoIds],
+    queryKey: [
+      ...tenantListKey("teacherEvalAlumnos", rol, tenantId),
+      profesorId ?? "none",
+      alumnoIds,
+    ],
     enabled: alumnoIds.length > 0,
     queryFn: async () => {
       let query = supabase.from("ALUMNOS").select("ID_ALUMNO, NOMBRE_ALUMNO");
@@ -1431,11 +1442,7 @@ export function TeacherEvaluationsDashboard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="space-y-2 sm:w-[220px]">
             <Label>Año académico</Label>
-            <Select
-              value={idCurso}
-              onValueChange={setIdCurso}
-              disabled={cursos.length === 0}
-            >
+            <Select value={idCurso} onValueChange={setIdCurso} disabled={cursos.length === 0}>
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona un curso" />
               </SelectTrigger>
@@ -1594,9 +1601,7 @@ export function TeacherEvaluationsDashboard({
                     ) : (
                       <Accordion type="single" collapsible className="rounded-md border px-4">
                         {individualSyntheticGroups.map((group) => {
-                          const batch = individualBatches.find(
-                            (item) => item.id === group.idGrupo,
-                          );
+                          const batch = individualBatches.find((item) => item.id === group.idGrupo);
                           const evaluatedCount = group.students.filter((s) =>
                             evaluationIndex.has(
                               evaluationLookupKey(

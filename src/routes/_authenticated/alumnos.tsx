@@ -75,6 +75,7 @@ import { toast } from "sonner";
 type AlumnosSearch = {
   alumnoId?: string;
   studentId?: string;
+  tab?: "pago";
 };
 
 export const Route = createFileRoute("/_authenticated/alumnos")({
@@ -85,7 +86,9 @@ export const Route = createFileRoute("/_authenticated/alumnos")({
         : typeof search.studentId === "string" && search.studentId
           ? search.studentId
           : undefined;
-    return alumnoId ? { alumnoId } : {};
+    if (!alumnoId) return {};
+    const tab = search.tab === "pago" ? "pago" : undefined;
+    return tab ? { alumnoId, tab } : { alumnoId };
   },
   component: AlumnosPage,
 });
@@ -133,10 +136,7 @@ function sortAlumnosByEstado(alumnos: AlumnoTree[]): AlumnoTree[] {
   });
 }
 
-function isCentroFilterChecked(
-  centroId: string,
-  selectedCentros: string[],
-): boolean {
+function isCentroFilterChecked(centroId: string, selectedCentros: string[]): boolean {
   if (selectedCentros.length === 0) return true;
   return selectedCentros.includes(centroId);
 }
@@ -158,17 +158,13 @@ function toggleCentroFilterSelection(
   return next;
 }
 
-function formatCentroFilterLabel(
-  selectedCentros: string[],
-  centros: CentroData[],
-): string {
+function formatCentroFilterLabel(selectedCentros: string[], centros: CentroData[]): string {
   if (selectedCentros.length === 0 || selectedCentros.length >= centros.length) {
     return "Todos los centros";
   }
   if (selectedCentros.length === 1) {
     return (
-      centros.find((centro) => centro.ID_CENTRO === selectedCentros[0])?.NOMBRE_CENTRO ??
-      "1 centro"
+      centros.find((centro) => centro.ID_CENTRO === selectedCentros[0])?.NOMBRE_CENTRO ?? "1 centro"
     );
   }
   if (selectedCentros.length === 2) {
@@ -191,10 +187,7 @@ function CentroMultiFilter({
   selectedCentros: string[];
   onChange: (next: string[]) => void;
 }) {
-  const allCentroIds = useMemo(
-    () => centros.map((centro) => centro.ID_CENTRO),
-    [centros],
-  );
+  const allCentroIds = useMemo(() => centros.map((centro) => centro.ID_CENTRO), [centros]);
   const label = formatCentroFilterLabel(selectedCentros, centros);
   const showAllCentros = selectedCentros.length === 0;
 
@@ -255,13 +248,10 @@ function CentroMultiFilter({
 }
 
 function AlumnosPage() {
-  const { alumnoId } = Route.useSearch();
+  const { alumnoId, tab } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { rol, centerId } = useActiveTenant();
-  const {
-    centrosOrdenados,
-    showCentroFilter,
-  } = useAdminCentroFilter();
+  const { centrosOrdenados, showCentroFilter } = useAdminCentroFilter();
   const [selectedCentros, setSelectedCentros] = useState<string[]>([]);
   const selectedCentrosKey = [...selectedCentros].sort().join(",");
   const queryFilterCenterId = useMemo(() => {
@@ -290,8 +280,7 @@ function AlumnosPage() {
 
   const showCentroSelector = shouldShowAlumnoCentroSelector(rol, centrosOrdenados.length);
   const assignedCenterId = centerId ?? null;
-  const defaultCreateCenterId =
-    selectedCentros.length === 1 ? selectedCentros[0] : null;
+  const defaultCreateCenterId = selectedCentros.length === 1 ? selectedCentros[0] : null;
 
   const alumnos = asArray<AlumnoTree>(list.data);
 
@@ -302,9 +291,7 @@ function AlumnosPage() {
       return alumnos;
     }
     const allowed = new Set(ids);
-    return alumnos.filter(
-      (alumno) => alumno.ID_CENTRO != null && allowed.has(alumno.ID_CENTRO),
-    );
+    return alumnos.filter((alumno) => alumno.ID_CENTRO != null && allowed.has(alumno.ID_CENTRO));
   }, [alumnos, showCentroFilter, selectedCentrosKey, centrosOrdenados.length]);
 
   const overlayAlumno = useMemo(
@@ -386,20 +373,26 @@ function AlumnosPage() {
   const handleCloseOverlay = useCallback(() => {
     setOverlay(null);
     navigate({
-      search: (prev) => ({ ...prev, alumnoId: undefined, studentId: undefined }),
+      search: (prev) => ({
+        ...prev,
+        alumnoId: undefined,
+        studentId: undefined,
+        tab: undefined,
+      }),
       replace: true,
     });
   }, [navigate]);
 
   const handleOpenAlumnoOverlay = useCallback(
-    (
-      id: string,
-      mode: "detail" | "edit" = "detail",
-      initialTab?: "resumen" | "pago",
-    ) => {
+    (id: string, mode: "detail" | "edit" = "detail", initialTab?: "resumen" | "pago") => {
       setOverlay({ id, mode, initialTab });
       navigate({
-        search: (prev) => ({ ...prev, alumnoId: id, studentId: undefined }),
+        search: (prev) => ({
+          ...prev,
+          alumnoId: id,
+          studentId: undefined,
+          tab: initialTab === "pago" ? "pago" : undefined,
+        }),
         replace: true,
       });
     },
@@ -422,6 +415,7 @@ function AlumnosPage() {
           ...target.search,
           alumnoId: undefined,
           studentId: undefined,
+          tab: undefined,
         },
       });
     },
@@ -469,9 +463,7 @@ function AlumnosPage() {
     draft?: { id: string; matriculas: DraftMatriculaInput[] },
   ) => {
     const payload =
-      mode === "create"
-        ? formToAlumnoCreatePayload(values)
-        : formToAlumnoUpdatePayload(values);
+      mode === "create" ? formToAlumnoCreatePayload(values) : formToAlumnoUpdatePayload(values);
     try {
       if (mode === "create") {
         const idCentro = resolveAlumnoCreateCenterId(values, {
@@ -526,9 +518,13 @@ function AlumnosPage() {
 
   useEffect(() => {
     if (alumnoId) {
-      setOverlay({ id: alumnoId, mode: "detail" });
+      setOverlay({
+        id: alumnoId,
+        mode: "detail",
+        initialTab: tab === "pago" ? "pago" : undefined,
+      });
     }
-  }, [alumnoId]);
+  }, [alumnoId, tab]);
 
   if (!canViewAlumnosModule(rol)) {
     return (
@@ -686,11 +682,7 @@ function AlumnosPage() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          <Button variant="ghost" size="icon" onClick={(e) => e.stopPropagation()}>
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -754,31 +746,31 @@ function AlumnosPage() {
           key="create"
           open
           onClose={() => setCreating(false)}
-        title="Nuevo alumno"
-        submitLabel="Crear"
-        submitting={create.isPending}
-        lookups={lookups}
-        selectOptions={selectOptions}
-        tarifaSesionesById={tarifaSesionesById}
-        grupoSlots={grupoSlots}
-        horarioSaving={horarioSaving}
-        centros={centrosOrdenados}
-        showCentroSelector={showCentroSelector}
-        assignedCenterId={assignedCenterId}
-        defaultCreateCenterId={defaultCreateCenterId}
-        onSubmit={(values, draft) => handleAlumnoSubmit(values, "create", undefined, draft)}
-        onCreateHorario={async (input) => {
-          await createHorario.mutateAsync(input);
-        }}
-        onUpdateHorario={async (id, patch) => {
-          await updateHorario.mutateAsync({ id, patch });
-          toast.success("Horario actualizado");
-        }}
-        onRemoveHorario={async (id) => {
-          await removeHorario.mutateAsync(id);
-          toast.success("Horario eliminado");
-        }}
-      />
+          title="Nuevo alumno"
+          submitLabel="Crear"
+          submitting={create.isPending}
+          lookups={lookups}
+          selectOptions={selectOptions}
+          tarifaSesionesById={tarifaSesionesById}
+          grupoSlots={grupoSlots}
+          horarioSaving={horarioSaving}
+          centros={centrosOrdenados}
+          showCentroSelector={showCentroSelector}
+          assignedCenterId={assignedCenterId}
+          defaultCreateCenterId={defaultCreateCenterId}
+          onSubmit={(values, draft) => handleAlumnoSubmit(values, "create", undefined, draft)}
+          onCreateHorario={async (input) => {
+            await createHorario.mutateAsync(input);
+          }}
+          onUpdateHorario={async (id, patch) => {
+            await updateHorario.mutateAsync({ id, patch });
+            toast.success("Horario actualizado");
+          }}
+          onRemoveHorario={async (id) => {
+            await removeHorario.mutateAsync(id);
+            toast.success("Horario eliminado");
+          }}
+        />
       ) : null}
 
       <AlertDialog open={!!statusConfirming} onOpenChange={(o) => !o && setStatusConfirming(null)}>

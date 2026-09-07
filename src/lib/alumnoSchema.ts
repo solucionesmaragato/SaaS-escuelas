@@ -6,12 +6,7 @@ import {
   sanitizeAlumnoPaymentPayload,
   sanitizeAlumnoPaymentPayloadForUpdate,
 } from "@/lib/alumnoPaymentUtils";
-import {
-  isAdminRole,
-  isDireccionRole,
-  isMasterRole,
-  isSecretariaRole,
-} from "@/lib/tenantQuery";
+import { isAdminRole, isDireccionRole, isMasterRole, isSecretariaRole } from "@/lib/tenantQuery";
 
 const optionalString = z
   .union([z.string(), z.null()])
@@ -134,7 +129,11 @@ export function toDateInputValue(value: string | null | undefined): string {
   return trimmed;
 }
 
-function readAlumnoField(record: Record<string, unknown>, upperKey: string, lowerKey: string): unknown {
+function readAlumnoField(
+  record: Record<string, unknown>,
+  upperKey: string,
+  lowerKey: string,
+): unknown {
   return record[upperKey] ?? record[lowerKey];
 }
 
@@ -201,7 +200,9 @@ export function alumnoRecordToFormValues(
   alumno: Partial<Alumno> & { NOMBRE_ALUMNO?: string },
 ): AlumnoFormValues {
   const record = alumno as Record<string, unknown>;
-  const normalizedMetodo = normalizeMetodoPago(toFormString(readAlumnoField(record, "METODO_PAGO", "metodo_pago")));
+  const normalizedMetodo = normalizeMetodoPago(
+    toFormString(readAlumnoField(record, "METODO_PAGO", "metodo_pago")),
+  );
 
   return {
     NOMBRE_ALUMNO: toFormString(readAlumnoField(record, "NOMBRE_ALUMNO", "nombre_alumno")) ?? "",
@@ -209,7 +210,9 @@ export function alumnoRecordToFormValues(
     TLF_ALUMNO: toFormString(readAlumnoField(record, "TLF_ALUMNO", "tlf_alumno")),
     MAIL: toFormString(readAlumnoField(record, "MAIL", "mail"))?.toLowerCase() ?? null,
     DNI: toFormString(readAlumnoField(record, "DNI", "dni")),
-    NACIMIENTO: toDateInputValue(toFormString(readAlumnoField(record, "NACIMIENTO", "nacimiento")) ?? ""),
+    NACIMIENTO: toDateInputValue(
+      toFormString(readAlumnoField(record, "NACIMIENTO", "nacimiento")) ?? "",
+    ),
     FOTO: toFormString(readAlumnoField(record, "FOTO", "foto")),
     ID_CENTRO: toFormString(readAlumnoField(record, "ID_CENTRO", "id_centro")),
     NOMBRE_MADRE: toFormString(readAlumnoField(record, "NOMBRE_MADRE", "nombre_madre")),
@@ -229,7 +232,9 @@ export function alumnoRecordToFormValues(
     DTO_HERMANOS_PORCENTAJE: toFormNumber(
       readAlumnoField(record, "DTO_HERMANOS_PORCENTAJE", "dto_hermanos_porcentaje"),
     ),
-    AJUSTE_MANUAL_EUR: toFormNumber(readAlumnoField(record, "AJUSTE_MANUAL_EUR", "ajuste_manual_eur")),
+    AJUSTE_MANUAL_EUR: toFormNumber(
+      readAlumnoField(record, "AJUSTE_MANUAL_EUR", "ajuste_manual_eur"),
+    ),
     TOTAL_MENSUAL: toFormNumber(readAlumnoField(record, "TOTAL_MENSUAL", "total_mensual")),
     MOTIVO_AJUSTE: toFormString(readAlumnoField(record, "MOTIVO_AJUSTE", "motivo_ajuste")),
     METODO_PAGO: normalizedMetodo || null,
@@ -241,7 +246,9 @@ export function alumnoRecordToFormValues(
     STRIPE_ID: toFormString(readAlumnoField(record, "STRIPE_ID", "stripe_id")),
     HOLDED_ID: toFormString(readAlumnoField(record, "KOREFACTU_ID", "korefactu_id")),
     AUT_MEDIOS: toFormBool(readAlumnoField(record, "AUT_MEDIOS", "aut_medios")),
-    AUT_INSTALACIONES: toFormBool(readAlumnoField(record, "AUT_INSTALACIONES", "aut_instalaciones")),
+    AUT_INSTALACIONES: toFormBool(
+      readAlumnoField(record, "AUT_INSTALACIONES", "aut_instalaciones"),
+    ),
     AUT_WEB: toFormBool(readAlumnoField(record, "AUT_WEB", "aut_web")),
     AUT_RRSS: toFormBool(readAlumnoField(record, "AUT_RRSS", "aut_rrss")),
     AUT_COMUNICACION_TOTAL: toFormBool(
@@ -293,6 +300,7 @@ export function formToAlumnoCreatePayload(values: AlumnoFormValues): AlumnoCreat
     NOMBRE_ALUMNO: values.NOMBRE_ALUMNO.trim(),
     ESTADO_ALUMNO: values.ESTADO_ALUMNO ?? "Activo",
     METODO_PAGO: normalizeMetodoPago(values.METODO_PAGO) || null,
+    KOREFACTU_ID: null,
   });
 
   return payload as AlumnoCreateInput;

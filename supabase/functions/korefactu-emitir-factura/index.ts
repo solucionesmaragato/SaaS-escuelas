@@ -109,7 +109,9 @@ function isReciboCobrado(estado: string | null | undefined): boolean {
   return estado?.trim().toLowerCase() === "cobrado";
 }
 
-function identificadorFromNumFactura(numFactura: string | null | undefined): KorefactuIdentificador {
+function identificadorFromNumFactura(
+  numFactura: string | null | undefined,
+): KorefactuIdentificador {
   const trimmed = numFactura?.trim() ?? "";
   if (!trimmed) return {};
   const parts = trimmed.split("-");
@@ -231,7 +233,9 @@ interface ReciboDireccionJson {
   provincia: string;
 }
 
-function parseReciboDireccionJson(direccion: string | null | undefined): ReciboDireccionJson | null {
+function parseReciboDireccionJson(
+  direccion: string | null | undefined,
+): ReciboDireccionJson | null {
   const raw = direccion?.trim() ?? "";
   if (!raw.startsWith("{")) return null;
   try {
@@ -401,10 +405,12 @@ async function uploadOfficialPdf(
 ): Promise<string> {
   const timestamp = Date.now();
   const storagePath = `${idCliente}/facturas/${idRecibo}_korefactu_${timestamp}.pdf`;
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, pdfBytes, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, pdfBytes, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir PDF de factura: ${uploadErr.message}`);
   }
@@ -446,7 +452,7 @@ function assertKorefactuSuccess(payload: KorefactuCreateResponse): KorefactuFact
 }
 
 function pickUuid(datos: KorefactuFacturaData): string {
-  return (datos.uuid?.trim() || datos.idFactura?.trim() || datos.id?.trim() || "");
+  return datos.uuid?.trim() || datos.idFactura?.trim() || datos.id?.trim() || "";
 }
 
 function pickIdentificador(datos: KorefactuFacturaData): KorefactuIdentificador {
@@ -493,10 +499,7 @@ async function readKorefactuJson(
   }
 }
 
-async function fetchPdfBytes(
-  url: string,
-  apiKey: string,
-): Promise<Uint8Array> {
+async function fetchPdfBytes(url: string, apiKey: string): Promise<Uint8Array> {
   const response = await fetch(url, {
     method: "GET",
     headers: korefactuAuthHeaders(apiKey),
@@ -513,7 +516,9 @@ async function fetchPdfBytes(
 
   if (!response.ok || !looksPdf) {
     const asText = new TextDecoder().decode(bytes.slice(0, 500));
-    throw new Error(redactSecrets(asText.trim() || `Error al descargar PDF (${response.status}).`, apiKey));
+    throw new Error(
+      redactSecrets(asText.trim() || `Error al descargar PDF (${response.status}).`, apiKey),
+    );
   }
   return bytes;
 }
@@ -614,7 +619,12 @@ export default {
 
         const rootPdf = normalizeBaseUrl(baseUrlPdf);
         const identificadorPdf = identificadorFromNumFactura(reciboRow.NUM_FACTURA_KOREFACTU);
-        const pdfBytes = await downloadKorefactuPdf(rootPdf, apiKeyPdf, existingUuid, identificadorPdf);
+        const pdfBytes = await downloadKorefactuPdf(
+          rootPdf,
+          apiKeyPdf,
+          existingUuid,
+          identificadorPdf,
+        );
         if (!pdfBytes) {
           return jsonError(
             "Korefactu no permite descargar el PDF en este momento. La factura sigue registrada.",
@@ -634,7 +644,9 @@ export default {
           .update({ LINK_PDF_RECIBO: publicUrl })
           .eq("ID_RECIBO", idRecibo);
         if (pdfSaveErr) {
-          throw new Error(`PDF descargado pero no se pudo guardar el recibo: ${pdfSaveErr.message}`);
+          throw new Error(
+            `PDF descargado pero no se pudo guardar el recibo: ${pdfSaveErr.message}`,
+          );
         }
 
         return successResponse({
@@ -710,7 +722,9 @@ export default {
             })
             .eq("ID_RECIBO", idRecibo);
           if (updateErr) {
-            throw new Error(`PDF descargado pero no se pudo guardar el recibo: ${updateErr.message}`);
+            throw new Error(
+              `PDF descargado pero no se pudo guardar el recibo: ${updateErr.message}`,
+            );
           }
           return successResponse({
             link: publicUrl,
@@ -770,7 +784,10 @@ export default {
           .maybeSingle();
         if (alumnoErr) throw alumnoErr;
         if (!alumno) {
-          return jsonError(destinatarioValidationError(["NIF", "CP", "municipio", "provincia"]), 400);
+          return jsonError(
+            destinatarioValidationError(["NIF", "CP", "municipio", "provincia"]),
+            400,
+          );
         }
         alumnoRow = alumno as AlumnoRow;
       }
@@ -816,7 +833,11 @@ export default {
         },
         body: JSON.stringify(korefactuBody),
       });
-      const createdPayload = await readKorefactuJson(createRes, apiKey, "Error al crear la factura en Korefactu.");
+      const createdPayload = await readKorefactuJson(
+        createRes,
+        apiKey,
+        "Error al crear la factura en Korefactu.",
+      );
       const created = assertKorefactuSuccess(createdPayload);
 
       const uuid = pickUuid(created);
@@ -829,10 +850,13 @@ export default {
         if (!uuid) {
           throw new Error("Korefactu dejo la factura en BORRADOR sin uuid para publicar.");
         }
-        const publishRes = await fetch(`${root}/api/v1/key/facturas/${encodeURIComponent(uuid)}/publicar`, {
-          method: "PUT",
-          headers: korefactuAuthHeaders(apiKey),
-        });
+        const publishRes = await fetch(
+          `${root}/api/v1/key/facturas/${encodeURIComponent(uuid)}/publicar`,
+          {
+            method: "PUT",
+            headers: korefactuAuthHeaders(apiKey),
+          },
+        );
         if (!publishRes.ok) {
           const raw = redactSecrets(await publishRes.text(), apiKey);
           throw new Error(raw.trim() || "Error al publicar la factura en Korefactu.");
@@ -853,7 +877,9 @@ export default {
         })
         .eq("ID_RECIBO", idRecibo);
       if (korefactuSaveErr) {
-        throw new Error(`Factura emitida en Korefactu pero no se pudo guardar el recibo: ${korefactuSaveErr.message}`);
+        throw new Error(
+          `Factura emitida en Korefactu pero no se pudo guardar el recibo: ${korefactuSaveErr.message}`,
+        );
       }
 
       const excelError = await tryRegenerarExcelRemesaControl(ctx.supabase, reciboRow);

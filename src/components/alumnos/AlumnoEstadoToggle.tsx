@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- shared alumno estado helpers */
 import type { AlumnoTree } from "@/hooks/useAlumnosTree";
 
 export function isAlumnoActivo(estado: string | null | undefined): boolean {

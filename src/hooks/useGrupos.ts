@@ -11,7 +11,6 @@ import {
   scopeTenantQuery,
   tenantListKey,
   workspaceListKey,
-  workspaceScopeFields,
 } from "@/lib/tenantQuery";
 
 const GRUPO_HORARIOS_EMBED = `
@@ -227,8 +226,7 @@ function scopeGruposListQuery<Q extends { eq: (column: string, value: string) =>
 
 function sortHorarioRows(horarios: GrupoHorarioRow[]): GrupoHorarioRow[] {
   return [...horarios].sort((a, b) => {
-    const dayDiff =
-      getHorarioDaySortKey(a.DIA_SEMANA) - getHorarioDaySortKey(b.DIA_SEMANA);
+    const dayDiff = getHorarioDaySortKey(a.DIA_SEMANA) - getHorarioDaySortKey(b.DIA_SEMANA);
     if (dayDiff !== 0) return dayDiff;
     return (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? "");
   });
@@ -353,12 +351,7 @@ export function nextGrupoEstadoToggleValue(
 }
 
 function assertCanWrite(rol: string | null | undefined) {
-  if (
-    isMasterRole(rol) ||
-    isAdminRole(rol) ||
-    isDireccionRole(rol) ||
-    isSecretariaRole(rol)
-  ) {
+  if (isMasterRole(rol) || isAdminRole(rol) || isDireccionRole(rol) || isSecretariaRole(rol)) {
     return;
   }
   throw new Error("No tienes permiso para gestionar grupos.");
@@ -429,8 +422,7 @@ function mapGrupos(
     const aulaNames = uniqueNonEmpty(
       horarios.map(
         (horario) =>
-          horario.AULA?.NOMBRE_AULA ??
-          (horario.ID_AULA ? aulaById.get(horario.ID_AULA) : null),
+          horario.AULA?.NOMBRE_AULA ?? (horario.ID_AULA ? aulaById.get(horario.ID_AULA) : null),
       ),
     );
 
@@ -452,14 +444,10 @@ function mapGrupos(
       NIVEL_ETAPA: row.NIVEL_ETAPA,
       PLAZAS_MAXIMAS: normalizePlazas(row.PLAZAS_MAXIMAS),
       GRUPOS_HORARIOS: grupoHorarios,
-      TEXTO_HORARIO:
-        horarios.length > 0
-          ? horarios.map(formatHorarioSlotLabel).join(", ")
-          : "—",
+      TEXTO_HORARIO: horarios.length > 0 ? horarios.map(formatHorarioSlotLabel).join(", ") : "—",
       TEXTO_PROFESOR: profesorNames.length > 0 ? profesorNames.join(", ") : "—",
       TEXTO_AULA: aulaNames.length > 0 ? aulaNames.join(", ") : "—",
-      TEXTO_ESPECIALIDAD:
-        (row.ID_ESPECIALIDAD && espById.get(row.ID_ESPECIALIDAD)) || "—",
+      TEXTO_ESPECIALIDAD: (row.ID_ESPECIALIDAD && espById.get(row.ID_ESPECIALIDAD)) || "—",
       NOMBRES_ALUMNOS: nombres,
     };
   });
@@ -490,12 +478,7 @@ export function canViewGruposNav(
   grupos: GrupoData[],
   profesorId: string | null | undefined,
 ): boolean {
-  if (
-    isMasterRole(rol) ||
-    isAdminRole(rol) ||
-    isDireccionRole(rol) ||
-    isSecretariaRole(rol)
-  ) {
+  if (isMasterRole(rol) || isAdminRole(rol) || isDireccionRole(rol) || isSecretariaRole(rol)) {
     return true;
   }
   if (isProfesorRole(rol)) {
@@ -511,8 +494,7 @@ export function useGrupos(
 ) {
   const { tenantId, centerId, rol, perfil } = useActiveTenant();
   const qc = useQueryClient();
-  const resolvedCenterId =
-    filterCenterId !== undefined ? filterCenterId : centerId;
+  const resolvedCenterId = filterCenterId !== undefined ? filterCenterId : centerId;
   const centerKey = resolvedCenterId ?? "all";
   // A specific profesorId targets a single professor's full academic picture
   // (e.g. the Profesores detail overlay), which must span every center they
@@ -565,12 +547,7 @@ export function useGrupos(
           { data: profesores, error: profError },
           { data: aulas, error: aulaError },
           { data: especialidades, error: espError },
-        ] = await Promise.all([
-          gruposQuery,
-          profQuery,
-          aulaQuery,
-          espQuery,
-        ]);
+        ] = await Promise.all([gruposQuery, profQuery, aulaQuery, espQuery]);
 
         if (error) throw error;
         if (profError) throw profError;
@@ -578,23 +555,22 @@ export function useGrupos(
         if (espError) throw espError;
 
         const grupoRows = (grupos ?? []) as GrupoRow[];
-        const alumnoIds = [
-          ...new Set(grupoRows.flatMap((row) => parseAlumnoIds(row.ID_ALUMNOS))),
-        ];
+        const alumnoIds = [...new Set(grupoRows.flatMap((row) => parseAlumnoIds(row.ID_ALUMNOS)))];
 
         let alumnosRows: AlumnoLookup[] = [];
         if (alumnoIds.length > 0) {
           let aluQuery = supabase
             .from("ALUMNOS")
-            .select("ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)");
+            .select(
+              "ID_ALUMNO, NOMBRE_ALUMNO, ID_CENTRO, MATRICULAS(ESTADO, ID_TARIFA, ESPECIALIDAD)",
+            );
           aluQuery = scopeTenantQuery(aluQuery, rol, tenantId);
           aluQuery = appendCenterFilter(aluQuery, resolvedCenterId);
           aluQuery = aluQuery.in("ID_ALUMNO", alumnoIds);
 
-          const { data: alumnos, error: aluError } = await aluQuery.order(
-            "NOMBRE_ALUMNO",
-            { ascending: true },
-          );
+          const { data: alumnos, error: aluError } = await aluQuery.order("NOMBRE_ALUMNO", {
+            ascending: true,
+          });
           if (aluError) throw aluError;
           alumnosRows = (alumnos ?? []) as AlumnoLookup[];
         }
@@ -604,13 +580,7 @@ export function useGrupos(
         const especialidadesRows = (especialidades ?? []) as EspecialidadLookup[];
 
         return {
-          grupos: mapGrupos(
-            grupoRows,
-            profesoresRows,
-            aulasRows,
-            especialidadesRows,
-            alumnosRows,
-          ),
+          grupos: mapGrupos(grupoRows, profesoresRows, aulasRows, especialidadesRows, alumnosRows),
           diccionarioAlumnos: alumnosRows,
           diccionarioProfesores: profesoresRows,
           diccionarioAulas: aulasRows,
@@ -812,10 +782,7 @@ export function useGrupos(
         if (horarioError) throw horarioError;
       }
 
-      let fetchQuery = supabase
-        .from("GRUPOS")
-        .select(GRUPO_SELECT_COLUMNS)
-        .eq("ID_GRUPO", id);
+      let fetchQuery = supabase.from("GRUPOS").select(GRUPO_SELECT_COLUMNS).eq("ID_GRUPO", id);
       if (!isMasterRole(rol)) {
         fetchQuery = fetchQuery.eq("ID_CLIENTE", tenantId);
       }

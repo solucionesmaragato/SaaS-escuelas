@@ -20,8 +20,7 @@ export function useAdminCentroFilter(options?: AdminCentroFilterOptions) {
     [centros.list.data],
   );
 
-  const showCentroFilter =
-    centrosOrdenados.length > 1 && !options?.tenantWide;
+  const showCentroFilter = centrosOrdenados.length > 1 && !options?.tenantWide;
 
   return {
     centrosOrdenados,

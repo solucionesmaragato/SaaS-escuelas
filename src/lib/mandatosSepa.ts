@@ -52,9 +52,7 @@ export async function fetchMandatosSepaByAlumnoId(alumnoId: string): Promise<Man
   return (data ?? []) as MandatoSepaRow[];
 }
 
-export async function fetchMandatoSepaByAlumnoId(
-  alumnoId: string,
-): Promise<MandatoSepaRow | null> {
+export async function fetchMandatoSepaByAlumnoId(alumnoId: string): Promise<MandatoSepaRow | null> {
   const mandatos = await fetchMandatosSepaByAlumnoId(alumnoId);
   return mandatos[0] ?? null;
 }

@@ -51,9 +51,7 @@ export async function syncWorkspaceMetadataWithRetry(
       }
     }
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("No se pudo sincronizar el workspace.");
+  throw lastError instanceof Error ? lastError : new Error("No se pudo sincronizar el workspace.");
 }
 
 const AVATAR_PALETTES = [

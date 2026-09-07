@@ -116,10 +116,15 @@ export function CargoExtraCreateDialog({
         />
 
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={handleClose} disabled={creating}>
+          <Button type="button" variant="outline" onClick={handleClose} disabled={creating}>
             Cancelar
           </Button>
-          <Button type="button" variant="brand" onClick={() => void handleSave()} disabled={creating}>
+          <Button
+            type="button"
+            variant="brand"
+            onClick={() => void handleSave()}
+            disabled={creating}
+          >
             {creating ? "Guardando..." : "Guardar cargo"}
           </Button>
         </DialogFooter>

@@ -1,6 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useCargosExtra, calcCargoExtraRowTotal, cargoExtraEstadoStatus, formatCargoExtraFecha, canEditCargoExtraRole, type CargoExtraListRow } from "@/hooks/useCargosExtra";
+import {
+  useCargosExtra,
+  calcCargoExtraRowTotal,
+  cargoExtraEstadoStatus,
+  formatCargoExtraFecha,
+  canEditCargoExtraRole,
+  type CargoExtraListRow,
+} from "@/hooks/useCargosExtra";
 import { CargoExtraCreateDialog } from "@/components/alumnos/CargoExtraCreateDialog";
 import { CargoExtraDetailOverlay } from "@/components/alumnos/CargoExtraDetailOverlay";
 import { useAlumnos } from "@/hooks/useAlumnos";
@@ -59,7 +66,11 @@ function ComprasInternasPage() {
     [centrosOrdenados],
   );
 
-  const { list, create: createCargoExtra, update: updateCargoExtra } = useCargosExtra({
+  const {
+    list,
+    create: createCargoExtra,
+    update: updateCargoExtra,
+  } = useCargosExtra({
     listFilters: {
       centerId: filterCenterId,
       estado: filtroEstado === FILTER_ALL_VALUE ? null : filtroEstado,
@@ -146,13 +157,19 @@ function ComprasInternasPage() {
                 ))
               ) : list.isError ? (
                 <TableRow>
-                  <TableCell colSpan={tableColCount} className="py-6 text-center text-sm text-destructive">
+                  <TableCell
+                    colSpan={tableColCount}
+                    className="py-6 text-center text-sm text-destructive"
+                  >
                     {(list.error as Error)?.message ?? "Error al cargar los cargos extra."}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={tableColCount} className="py-10 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={tableColCount}
+                    className="py-10 text-center text-muted-foreground"
+                  >
                     No hay cargos extra registrados.
                   </TableCell>
                 </TableRow>
@@ -173,13 +190,18 @@ function ComprasInternasPage() {
                     </TableCell>
                     <TableCell>{row.CONCEPTO}</TableCell>
                     <TableCell className="text-right">{row.CANTIDAD}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.PRECIO_UNITARIO)}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(row.PRECIO_UNITARIO)}
+                    </TableCell>
                     <TableCell className="text-right">{row.PORCENTAJE_IVA}%</TableCell>
                     <TableCell className="text-right font-medium">
                       {formatCurrency(calcCargoExtraRowTotal(row))}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={cargoExtraEstadoStatus(row.ESTADO)} className="capitalize">
+                      <StatusBadge
+                        status={cargoExtraEstadoStatus(row.ESTADO)}
+                        className="capitalize"
+                      >
                         {row.ESTADO ?? "—"}
                       </StatusBadge>
                     </TableCell>
@@ -187,7 +209,7 @@ function ComprasInternasPage() {
                     {showCentroFilter && (
                       <TableCell>
                         {row.ID_CENTRO
-                          ? centroNombreById.get(row.ID_CENTRO) ?? row.ID_CENTRO
+                          ? (centroNombreById.get(row.ID_CENTRO) ?? row.ID_CENTRO)
                           : "—"}
                       </TableCell>
                     )}

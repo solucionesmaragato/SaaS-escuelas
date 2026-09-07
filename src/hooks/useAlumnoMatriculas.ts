@@ -70,10 +70,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
     queryKey,
     enabled: !!alumnoId,
     queryFn: async () => {
-      let query = supabase
-        .from("MATRICULAS")
-        .select("*")
-        .eq("ID_ALUMNO", alumnoId!);
+      let query = supabase.from("MATRICULAS").select("*").eq("ID_ALUMNO", alumnoId!);
       query = scopeWorkspaceQuery(query, tenantId, centerId);
       const { data, error } = await query.order("FECHA_ALTA", { ascending: false });
       if (error) throw error;
@@ -96,9 +93,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
 
       const idCentro = resolveMatriculaCenterId(alumno.ID_CENTRO, centerId);
       if (!idCentro) {
-        throw new Error(
-          "No se puede crear la matrícula: el alumno no tiene centro asignado.",
-        );
+        throw new Error("No se puede crear la matrícula: el alumno no tiene centro asignado.");
       }
 
       const idCurso = input.ID_CURSO?.trim();
@@ -117,11 +112,7 @@ export function useAlumnoMatriculas(alumnoId: string | null) {
         ...workspaceScopeFields(tenantId, centerId),
         ID_CENTRO: idCentro,
       };
-      const { data, error } = await supabase
-        .from("MATRICULAS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("MATRICULAS").insert(payload).select().single();
       if (error) throw error;
       return data as Matricula;
     },

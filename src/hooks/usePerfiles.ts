@@ -1,12 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  isAdminRole,
-  isMasterRole,
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import type { ISODateTime, Rol, UUID } from "@/types/database";
 
 export interface PerfilData {
@@ -61,11 +56,7 @@ export function usePerfiles() {
       const idCliente = isMasterRole(rol) ? input.ID_CLIENTE : tenantId;
       assertCanMutate(rol, tenantId, idCliente);
       const payload = { ...input, ID_CLIENTE: idCliente };
-      const { data, error } = await supabase
-        .from("PERFILES")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("PERFILES").insert(payload).select().single();
       if (error) throw error;
       return data as PerfilData;
     },

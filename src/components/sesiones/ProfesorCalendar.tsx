@@ -46,12 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { cn } from "@/lib/utils";
 
@@ -127,11 +122,7 @@ function findGroupedSessionByHorarioId(
 
 function parseLocalCalendarDate(year: number, month: number, day: number): Date | null {
   const local = new Date(year, month - 1, day);
-  if (
-    local.getFullYear() !== year ||
-    local.getMonth() !== month - 1 ||
-    local.getDate() !== day
-  ) {
+  if (local.getFullYear() !== year || local.getMonth() !== month - 1 || local.getDate() !== day) {
     return null;
   }
   return local;
@@ -151,8 +142,7 @@ function parseSesionDate(value: string | null | undefined): Date | null {
     );
   }
 
-  const calendarMidnightMatch =
-    /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?$/.exec(trimmed);
+  const calendarMidnightMatch = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?$/.exec(trimmed);
   if (calendarMidnightMatch) {
     return parseLocalCalendarDate(
       Number(calendarMidnightMatch[1]),
@@ -256,37 +246,6 @@ function compareHoraInicio(a: string | null, b: string | null): number {
   return (a ?? "").localeCompare(b ?? "");
 }
 
-const SIN_HORA_SLOT_KEY = "sin-hora";
-
-function parseTimeToMinutes(hora: string | null): number | null {
-  if (!hora) return null;
-  const [hStr, mStr] = hora.slice(0, 5).split(":");
-  const h = parseInt(hStr, 10);
-  const m = parseInt(mStr, 10);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-function formatMinutesToTime(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function get30MinSlotKey(horaInicio: string | null): string {
-  const mins = parseTimeToMinutes(horaInicio);
-  if (mins === null) return SIN_HORA_SLOT_KEY;
-  const slotStart = Math.floor(mins / 30) * 30;
-  const slotEnd = slotStart + 30;
-  return `${formatMinutesToTime(slotStart)}-${formatMinutesToTime(slotEnd)}`;
-}
-
-function format30MinSlotLabel(slotKey: string): string {
-  if (slotKey === SIN_HORA_SLOT_KEY) return "Sin hora";
-  const [start, end] = slotKey.split("-");
-  return `${start} – ${end}`;
-}
-
 type FilterExclude =
   | "alumno"
   | "profesor"
@@ -334,9 +293,7 @@ function deriveBlockColorFromAlumnos(
   return null;
 }
 
-function deriveBlockEstadoFromAlumnos(
-  alumnos: GroupedSession["ALUMNOS_GRUPO"],
-): string | null {
+function deriveBlockEstadoFromAlumnos(alumnos: GroupedSession["ALUMNOS_GRUPO"]): string | null {
   if (alumnos.some((a) => a.COLOR_INCIDENCIA === "rojo")) return "Incidencia";
   if (alumnos.some((a) => a.ESTADO === "Incidencia")) return "Incidencia";
   if (alumnos.some((a) => a.ESTADO === "Lead")) return "Lead";
@@ -354,10 +311,7 @@ function buildTituloBloqueFromAlumnos(
   return `${textoEspecialidad} (${alumnos.length} alumnos)`;
 }
 
-function applyTypeFiltersToBlock(
-  block: GroupedSession,
-  f: FilterState,
-): GroupedSession | null {
+function applyTypeFiltersToBlock(block: GroupedSession, f: FilterState): GroupedSession | null {
   const alumnos = block.ALUMNOS_GRUPO.filter((a) => alumnoVisibleByTypeToggle(a, f));
   if (alumnos.length === 0) return null;
   if (alumnos.length === block.ALUMNOS_GRUPO.length) return block;
@@ -406,9 +360,7 @@ function passesFilters(
   if (exclude === null || exclude !== "grupo") {
     const matchesGrupo =
       f.FILTRO_GRUPOS.length === 0 ||
-      block.ALUMNOS_GRUPO.some(
-        (a) => a.ID_GRUPO != null && f.FILTRO_GRUPOS.includes(a.ID_GRUPO),
-      );
+      block.ALUMNOS_GRUPO.some((a) => a.ID_GRUPO != null && f.FILTRO_GRUPOS.includes(a.ID_GRUPO));
     if (!matchesGrupo) return false;
   }
   if (exclude === null || exclude !== "centro") {
@@ -445,32 +397,6 @@ function passesFilters(
   }
 
   return true;
-}
-
-function isMatriculaBlock(ev: GroupedSession): boolean {
-  return ev.ESTADO === "Matricula" && !ev.COLOR_INCIDENCIA;
-}
-
-function isLeadBlock(ev: GroupedSession): boolean {
-  return ev.ESTADO === "Lead";
-}
-
-function isIncidenciaBlock(ev: GroupedSession): boolean {
-  return ev.ESTADO === "Incidencia" || Boolean(ev.COLOR_INCIDENCIA);
-}
-
-function isProminentBlock(ev: GroupedSession): boolean {
-  return !isMatriculaBlock(ev);
-}
-
-function shouldAutoExpandSlot(
-  bloques: GroupedSession[],
-  verLeads: boolean,
-  verIncidencias: boolean,
-): boolean {
-  if (verLeads && bloques.some(isLeadBlock)) return true;
-  if (verIncidencias && bloques.some(isIncidenciaBlock)) return true;
-  return false;
 }
 
 function sanitizeFilterOptions(
@@ -510,34 +436,6 @@ function ensureSelectedInOptions(
   return [...options, { id: selectedId, name: fallback.name }].sort((a, b) =>
     a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
   );
-}
-
-function groupEventsBy30MinSlot(eventos: GroupedSession[]): [string, GroupedSession[]][] {
-  const map = new Map<string, GroupedSession[]>();
-  for (const ev of eventos) {
-    const slot = get30MinSlotKey(ev.HORA_INICIO);
-    const list = map.get(slot) ?? [];
-    list.push(ev);
-    map.set(slot, list);
-  }
-  for (const [, bloques] of map) {
-    bloques.sort((a, b) => compareHoraInicio(a.HORA_INICIO, b.HORA_INICIO));
-  }
-  return Array.from(map.entries()).sort(([a], [b]) => {
-    if (a === SIN_HORA_SLOT_KEY) return 1;
-    if (b === SIN_HORA_SLOT_KEY) return -1;
-    return a.localeCompare(b);
-  });
-}
-
-function getDefaultExpandedSlots(
-  slots: [string, GroupedSession[]][],
-  verLeads: boolean,
-  verIncidencias: boolean,
-): string[] {
-  return slots
-    .filter(([, bloques]) => shouldAutoExpandSlot(bloques, verLeads, verIncidencias))
-    .map(([key]) => key);
 }
 
 function resolveInitialVisibleTypes(
@@ -651,10 +549,7 @@ export function ProfesorCalendar({
     [initialSesionId, onSessionDetailClose],
   );
 
-  const {
-    centrosOrdenados,
-    showCentroFilter,
-  } = useAdminCentroFilter();
+  const { centrosOrdenados, showCentroFilter } = useAdminCentroFilter();
 
   const [selectedCenters, setSelectedCenters] = useState<string[]>([]);
   const [selectedGrupos, setSelectedGrupos] = useState<string[]>([]);
@@ -683,9 +578,7 @@ export function ProfesorCalendar({
     }
     return grupos
       .filter((grupo) => isGrupoEstadoActivo(grupo.ESTADO))
-      .sort((a, b) =>
-        a.NOMBRE_GRUPO.localeCompare(b.NOMBRE_GRUPO, "es", { sensitivity: "base" }),
-      )
+      .sort((a, b) => a.NOMBRE_GRUPO.localeCompare(b.NOMBRE_GRUPO, "es", { sensitivity: "base" }))
       .map((grupo) => ({ id: grupo.ID_GRUPO, name: grupo.NOMBRE_GRUPO }));
   }, [gruposList.data?.grupos, selectedCenters]);
 
@@ -714,9 +607,7 @@ export function ProfesorCalendar({
   const [FILTRO_HORA_FIN, setFILTRO_HORA_FIN] = useState("");
   const [verClasesNormalesState, setVerClasesNormales] = useState(initialTypes.verClasesNormales);
 
-  const verLeads = lockVisibleTypes
-    ? defaultVisibleTypes!.includes("leads")
-    : verLeadsState;
+  const verLeads = lockVisibleTypes ? defaultVisibleTypes!.includes("leads") : verLeadsState;
   const verIncidencias = lockVisibleTypes
     ? defaultVisibleTypes!.includes("incidencias")
     : verIncidenciasState;
@@ -838,7 +729,9 @@ export function ProfesorCalendar({
       .map((b) => applyTypeFiltersToBlock(b, filterState))
       .filter((b): b is GroupedSession => b !== null);
     const poolAlumno = typeFilteredBlocks.filter((b) => passesFilters(b, "alumno", filterState));
-    const poolProfesor = typeFilteredBlocks.filter((b) => passesFilters(b, "profesor", filterState));
+    const poolProfesor = typeFilteredBlocks.filter((b) =>
+      passesFilters(b, "profesor", filterState),
+    );
     const poolAula = typeFilteredBlocks.filter((b) => passesFilters(b, "aula", filterState));
     const poolEspecialidad = typeFilteredBlocks.filter((b) =>
       passesFilters(b, "especialidad", filterState),
@@ -974,12 +867,39 @@ export function ProfesorCalendar({
     setCalendarView("day");
   };
 
+  const renderDayNumber = (date: Date, isToday: boolean, compact = false) => {
+    const className = cn(
+      compact
+        ? "flex h-5 w-5 items-center justify-center self-end rounded-full text-[10px] font-semibold"
+        : "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
+      isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground",
+      "cursor-pointer hover:opacity-80",
+    );
+
+    return (
+      <button
+        type="button"
+        aria-label={`Ver día ${date.getDate()}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          navigateToDay(date);
+        }}
+        className={className}
+      >
+        {date.getDate()}
+      </button>
+    );
+  };
+
   const renderEventButton = (ev: GroupedSession, compact = true) => (
     <button
       key={ev.GROUP_KEY}
       type="button"
-      onClick={() => setSelectedEvent(ev)}
-      className={`w-full text-left rounded-md cursor-pointer hover:opacity-90 transition-opacity font-medium ${getEventColorClass(ev)} ${
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedEvent(ev);
+      }}
+      className={`w-full text-left rounded-md cursor-pointer font-medium ${getEventColorClass(ev)} ${
         compact ? "text-[10px] px-1.5 py-1 truncate" : "text-xs px-2 py-1.5"
       }`}
       title={`${ev.HORA_INICIO ?? ""} ${ev.TITULO_BLOQUE} — ${ev.TEXTO_PROFESOR}`}
@@ -1006,19 +926,17 @@ export function ProfesorCalendar({
     <button
       key={ev.GROUP_KEY}
       type="button"
-      onClick={() => setSelectedEvent(ev)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedEvent(ev);
+      }}
       className={cn(
-        "flex w-full max-w-full min-w-0 flex-col rounded-lg text-left transition-opacity hover:opacity-90",
+        "flex w-full max-w-full min-w-0 flex-col rounded-lg text-left",
         getEventColorClass(ev),
         compact ? "gap-0.5 px-2 py-1.5" : "gap-1 px-3 py-2.5",
       )}
     >
-      <span
-        className={cn(
-          "tabular-nums font-semibold",
-          compact ? "text-[11px]" : "text-sm",
-        )}
-      >
+      <span className={cn("tabular-nums font-semibold", compact ? "text-[11px]" : "text-sm")}>
         {formatHoraRange(ev)}
       </span>
       <span className={cn("break-words font-medium", compact ? "text-[11px]" : "text-sm")}>
@@ -1029,104 +947,6 @@ export function ProfesorCalendar({
       </span>
     </button>
   );
-
-  const renderCompactMatriculaBlock = (ev: GroupedSession) => (
-    <button
-      key={ev.GROUP_KEY}
-      type="button"
-      onClick={() => setSelectedEvent(ev)}
-      className={`flex items-center justify-between gap-1 w-full min-w-0 text-[10px] leading-tight px-1 py-0.5 rounded cursor-pointer hover:opacity-90 transition-opacity ${getEventColorClass(ev)}`}
-      title={`${ev.TITULO_BLOQUE} — ${ev.TEXTO_PROFESOR} · ${ev.TEXTO_AULA}`}
-    >
-      <span className="truncate min-w-0 font-medium">{ev.TITULO_BLOQUE}</span>
-      <span className="shrink-0 text-[9px] opacity-70 max-w-[38%] truncate">{ev.TEXTO_AULA}</span>
-    </button>
-  );
-
-  const renderProminentBlock = (ev: GroupedSession, dense = false) => {
-    const nombresAlumnos = ev.ALUMNOS_GRUPO.map((a) => a.TEXTO_ALUMNO).join(", ");
-    return (
-      <button
-        key={ev.GROUP_KEY}
-        type="button"
-        onClick={() => setSelectedEvent(ev)}
-        className={`w-full text-left rounded-md cursor-pointer hover:opacity-95 transition-opacity font-medium ${getEventColorClass(ev)} ${
-          dense ? "px-1.5 py-1" : "px-2 py-1.5"
-        } ${ev.ESTADO === "Lead" ? "ring-1 ring-amber-300/70" : ""} ${
-          ev.ESTADO === "Incidencia" || ev.COLOR_INCIDENCIA
-            ? "ring-1 ring-red-300/70 shadow-sm"
-            : ""
-        }`}
-        title={`${ev.TITULO_BLOQUE} — ${nombresAlumnos}`}
-      >
-        <div className={`font-semibold truncate ${dense ? "text-[10px]" : "text-xs"}`}>
-          {ev.TITULO_BLOQUE}
-        </div>
-        <div className={`truncate opacity-90 ${dense ? "text-[9px] mt-px" : "text-[10px] mt-0.5"}`}>
-          {nombresAlumnos}
-        </div>
-        <div className={`truncate opacity-70 ${dense ? "text-[9px]" : "text-[10px]"}`}>
-          {ev.TEXTO_PROFESOR} · {ev.TEXTO_AULA}
-        </div>
-      </button>
-    );
-  };
-
-  const renderTimeBlockTimeline = (
-    eventos: GroupedSession[],
-    dense = false,
-    accordionKey?: string,
-  ) => {
-    const slots = groupEventsBy30MinSlot(eventos);
-    if (slots.length === 0) {
-      return (
-        <p
-          className={`text-muted-foreground text-center ${dense ? "text-[10px] pt-2" : "text-xs py-8"}`}
-        >
-          Sin sesiones
-        </p>
-      );
-    }
-
-    const defaultExpanded = getDefaultExpandedSlots(slots, verLeads, verIncidencias);
-
-    return (
-      <Accordion
-        key={accordionKey}
-        type="multiple"
-        defaultValue={defaultExpanded}
-        className="w-full space-y-1"
-      >
-        {slots.map(([slotKey, bloques]) => {
-          const prominent = bloques.filter(isProminentBlock);
-          const matriculas = bloques.filter(isMatriculaBlock);
-
-          return (
-            <AccordionItem
-              key={slotKey}
-              value={slotKey}
-              className="border rounded-lg px-2 border-b-0"
-            >
-              <AccordionTrigger
-                className={`font-semibold text-muted-foreground tabular-nums hover:no-underline ${
-                  dense ? "text-[9px] py-2" : "text-[10px] py-3"
-                }`}
-              >
-                {format30MinSlotLabel(slotKey)}
-                <span className="font-normal ml-1 opacity-70">({bloques.length})</span>
-              </AccordionTrigger>
-              <AccordionContent className={dense ? "pb-1 pt-0" : "pb-2 pt-0"}>
-                <div className="space-y-px pl-0.5">
-                  {prominent.map((ev) => renderProminentBlock(ev, dense))}
-                  {matriculas.map((ev) => renderCompactMatriculaBlock(ev))}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          );
-        })}
-      </Accordion>
-    );
-  };
 
   const alumnosOrdenados = useMemo(() => {
     if (!selectedEvent) return [];
@@ -1173,13 +993,25 @@ export function ProfesorCalendar({
         onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
         className="w-full border rounded-md p-0.5"
       >
-        <ToggleGroupItem value="day" aria-label="Vista día" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="day"
+          aria-label="Vista día"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Día
         </ToggleGroupItem>
-        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="week"
+          aria-label="Vista semana"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Semana
         </ToggleGroupItem>
-        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="month"
+          aria-label="Vista mes"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Mes
         </ToggleGroupItem>
       </ToggleGroup>
@@ -1308,13 +1140,8 @@ export function ProfesorCalendar({
 
   return (
     <>
-      <div
-        className={cn(
-          "min-w-0 w-full",
-          embedded && "flex h-full min-h-0 flex-col gap-3",
-        )}
-      >
-      {lockVisibleTypes ? (
+      <div className={cn("min-w-0 w-full", embedded && "flex h-full min-h-0 flex-col gap-3")}>
+        {lockVisibleTypes ? (
           <div
             className={cn(
               "flex shrink-0 flex-col gap-4 md:flex-row md:items-center md:justify-between",
@@ -1342,11 +1169,7 @@ export function ProfesorCalendar({
                   Filtros
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentDate(new Date())}
-              >
+              <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
                 Hoy
               </Button>
             </div>
@@ -1405,267 +1228,299 @@ export function ProfesorCalendar({
             !hideFilters && "lg:grid-cols-4",
           )}
         >
-        {!hideFilters && (
-          <>
-            <Card
-              className={cn(
-                "hidden space-y-4 p-4 shadow-sm lg:col-span-1 lg:block",
-                embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
-              )}
-            >
-              <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                Filtros
-              </div>
-              {!filtersOpen ? filterFields : null}
-            </Card>
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto lg:hidden">
-                <SheetHeader>
-                  <SheetTitle>Filtros</SheetTitle>
-                </SheetHeader>
-                <div className="mt-4 space-y-4">{filterFields}</div>
-              </SheetContent>
-            </Sheet>
-          </>
-        )}
-
-        <div
-          className={cn(
-            "min-w-0 w-full",
-            !hideFilters && "lg:col-span-3",
-            embedded ? "flex h-full min-h-0 flex-col" : "space-y-3",
+          {!hideFilters && (
+            <>
+              <Card
+                className={cn(
+                  "hidden space-y-4 p-4 shadow-sm lg:col-span-1 lg:block",
+                  embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
+                )}
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  Filtros
+                </div>
+                {!filtersOpen ? filterFields : null}
+              </Card>
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto lg:hidden">
+                  <SheetHeader>
+                    <SheetTitle>Filtros</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-4 space-y-4">{filterFields}</div>
+                </SheetContent>
+              </Sheet>
+            </>
           )}
-        >
-          <Card
+
+          <div
             className={cn(
-              "flex min-w-0 w-full flex-col shadow-sm",
-              embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
+              "min-w-0 w-full",
+              !hideFilters && "lg:col-span-3",
+              embedded ? "flex h-full min-h-0 flex-col" : "space-y-3",
             )}
           >
-            {calendarView === "month" && (
-              <div className="mb-1 shrink-0 grid grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground">
-                <div>Lun</div>
-                <div>Mar</div>
-                <div>Mié</div>
-                <div>Jue</div>
-                <div>Vie</div>
-                <div>Sáb</div>
-                <div>Dom</div>
-              </div>
-            )}
-            {calendarView === "week" && (
-              <div className="mb-1 hidden shrink-0 grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground lg:grid">
-                <div>Lun</div>
-                <div>Mar</div>
-                <div>Mié</div>
-                <div>Jue</div>
-                <div>Vie</div>
-                <div>Sáb</div>
-                <div>Dom</div>
-              </div>
-            )}
-
-            {calendarView === "month" && (
-              <div
-                className={cn(
-                  "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60",
-                  embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
-                )}
-                style={
-                  embedded
-                    ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
-                    : { gridTemplateRows: `repeat(${monthWeekRows}, 130px)` }
-                }
-              >
-                {list.isLoading
-                  ? Array.from({ length: 35 }).map((_, i) => (
-                      <Skeleton
-                        key={i}
-                        className={cn(
-                          "h-full w-full rounded-none",
-                          !embedded && "h-[130px]",
-                        )}
-                      />
-                    ))
-                  : diasDelMes.map((dia, index) => {
-                      const dateKey = formatearFechaKey(dia.date);
-                      const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                      const isToday = dia.date.toDateString() === new Date().toDateString();
-                      const dots = [...new Set(eventosDelDia.map(eventDotClass))].slice(0, 4);
-
-                      return (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => navigateToDay(dia.date)}
-                          className={cn(
-                            "flex h-full w-full min-h-0 flex-col items-center bg-background p-1.5",
-                            !embedded && "h-[130px]",
-                            !dia.isCurrentMonth && "bg-muted/30 opacity-40",
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                              isToday
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground",
-                            )}
-                          >
-                            {dia.date.getDate()}
-                          </span>
-                          <span className="mt-1 flex flex-wrap justify-center gap-0.5">
-                            {dots.map((dotClass) => (
-                              <span
-                                key={dotClass}
-                                className={cn("size-1.5 rounded-full", dotClass)}
-                              />
-                            ))}
-                          </span>
-                        </button>
-                      );
-                    })}
-              </div>
-            )}
-
-            {calendarView === "week" && (
-              <>
-                <div
-                  className={cn(
-                    "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:hidden",
-                    !embedded && "min-h-[360px]",
-                  )}
-                >
-                  {list.isLoading
-                    ? Array.from({ length: 7 }).map((_, i) => (
-                        <Skeleton key={i} className="h-16 w-full rounded-lg" />
-                      ))
-                    : diasDeLaSemana.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
-
-                        return (
-                          <div
-                            key={index}
-                            className={cn(
-                              "rounded-lg border p-2",
-                              isToday && "border-primary/40 bg-primary/5",
-                            )}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => navigateToDay(dia.date)}
-                              className="mb-1.5 flex w-full items-baseline justify-between gap-2 text-left"
-                            >
-                              <span className="text-sm font-semibold">
-                                {weekdayShort(dia.date)} {dia.date.getDate()}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {eventosDelDia.length === 0
-                                  ? "Sin sesiones"
-                                  : `${eventosDelDia.length} ${eventosDelDia.length === 1 ? "clase" : "clases"}`}
-                              </span>
-                            </button>
-                            {eventosDelDia.length > 0 && (
-                              <div className="space-y-1">
-                                {eventosDelDia.map((ev) => renderAgendaRow(ev, true))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+            <Card
+              className={cn(
+                "flex min-w-0 w-full flex-col shadow-sm",
+                embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
+              )}
+            >
+              {calendarView === "month" && (
+                <div className="mb-1 shrink-0 grid grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground">
+                  <div>Lun</div>
+                  <div>Mar</div>
+                  <div>Mié</div>
+                  <div>Jue</div>
+                  <div>Vie</div>
+                  <div>Sáb</div>
+                  <div>Dom</div>
                 </div>
-                <div
-                  className={cn(
-                    "hidden gap-px overflow-hidden rounded-lg bg-border/60 lg:grid lg:grid-cols-7",
-                    embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
-                  )}
-                >
-                  {list.isLoading
-                    ? Array.from({ length: 7 }).map((_, i) => (
-                        <Skeleton
-                          key={i}
-                          className={cn(
-                            "h-full w-full rounded-none",
-                            !embedded && "min-h-[90px]",
-                          )}
-                        />
-                      ))
-                    : diasDeLaSemana.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
+              )}
+              {calendarView === "week" && (
+                <div className="mb-1 hidden shrink-0 grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground lg:grid">
+                  <div>Lun</div>
+                  <div>Mar</div>
+                  <div>Mié</div>
+                  <div>Jue</div>
+                  <div>Vie</div>
+                  <div>Sáb</div>
+                  <div>Dom</div>
+                </div>
+              )}
 
-                        return (
-                          <div
-                            key={index}
-                            className={cn(
-                              "flex flex-col bg-background p-1",
-                              embedded ? "h-full min-h-0" : "min-h-[90px]",
-                            )}
-                          >
+              {calendarView === "month" && (
+                <>
+                  <div
+                    className={cn(
+                      "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:hidden",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                    )}
+                    style={
+                      embedded
+                        ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                        : { gridTemplateRows: `repeat(${monthWeekRows}, 80px)` }
+                    }
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 35 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn("h-full w-full rounded-none", !embedded && "h-[80px]")}
+                          />
+                        ))
+                      : diasDelMes.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+                          const dots = [...new Set(eventosDelDia.map(eventDotClass))].slice(0, 4);
+
+                          return (
                             <button
+                              key={index}
                               type="button"
                               onClick={() => navigateToDay(dia.date)}
-                              className={`flex h-5 w-5 items-center justify-center self-end rounded-full text-[10px] font-semibold ${
-                                isToday
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground"
-                              }`}
+                              className={cn(
+                                "flex h-full w-full min-h-0 flex-col items-center bg-background p-1.5",
+                                !embedded && "h-[80px]",
+                                !dia.isCurrentMonth && "bg-muted/30 opacity-40",
+                              )}
                             >
-                              {dia.date.getDate()}
+                              <span
+                                className={cn(
+                                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                                  isToday
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {dia.date.getDate()}
+                              </span>
+                              <span className="mt-1 flex flex-wrap justify-center gap-0.5">
+                                {dots.map((dotClass) => (
+                                  <span
+                                    key={dotClass}
+                                    className={cn("size-1.5 rounded-full", dotClass)}
+                                  />
+                                ))}
+                              </span>
                             </button>
-                            <div className="mt-0.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
-                              {eventosDelDia.length === 0 ? (
-                                <p className="pt-2 text-center text-[10px] text-muted-foreground">
-                                  Sin sesiones
-                                </p>
-                              ) : (
-                                eventosDelDia.map((ev) => renderAgendaRow(ev, true))
+                          );
+                        })}
+                  </div>
+                  <div
+                    className={cn(
+                      "hidden grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:grid",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
+                    )}
+                    style={
+                      embedded
+                        ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                        : { gridTemplateRows: `repeat(${monthWeekRows}, 130px)` }
+                    }
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 35 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn("h-full w-full rounded-none", !embedded && "h-[130px]")}
+                          />
+                        ))
+                      : diasDelMes.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+
+                          return (
+                            <div
+                              key={index}
+                              onClick={() => navigateToDay(dia.date)}
+                              className={cn(
+                                "flex h-full w-full min-h-0 cursor-pointer flex-col bg-background p-1.5",
+                                !embedded && "h-[130px]",
+                                !dia.isCurrentMonth && "bg-muted/30 opacity-40",
+                              )}
+                            >
+                              {renderDayNumber(dia.date, isToday)}
+
+                              <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
+                                {eventosDelDia.map((ev) => renderEventButton(ev))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                  </div>
+                </>
+              )}
+
+              {calendarView === "week" && (
+                <>
+                  <div
+                    className={cn(
+                      "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:hidden",
+                      !embedded && "min-h-[360px]",
+                    )}
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 7 }).map((_, i) => (
+                          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                        ))
+                      : diasDeLaSemana.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+
+                          return (
+                            <div
+                              key={index}
+                              className={cn(
+                                "rounded-lg border p-2",
+                                isToday && "border-primary/40 bg-primary/5",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => navigateToDay(dia.date)}
+                                className="mb-1.5 flex w-full items-baseline justify-between gap-2 text-left"
+                              >
+                                <span className="text-sm font-semibold">
+                                  {weekdayShort(dia.date)} {dia.date.getDate()}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {eventosDelDia.length === 0
+                                    ? "Sin sesiones"
+                                    : `${eventosDelDia.length} ${eventosDelDia.length === 1 ? "clase" : "clases"}`}
+                                </span>
+                              </button>
+                              {eventosDelDia.length > 0 && (
+                                <div className="space-y-1">
+                                  {eventosDelDia.map((ev) => renderAgendaRow(ev, true))}
+                                </div>
                               )}
                             </div>
-                          </div>
-                        );
-                      })}
-                </div>
-              </>
-            )}
+                          );
+                        })}
+                  </div>
+                  <div
+                    className={cn(
+                      "hidden gap-px overflow-hidden rounded-lg bg-border/60 lg:grid lg:grid-cols-7",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                    )}
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 7 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn(
+                              "h-full w-full rounded-none",
+                              !embedded && "min-h-[90px]",
+                            )}
+                          />
+                        ))
+                      : diasDeLaSemana.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
 
-            {calendarView === "day" && (
-              <div
-                className={cn(
-                  "min-w-0 overflow-hidden rounded-lg border",
-                  embedded ? "flex min-h-0 flex-1 flex-col" : "min-h-[360px]",
-                )}
-              >
-                {list.isLoading ? (
-                  <div className="space-y-1 p-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-14 w-full rounded-md" />
-                    ))}
+                          return (
+                            <div
+                              key={index}
+                              className={cn(
+                                "flex flex-col bg-background p-1",
+                                embedded ? "h-full min-h-0" : "min-h-[90px]",
+                              )}
+                            >
+                              {renderDayNumber(dia.date, isToday, true)}
+                              <div className="mt-0.5 min-h-0 flex-1 space-y-1 overflow-y-auto">
+                                {eventosDelDia.length === 0 ? (
+                                  <p className="pt-2 text-center text-[10px] text-muted-foreground">
+                                    Sin sesiones
+                                  </p>
+                                ) : (
+                                  eventosDelDia.map((ev) => renderAgendaRow(ev, true))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                   </div>
-                ) : (
-                  <div className="flex h-full min-h-0 min-w-0 flex-col bg-background p-2">
-                    <div className="min-h-0 min-w-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto">
-                      {(mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).length === 0 ? (
-                        <p className="py-8 text-center text-sm text-muted-foreground">
-                          Sin sesiones
-                        </p>
-                      ) : (
-                        (mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).map((ev) =>
-                          renderAgendaRow(ev),
-                        )
-                      )}
+                </>
+              )}
+
+              {calendarView === "day" && (
+                <div
+                  className={cn(
+                    "min-w-0 overflow-hidden rounded-lg border",
+                    embedded ? "flex min-h-0 flex-1 flex-col" : "min-h-[360px]",
+                  )}
+                >
+                  {list.isLoading ? (
+                    <div className="space-y-1 p-2">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Skeleton key={i} className="h-14 w-full rounded-md" />
+                      ))}
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
+                  ) : (
+                    <div className="flex h-full min-h-0 min-w-0 flex-col bg-background p-2">
+                      <div className="min-h-0 min-w-0 flex-1 space-y-2 overflow-x-hidden overflow-y-auto">
+                        {(mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).length ===
+                        0 ? (
+                          <p className="py-8 text-center text-sm text-muted-foreground">
+                            Sin sesiones
+                          </p>
+                        ) : (
+                          (mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).map((ev) =>
+                            renderAgendaRow(ev),
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
-      </div>
       </div>
 
       <Dialog open={!!selectedEvent} onOpenChange={handleEventDetailOpenChange}>

@@ -153,7 +153,8 @@ function extractBookingStartTimeIso(event: unknown): string | undefined {
 
   const root = event as Record<string, unknown>;
   const detail = root.detail;
-  const detailObj = detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
+  const detailObj =
+    detail && typeof detail === "object" ? (detail as Record<string, unknown>) : undefined;
 
   const candidates = [root, detailObj, detailObj?.data, root.data];
 
@@ -230,27 +231,30 @@ function useDemoCalBookingData(
   const bookingPollStartedRef = useRef(false);
   const meetingConfirmedRef = useRef(false);
 
-  const handleBookingSuccess = useCallback(async (startTimeIso?: string) => {
-    const optimisticStart = parseBookingStartTimeIso(startTimeIso);
-    if (optimisticStart) {
-      setMeetingAt(optimisticStart);
-      if (!meetingConfirmedRef.current) {
-        meetingConfirmedRef.current = true;
-        onMeetingConfirmed?.();
+  const handleBookingSuccess = useCallback(
+    async (startTimeIso?: string) => {
+      const optimisticStart = parseBookingStartTimeIso(startTimeIso);
+      if (optimisticStart) {
+        setMeetingAt(optimisticStart);
+        if (!meetingConfirmedRef.current) {
+          meetingConfirmedRef.current = true;
+          onMeetingConfirmed?.();
+        }
       }
-    }
 
-    if (bookingPollStartedRef.current) return;
-    bookingPollStartedRef.current = true;
+      if (bookingPollStartedRef.current) return;
+      bookingPollStartedRef.current = true;
 
-    await pollMeetingAtAfterBooking(activePerfil.ID_CLIENTE, (bookedAt) => {
-      setMeetingAt(bookedAt);
-      if (!meetingConfirmedRef.current) {
-        meetingConfirmedRef.current = true;
-        onMeetingConfirmed?.();
-      }
-    });
-  }, [activePerfil.ID_CLIENTE, onMeetingConfirmed]);
+      await pollMeetingAtAfterBooking(activePerfil.ID_CLIENTE, (bookedAt) => {
+        setMeetingAt(bookedAt);
+        if (!meetingConfirmedRef.current) {
+          meetingConfirmedRef.current = true;
+          onMeetingConfirmed?.();
+        }
+      });
+    },
+    [activePerfil.ID_CLIENTE, onMeetingConfirmed],
+  );
 
   return {
     tlfReal,
@@ -400,7 +404,10 @@ type DemoCalComBannerProps = {
   sessionAccessToken: string | null | undefined;
 };
 
-export function DemoCalComBanner({ activePerfil, sessionAccessToken: _sessionAccessToken }: DemoCalComBannerProps) {
+export function DemoCalComBanner({
+  activePerfil,
+  sessionAccessToken: _sessionAccessToken,
+}: DemoCalComBannerProps) {
   const calComUrl = (import.meta.env.VITE_CAL_COM_URL as string | undefined)?.trim() ?? "";
   const calLink = parseCalLink(calComUrl);
   const enabled = isDemoTenantId(activePerfil.ID_CLIENTE) && calLink.length > 0;
@@ -412,11 +419,14 @@ export function DemoCalComBanner({ activePerfil, sessionAccessToken: _sessionAcc
   const bookingModalDismissedRef = useRef(false);
   const embedKey = `${calLink}-${phoneE164 ?? "no-phone"}`;
 
-  const handleEmbedBookingSuccess = useCallback(async (startTimeIso?: string) => {
-    setBookingModalOpen(false);
-    setWelcomeModalOpen(false);
-    await handleBookingSuccess(startTimeIso);
-  }, [handleBookingSuccess]);
+  const handleEmbedBookingSuccess = useCallback(
+    async (startTimeIso?: string) => {
+      setBookingModalOpen(false);
+      setWelcomeModalOpen(false);
+      await handleBookingSuccess(startTimeIso);
+    },
+    [handleBookingSuccess],
+  );
 
   useEffect(() => {
     if (!enabled || !bookingLoaded || hasBooking) return;
@@ -506,7 +516,9 @@ export function DemoCalComBanner({ activePerfil, sessionAccessToken: _sessionAcc
         <DialogContent className="flex h-[90vh] max-h-[90vh] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col gap-4 overflow-hidden sm:max-w-5xl">
           <DialogHeader className="shrink-0">
             <DialogTitle>Agenda tu llamada</DialogTitle>
-            <DialogDescription>Elige fecha y hora para hablar con el equipo de Sincoppa.</DialogDescription>
+            <DialogDescription>
+              Elige fecha y hora para hablar con el equipo de Sincoppa.
+            </DialogDescription>
           </DialogHeader>
           <DemoCalEmbed
             calLink={calLink}

@@ -9,7 +9,7 @@ import {
 } from "@/hooks/useIncidencias";
 import { useActiveTenant } from "@/context/AppContext";
 import { canWriteUi } from "@/lib/rbac";
-import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import { isMasterRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import { supabase } from "@/integrations/supabase/client";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -121,13 +121,13 @@ function normalizeRpcEspecialidades(data: unknown): EspecialidadOption[] {
         ESPECIALIDAD: String(record.ESPECIALIDAD ?? record.especialidad ?? record.NOMBRE ?? "—"),
       };
     })
-    .filter((item) => item.ID_ESPECIALIDAD && !seen.has(item.ID_ESPECIALIDAD) && seen.add(item.ID_ESPECIALIDAD));
+    .filter(
+      (item) =>
+        item.ID_ESPECIALIDAD && !seen.has(item.ID_ESPECIALIDAD) && seen.add(item.ID_ESPECIALIDAD),
+    );
 }
 
-function buildAlumnoOptions(
-  allowedIds: string[],
-  nombreById: Map<string, string>,
-): AlumnoOption[] {
+function buildAlumnoOptions(allowedIds: string[], nombreById: Map<string, string>): AlumnoOption[] {
   return allowedIds
     .map((id) => ({ id, nombre: nombreById.get(id) ?? "" }))
     .filter((item) => item.nombre.trim())
@@ -143,10 +143,7 @@ function IncidenciaCard({ row, onOpen }: { row: IncidenciaData; onOpen: () => vo
       : formatFecha(row.FECHA_EXACTA);
 
   return (
-    <Card
-      className="cursor-pointer p-4 transition-colors hover:bg-muted/40"
-      onClick={onOpen}
-    >
+    <Card className="cursor-pointer p-4 transition-colors hover:bg-muted/40" onClick={onOpen}>
       <div className="flex min-w-0 items-start justify-between gap-2">
         <p className="min-w-0 flex-1 truncate font-medium leading-snug">{alumno}</p>
         <StatusBadge status={incidenciaTipoBadgeStatus(row.TIPO_INCIDENCIA)} className="shrink-0">
@@ -378,15 +375,15 @@ function TeacherIncidenciaFormDialog({
     queryKey: ["teacher-incidencias-consulta-esp", tenantId ?? "", idAlumno, profesorId ?? ""],
     enabled: open && isConsulta && !!idAlumno.trim() && !!profesorId?.trim(),
     queryFn: async () => {
-      let horariosQuery = supabase
-        .from("HORARIOS_MATRICULAS")
-        .select("ID_ESPECIALIDAD")
+      let horariosQuery = supabase.from("HORARIOS_MATRICULAS").select("ID_ESPECIALIDAD");
+      if (!isMasterRole(rol)) {
+        horariosQuery = horariosQuery.eq("ID_CLIENTE", tenantId);
+      }
+      const { data: horarios, error } = await horariosQuery
         .eq("ID_ALUMNO", idAlumno.trim())
         .eq("ESTADO", "Activo")
         .eq("ID_PROFESOR", profesorId!.trim())
         .not("ID_ESPECIALIDAD", "is", null);
-      horariosQuery = scopeTenantQuery(horariosQuery, rol, tenantId);
-      const { data: horarios, error } = await horariosQuery;
       if (error) throw error;
 
       const espIds = [
@@ -472,7 +469,8 @@ function TeacherIncidenciaFormDialog({
       ID_ALUMNO: idAlumno.trim(),
       TIPO_INCIDENCIA: tipoIncidencia,
       NOTAS: notas.trim() || null,
-      ID_PROFESOR: isRecuperacion && !isEditing ? profesorId!.trim() : idProfesor.trim() || profesorId || null,
+      ID_PROFESOR:
+        isRecuperacion && !isEditing ? profesorId!.trim() : idProfesor.trim() || profesorId || null,
       ID_ESPECIALIDAD: idEspecialidad.trim() || null,
       FECHA_EXACTA: null,
       HORA_INICIO: null,
@@ -589,7 +587,11 @@ function TeacherIncidenciaFormDialog({
           {isFalta ? (
             <div className="space-y-2">
               <Label>Sesión</Label>
-              <Select value={idSesion || undefined} onValueChange={setIdSesion} disabled={!idAlumno}>
+              <Select
+                value={idSesion || undefined}
+                onValueChange={setIdSesion}
+                disabled={!idAlumno}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar sesión" />
                 </SelectTrigger>
@@ -658,7 +660,11 @@ function TeacherIncidenciaFormDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Fecha</Label>
-                  <Input type="date" value={fechaExacta} onChange={(e) => setFechaExacta(e.target.value)} />
+                  <Input
+                    type="date"
+                    value={fechaExacta}
+                    onChange={(e) => setFechaExacta(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Aula</Label>
@@ -680,7 +686,11 @@ function TeacherIncidenciaFormDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Hora inicio</Label>
-                  <Input type="time" value={horaInicio} onChange={(e) => setHoraInicio(e.target.value)} />
+                  <Input
+                    type="time"
+                    value={horaInicio}
+                    onChange={(e) => setHoraInicio(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Hora fin</Label>
@@ -695,11 +705,7 @@ function TeacherIncidenciaFormDialog({
               <div className="space-y-2">
                 <Label>Especialidad (opcional)</Label>
                 <Select
-                  value={
-                    idEspecialidad.trim()
-                      ? idEspecialidad
-                      : CONSULTA_SIN_ESPECIALIDAD
-                  }
+                  value={idEspecialidad.trim() ? idEspecialidad : CONSULTA_SIN_ESPECIALIDAD}
                   onValueChange={(value) =>
                     setIdEspecialidad(value === CONSULTA_SIN_ESPECIALIDAD ? "" : value)
                   }
@@ -727,9 +733,7 @@ function TeacherIncidenciaFormDialog({
                       </SelectItem>
                     ) : (
                       <>
-                        <SelectItem value={CONSULTA_SIN_ESPECIALIDAD}>
-                          Sin especialidad
-                        </SelectItem>
+                        <SelectItem value={CONSULTA_SIN_ESPECIALIDAD}>Sin especialidad</SelectItem>
                         {(consultaEspecialidadesQuery.data ?? []).map((esp) => (
                           <SelectItem key={esp.ID_ESPECIALIDAD} value={esp.ID_ESPECIALIDAD}>
                             {esp.ESPECIALIDAD}
@@ -771,9 +775,7 @@ function TeacherIncidenciaFormDialog({
           <Button
             type="button"
             variant="brand"
-            disabled={
-              submitting || (!isEditing && isRecuperacion && hasZeroSaldoRecuperaciones)
-            }
+            disabled={submitting || (!isEditing && isRecuperacion && hasZeroSaldoRecuperaciones)}
             onClick={() => void handleSubmit()}
           >
             {submitting ? "Guardando..." : isEditing ? "Guardar cambios" : "Registrar"}
@@ -816,13 +818,13 @@ export function TeacherIncidenciasDashboard() {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
-      let query = supabase
-        .from("SESIONES")
-        .select("ID_ALUMNO")
+      let sesionesQuery = supabase.from("SESIONES").select("ID_ALUMNO");
+      if (!isMasterRole(rol)) {
+        sesionesQuery = sesionesQuery.eq("ID_CLIENTE", tenantId);
+      }
+      const { data, error } = await sesionesQuery
         .eq("ID_PROFESOR", profesorId!.trim())
         .not("ID_ALUMNO", "is", null);
-      query = scopeTenantQuery(query, rol, tenantId);
-      const { data, error } = await query;
       if (error) throw error;
       const ids = new Set<string>();
       for (const row of data ?? []) {
@@ -982,10 +984,7 @@ export function TeacherIncidenciasDashboard() {
         ) : null}
       </div>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as IncidenciaTab)}
-      >
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as IncidenciaTab)}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="faltas">Faltas ({faltasRows.length})</TabsTrigger>
           <TabsTrigger value="recuperaciones">

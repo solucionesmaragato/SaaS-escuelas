@@ -29,14 +29,17 @@ import {
   emitKorefactuForRemesaRecibos,
   invokeGenerarZipRecibosRemesa,
   VERIFACTU_EXITO_TOAST,
+  encolarRemesaPostProceso,
+  invokeProcesarRemesaJob,
+  resumePendingRemesaJobs,
+  remesaGeneracionJobsQueryKey,
+  fetchActiveRemesaGeneracionJobs,
+  registrarAvisoRemesaXmlFallido,
+  type ControlRemesaRow,
+  type ControlRemesaUpdatePatch,
 } from "@/hooks/useRemesas";
-import { invokeGenerarPdfBorradorRecibo, invokeGenerarExcelRemesaControl } from "@/hooks/useVentasLineas";
-import { normalizeEstadoPago } from "@/hooks/useRecibos";
-import {
-  useCentros,
-  type CentroData,
-  type CursoEscolarData,
-} from "@/hooks/useCentros";
+import { invokeGenerarExcelRemesaControl } from "@/hooks/useVentasLineas";
+import { useCentros, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
 import { useActiveTenant, useApp } from "@/context/AppContext";
 import type { WorkspaceOption } from "@/lib/workspaceProfiles";
 import { canWriteUi, hasPermission } from "@/lib/rbac";
@@ -86,7 +89,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+type RemesasSearch = {
+  remesaId?: string;
+};
+
 export const Route = createFileRoute("/_authenticated/remesas")({
+  validateSearch: (search: Record<string, unknown>): RemesasSearch => {
+    const remesaId = search.remesaId;
+    return typeof remesaId === "string" && remesaId.trim() ? { remesaId: remesaId.trim() } : {};
+  },
   component: RemesasPage,
 });
 
@@ -316,6 +327,7 @@ async function executeGenerarRemesaSubmit({
 }
 
 function RemesasPage() {
+  const { remesaId } = Route.useSearch();
   const { tenantId, rol } = useActiveTenant();
   const qc = useQueryClient();
   const canWrite = canWriteUi(rol, "remesas:write");
@@ -346,10 +358,10 @@ function RemesasPage() {
 
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<any | null>(null);
+  const [editing, setEditing] = useState<ControlRemesaRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [generatingRemesa, setGeneratingRemesa] = useState(false);
-  const [deleting, setDeleting] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState<ControlRemesaRow | null>(null);
   const [sendingRemesaId, setSendingRemesaId] = useState<string | null>(null);
   const [validatingRemesaId, setValidatingRemesaId] = useState<string | null>(null);
   const [confirmEnviarRemesa, setConfirmEnviarRemesa] = useState<{
@@ -366,6 +378,33 @@ function RemesasPage() {
   const [generatingZipRemesaId, setGeneratingZipRemesaId] = useState<string | null>(null);
   const [generatingExcelRemesaId, setGeneratingExcelRemesaId] = useState<string | null>(null);
   const duplicatePaymentPromptResolverRef = useRef<((include: boolean) => void) | null>(null);
+  const resumedJobsRef = useRef(false);
+  const prevActiveRemesaJobsCountRef = useRef<number | null>(null);
+
+  const activeRemesaJobsQuery = useQuery({
+    queryKey: remesaGeneracionJobsQueryKey(tenantId, rol),
+    queryFn: () => fetchActiveRemesaGeneracionJobs(tenantId, rol),
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? 5000 : false),
+  });
+
+  const activeRemesaJobsCount = activeRemesaJobsQuery.data?.length ?? 0;
+
+  useEffect(() => {
+    const prev = prevActiveRemesaJobsCountRef.current;
+    prevActiveRemesaJobsCountRef.current = activeRemesaJobsCount;
+
+    if (prev !== null && activeRemesaJobsCount < prev) {
+      void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+    }
+  }, [activeRemesaJobsCount, qc, rol, tenantId]);
+
+  useEffect(() => {
+    if (!canWrite || resumedJobsRef.current) return;
+    resumedJobsRef.current = true;
+    void resumePendingRemesaJobs(tenantId, rol).then(() => {
+      void qc.invalidateQueries({ queryKey: remesaGeneracionJobsQueryKey(tenantId, rol) });
+    });
+  }, [canWrite, tenantId, rol, qc]);
 
   const promptDuplicatePaymentInclusion = (alumnoNombre: string) =>
     new Promise<boolean>((resolve) => {
@@ -470,14 +509,29 @@ function RemesasPage() {
       try {
         xmlLink = await invokeGenerarXmlSepaRemesa(payload, includedReciboIds);
       } catch (xmlErr) {
-        toast.error(collectErrorText(xmlErr) || "Error al generar el XML SEPA. La remesa sigue Generada.");
+        const xmlErrorText = collectErrorText(xmlErr) || "Error al generar el XML SEPA.";
+        try {
+          await registrarAvisoRemesaXmlFallido(payload, xmlErrorText);
+          void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+        } catch (avisoErr) {
+          console.error("[executeEnviarRemesa] aviso XML fallido:", avisoErr);
+        }
+        toast.error(`${xmlErrorText} La remesa sigue Generada.`);
         return;
       }
 
       if (!xmlLink) {
+        try {
+          await registrarAvisoRemesaXmlFallido(payload, "No se pudo generar el XML SEPA.");
+          void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+        } catch (avisoErr) {
+          console.error("[executeEnviarRemesa] aviso XML fallido:", avisoErr);
+        }
         toast.error("No se pudo generar el XML SEPA. La remesa sigue Generada.");
         return;
       }
+
+      void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
 
       const { cobradosConUuid, failures, excelErrors } =
         await emitKorefactuForRemesaRecibos(includedReciboIds);
@@ -590,17 +644,37 @@ function RemesasPage() {
     if (!query.trim()) return rows;
     const q = query.toLowerCase();
     return rows.filter(
-      (r: any) =>
+      (r: ControlRemesaRow) =>
         r.MES_PERIODO?.toLowerCase().includes(q) ||
         r.ESTADO?.toLowerCase().includes(q) ||
         r.ID_REMESA?.toLowerCase().includes(q) ||
-        centroNameById.get(r.ID_CENTRO ?? "")?.toLowerCase().includes(q) ||
-        cursoNameById.get(r.ID_CURSO ?? "")?.toLowerCase().includes(q),
+        centroNameById
+          .get(r.ID_CENTRO ?? "")
+          ?.toLowerCase()
+          .includes(q) ||
+        cursoNameById
+          .get(r.ID_CURSO ?? "")
+          ?.toLowerCase()
+          .includes(q),
     );
   }, [list.data, query, centroNameById, cursoNameById]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    if (!remesaId || list.isLoading) return;
+    const rows = list.data ?? [];
+    const index = rows.findIndex(
+      (row: { ID_REMESA?: string | null }) => row.ID_REMESA === remesaId,
+    );
+    if (index < 0) return;
+    setQuery("");
+    const targetPage = Math.floor(index / PAGE_SIZE) + 1;
+    if (targetPage !== page) {
+      setPage(targetPage);
+    }
+  }, [remesaId, list.data, list.isLoading, page]);
 
   if (!hasPermission(rol, "remesas:write")) {
     return (
@@ -624,6 +698,21 @@ function RemesasPage() {
           )
         }
       />
+
+      {(activeRemesaJobsQuery.data?.length ?? 0) > 0 && (
+        <Alert>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <AlertTitle>Post-proceso de remesa en curso</AlertTitle>
+          <AlertDescription>
+            {activeRemesaJobsQuery.data?.map((job) => (
+              <span key={job.ID_JOB} className="block">
+                {job.MES_PERIODO}: PDF {job.PDF_OK + job.PDF_FAIL}/{job.PDF_TOTAL}
+                {job.EXCEL_OK ? " · Excel listo" : " · Excel pendiente"}
+              </span>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card className="p-4">
         {/* Buscador reactivo */}
@@ -679,7 +768,7 @@ function RemesasPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                pageRows.map((r: any) => {
+                pageRows.map((r: ControlRemesaRow) => {
                   const remesaEstado = normalizeRemesaEstado(r.ESTADO);
 
                   return (
@@ -687,6 +776,7 @@ function RemesasPage() {
                       key={r.ID_REMESA}
                       className={cn(
                         canWrite && "cursor-pointer transition-colors hover:bg-muted/50",
+                        remesaId === r.ID_REMESA && "bg-primary/5 ring-2 ring-primary ring-inset",
                       )}
                       onClick={canWrite ? () => setEditing(r) : undefined}
                     >
@@ -832,69 +922,40 @@ function RemesasPage() {
           try {
             const result = await generarRemesaMensual.mutateAsync(payload);
             const count = result?.recibos_generados ?? 0;
+            const idRemesa = result?.id_remesa?.trim();
 
-            const { data: recibos, error: recibosErr } = await supabase
-              .from("RECIBOS_MENSUALES")
-              .select("ID_RECIBO, ESTADO_PAGO")
-              .eq("ID_CLIENTE", payload.p_id_cliente)
-              .eq("ID_CENTRO", payload.p_id_centro)
-              .eq("ID_CURSO", payload.p_id_curso)
-              .eq("MES_PERIODO", payload.p_mes_periodo);
-
-            if (recibosErr) {
+            if (!idRemesa) {
               toast.warning(
-                `Remesa generada (${count} recibos), pero no se pudieron listar para PDF borrador: ${recibosErr.message}`,
+                `Remesa generada (${count} recibos), pero no se pudo encolar el post-proceso (falta id_remesa).`,
               );
               setCreating(false);
               return;
             }
 
-            const borradores = (recibos ?? []).filter(
-              (row) => normalizeEstadoPago(row.ESTADO_PAGO) === "Borrador",
-            );
-
-            let pdfOk = 0;
-            let pdfFail = 0;
-            for (const recibo of borradores) {
-              try {
-                await invokeGenerarPdfBorradorRecibo(recibo.ID_RECIBO);
-                pdfOk += 1;
-              } catch {
-                pdfFail += 1;
-              }
-            }
-
-            if (pdfFail > 0) {
-              toast.warning(
-                `Remesa generada: ${count} recibos. PDF borrador: ${pdfOk} correctos, ${pdfFail} fallidos.`,
-              );
-            }
-
-            let excelOk = false;
+            const idJob = await encolarRemesaPostProceso(idRemesa);
+            let jobStarted = false;
             try {
-              await invokeGenerarExcelRemesaControl({
-                id_cliente: payload.p_id_cliente,
-                id_centro: payload.p_id_centro,
-                id_curso: payload.p_id_curso,
-                mes_periodo: payload.p_mes_periodo,
-              });
-              excelOk = true;
-            } catch (excelErr) {
+              await invokeProcesarRemesaJob(idJob);
+              jobStarted = true;
+            } catch (jobErr) {
               toast.warning(
-                `Excel de control: ${excelErr instanceof Error ? excelErr.message : "Error al generar el Excel."}`,
+                `Remesa generada (${count} recibos). No se pudo iniciar el post-proceso en segundo plano: ${
+                  jobErr instanceof Error ? jobErr.message : "Error desconocido."
+                }`,
               );
             }
 
-            if (pdfFail === 0) {
-              const partes = [`${count} recibos borrador`];
-              if (pdfOk > 0) partes.push(`${pdfOk} PDF borrador`);
-              if (excelOk) partes.push("Excel de control");
-              toast.success(`Remesa generada: ${partes.join(", ")}.`);
+            if (jobStarted) {
+              toast.success(
+                `Remesa generada: ${count} recibos borrador. Los PDF y el Excel se procesan en segundo plano; puedes seguir usando la app.`,
+              );
             }
 
             qc.invalidateQueries({ queryKey: tenantListKey("recibos", rol, tenantId) });
+            qc.invalidateQueries({ queryKey: remesaGeneracionJobsQueryKey(tenantId, rol) });
             qc.invalidateQueries({
-              predicate: (query) => Array.isArray(query.queryKey) && query.queryKey[0] === "remesas",
+              predicate: (query) =>
+                Array.isArray(query.queryKey) && query.queryKey[0] === "remesas",
             });
 
             setCreating(false);
@@ -938,11 +999,10 @@ function RemesasPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Enviar remesa al banco</AlertDialogTitle>
             <AlertDialogDescription>
-              Se generará el XML SEPA para que lo subas al banco manualmente. Si el XML es
-              correcto, la remesa pasará a Enviada y los recibos con método SEPA quedarán en
-              Cobrado. Las facturas oficiales (Verifactu) solo se emitirán si la integración está
-              disponible; el ZIP del listado contendrá facturas oficiales, no PDF borrador.
-              ¿Deseas continuar?
+              Se generará el XML SEPA para que lo subas al banco manualmente. Si el XML es correcto,
+              la remesa pasará a Enviada y los recibos con método SEPA quedarán en Cobrado. Las
+              facturas oficiales (Verifactu) solo se emitirán si la integración está disponible; el
+              ZIP del listado contendrá facturas oficiales, no PDF borrador. ¿Deseas continuar?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1084,7 +1144,7 @@ function GenerarRemesaDialog({
 
   const selectedCurso = useMemo(
     () => cursosForResolvedCentro.find((curso) => curso.ID_CURSO === selectedCursoId) ?? null,
-    [cursosForResolvedCentro, selectedCursoId],
+    [fetchedCursos, selectedCursoId],
   );
 
   const monthOptions = useMemo(() => buildSchoolYearMonthOptions(selectedCurso), [selectedCurso]);
@@ -1140,7 +1200,10 @@ function GenerarRemesaDialog({
       }}
     >
       <DialogContent
-        className={cn("max-w-lg", submitting && "[&>button]:pointer-events-none [&>button]:opacity-30")}
+        className={cn(
+          "max-w-lg",
+          submitting && "[&>button]:pointer-events-none [&>button]:opacity-30",
+        )}
         onPointerDownOutside={(e) => {
           if (submitting) e.preventDefault();
         }}
@@ -1151,10 +1214,10 @@ function GenerarRemesaDialog({
         <DialogHeader>
           <DialogTitle>Generar lote de recibos borrador</DialogTitle>
           <DialogDescription>
-            Se crearán recibos en estado Borrador, con su PDF borrador y el Excel de control del
-            lote. Antes de usar Enviar, revisa las fichas de alumno y Compras internas. El XML SEPA,
-            el ZIP de recibos y el envío al banco no ocurren al generar; corresponden al paso
-            Enviar.
+            Se crearán recibos en estado Borrador. Los PDF borrador y el Excel de control se generan
+            en segundo plano; puedes cerrar este diálogo y seguir usando la app. Antes de usar
+            Enviar, revisa las fichas de alumno y Compras internas. El XML SEPA, el ZIP de recibos y
+            el envío al banco no ocurren al generar; corresponden al paso Enviar.
           </DialogDescription>
         </DialogHeader>
 
@@ -1194,8 +1257,8 @@ function GenerarRemesaDialog({
               <Loader2 className="h-4 w-4 animate-spin" />
               <AlertTitle>Generando remesa</AlertTitle>
               <AlertDescription>
-                Se están generando los recibos borrador, los PDF y el Excel de control. No cierres
-                esta ventana hasta que termine el proceso.
+                Se están creando los recibos borrador. El post-proceso (PDF y Excel) continuará en
+                segundo plano.
               </AlertDescription>
             </Alert>
           )}
@@ -1206,9 +1269,7 @@ function GenerarRemesaDialog({
               <Select
                 value={resolvedCenterId || undefined}
                 onValueChange={setSelectedCenterId}
-                disabled={
-                  submitting || centros.list.isLoading || centrosOrdenados.length === 0
-                }
+                disabled={submitting || centros.list.isLoading || centrosOrdenados.length === 0}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un centro" />
@@ -1335,9 +1396,9 @@ function RemesaEditDialog({
   onClose: () => void;
   title: string;
   submitLabel: string;
-  initial?: any | null;
+  initial?: ControlRemesaRow | null;
   submitting: boolean;
-  onSubmit: (values: any) => void;
+  onSubmit: (values: ControlRemesaUpdatePatch) => void;
 }) {
   const [mesPeriodo, setMesPeriodo] = useState(initial?.MES_PERIODO ?? "");
   const [estado, setEstado] = useState(initial?.ESTADO ?? "Generada");

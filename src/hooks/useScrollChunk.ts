@@ -17,10 +17,7 @@ export function useScrollChunk<T>(items: T[], chunkSize = DEFAULT_CHUNK) {
   const onScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget;
-      if (
-        el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD_PX &&
-        hasMore
-      ) {
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD_PX && hasMore) {
         setVisible((v) => Math.min(v + chunkSize, items.length));
       }
     },

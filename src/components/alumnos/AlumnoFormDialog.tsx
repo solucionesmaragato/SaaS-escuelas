@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- large form module with shared helpers */
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -15,13 +16,26 @@ import type { AlumnoTree, MatriculaTree } from "@/hooks/useAlumnosTree";
 import type { HorarioCreateInput, HorarioUpdateInput } from "@/hooks/useAlumnosTree";
 import { useAlumnoMatriculas } from "@/hooks/useAlumnoMatriculas";
 import { useMatriculas } from "@/hooks/useMatriculas";
-import { useCargosExtra, calcCargoExtraTotal, calcCargoExtraRowTotal, cargoExtraEstadoStatus, formatCargoExtraFecha, canEditCargoExtraRole, type CargoExtraRow } from "@/hooks/useCargosExtra";
+import {
+  useCargosExtra,
+  calcCargoExtraTotal,
+  calcCargoExtraRowTotal,
+  cargoExtraEstadoStatus,
+  formatCargoExtraFecha,
+  canEditCargoExtraRole,
+  type CargoExtraRow,
+} from "@/hooks/useCargosExtra";
 import { CargoExtraDetailDialog } from "@/components/alumnos/CargoExtraDetailDialog";
 import { useActiveTenant } from "@/context/AppContext";
 import { formatCurrency } from "@/lib/format";
 import type { CentroData } from "@/hooks/useCentros";
 import type { Matricula } from "@/types/database";
-import { cursosForCentro, formatCursoNombre, getActiveCursoIdsForCentro, resolveCursoIdForCentro } from "@/lib/matriculaCursoUtils";
+import {
+  cursosForCentro,
+  formatCursoNombre,
+  getActiveCursoIdsForCentro,
+  resolveCursoIdForCentro,
+} from "@/lib/matriculaCursoUtils";
 import { countGrupoAlumnos, type GrupoHorarioSlot } from "@/hooks/useGruposHorarios";
 import { SepaMandatoBlock } from "@/components/alumnos/SepaMandatoBlock";
 import { Button } from "@/components/ui/button";
@@ -115,17 +129,14 @@ function buildAlumnoFormResetValues(alumno: AlumnoTree): AlumnoFormValues {
   return alumnoRecordToFormValues(alumno);
 }
 
-function estadoSelectCurrentValue(
-  value: string | null | undefined,
-  options: readonly string[],
-): string {
+function estadoSelectCurrentValue(value: string | null | undefined): string {
   const current = value?.trim() ?? "";
   if (!current) return "__unset__";
   return current;
 }
 
 function resolveEstadoSelectValue(value: string | null | undefined): string {
-  return estadoSelectCurrentValue(value, ESTADO_OPCIONES);
+  return estadoSelectCurrentValue(value);
 }
 
 function estadoSelectOptions(
@@ -179,10 +190,6 @@ function normalizeMatriculaEstado(
 function formatHorarioLimitLabel(current: number, max: number | null | undefined): string {
   const maxLabel = max != null ? String(max) : "—";
   return `Horarios asignados: ${current} / ${maxLabel}`;
-}
-
-function isHorarioLimitReached(current: number, max: number | null | undefined): boolean {
-  return max != null && current >= max;
 }
 
 const TIPO_CLASE_OPCIONES = ["Individual", "Colectiva"] as const;
@@ -474,42 +481,10 @@ function hasScheduleResourceConflict(
   return false;
 }
 
-function isIndividualHorarioForOccupancy(horario: MatriculaHorario): boolean {
+export function isIndividualHorarioForOccupancy(horario: MatriculaHorario): boolean {
   if (!isHorarioScheduleActivo(resolveHorarioScheduleEstado(horario))) return false;
   if (horario.ID_GRUPO_HORARIO?.trim()) return false;
   return normalizeTipoClase(horario.TIPO_CLASE) === "Individual";
-}
-
-function buildIndividualScheduleOccupancySlots(
-  grupoSlots: GrupoHorarioSlot[],
-  individualHorarios: MatriculaHorario[],
-  excludeHorarioId?: string | null,
-): ScheduleOccupancySlot[] {
-  const slots: ScheduleOccupancySlot[] = [];
-
-  for (const grupoSlot of grupoSlots) {
-    slots.push({
-      dia: grupoSlot.DIA_SEMANA ?? "",
-      horaInicio: grupoSlot.HORA_INICIO ?? "",
-      horaFin: grupoSlot.HORA_FIN ?? "",
-      idProfesor: grupoSlot.ID_PROFESOR ?? null,
-      idAula: grupoSlot.ID_AULA ?? null,
-    });
-  }
-
-  for (const horario of individualHorarios) {
-    if (excludeHorarioId && horario.ID_HORARIO === excludeHorarioId) continue;
-    if (!isIndividualHorarioForOccupancy(horario)) continue;
-    slots.push({
-      dia: horario.DIA ?? "",
-      horaInicio: horario.HORA_INICIO ?? "",
-      horaFin: horario.HORA_FIN ?? "",
-      idProfesor: horario.ID_PROFESOR ?? null,
-      idAula: horario.ID_AULA ?? null,
-    });
-  }
-
-  return slots;
 }
 
 function buildScheduleOccupancySlots(
@@ -1157,7 +1132,10 @@ export function buildScheduleAssignmentContext(
 }
 
 export function assignmentCheckFromGrupoSlot(
-  slot: GrupoHorarioSlot,
+  slot: Pick<
+    GrupoHorarioSlot,
+    "ID_PROFESOR" | "ID_AULA" | "DIA_SEMANA" | "HORA_INICIO" | "HORA_FIN" | "ID_GRUPO_HORARIO"
+  >,
   overrides: Partial<ScheduleAssignmentCheck> = {},
 ): ScheduleAssignmentCheck {
   return {
@@ -1166,7 +1144,6 @@ export function assignmentCheckFromGrupoSlot(
     dia: slot.DIA_SEMANA ?? "",
     horaInicio: horarioTimeValue(slot.HORA_INICIO),
     horaFin: horarioTimeValue(slot.HORA_FIN),
-    idGrupo: slot.ID_GRUPO,
     idGrupoHorario: slot.ID_GRUPO_HORARIO,
     isIndividual: false,
     ...overrides,
@@ -1218,6 +1195,7 @@ function mergeHorarioFormState(
     faltasNoRecuperables: block.faltasNoRecuperables,
     recuperaciones: block.recuperaciones,
     saldo: block.saldo,
+    idEspecialidad: block.idEspecialidad || enrollment.idEspecialidad,
   };
 }
 
@@ -1639,11 +1617,9 @@ function HorarioSubForm({
 
   const horarioId = horario?.ID_HORARIO ?? null;
   const enrollmentForm = appendMode ? form : (sharedForm ?? form);
-  const hasEspecialidad = !!enrollmentForm.idEspecialidad;
   const isColectiva = enrollmentForm.tipoClase === "Colectiva";
   const isIndividualSchedule =
     horario != null ? isIndividualHorarioForOccupancy(horario) : !isColectiva;
-  const cascadeDisabled = saving || !hasEspecialidad;
   const isGrupoScheduleTimesLocked = Boolean(horario?.ID_GRUPO?.trim());
   const scheduleItemGrupoId =
     horario?.ID_GRUPO?.trim() ||
@@ -1654,7 +1630,12 @@ function HorarioSubForm({
   const showScheduleEspecialidad =
     !scheduleItemGrupoId || rowEspecialidad !== enrollmentEspecialidad;
   const showStandaloneScheduleEspecialidad =
-    showScheduleEspecialidad && !(showEnrollmentFields || appendMode);
+    Boolean(horario && !showEnrollmentFields && !appendMode) ||
+    (showScheduleEspecialidad && !(showEnrollmentFields || appendMode));
+  const hasEspecialidad = showStandaloneScheduleEspecialidad
+    ? !!form.idEspecialidad
+    : !!enrollmentForm.idEspecialidad;
+  const cascadeDisabled = saving || !hasEspecialidad;
   const isTariffFreeGrupoSelected = isTariffFreeGrupo(enrollmentForm.idGrupo, grupoSlots);
 
   useEffect(() => {
@@ -1775,17 +1756,6 @@ function HorarioSubForm({
         return (a.HORA_INICIO ?? "").localeCompare(b.HORA_INICIO ?? "");
       });
   }, [enrollmentForm.idGrupo, grupoSlots]);
-
-  const grupoCapacity = useMemo(
-    () =>
-      enrollmentForm.idGrupo ? getGrupoCapacityMeta(enrollmentForm.idGrupo, grupoSlots) : null,
-    [enrollmentForm.idGrupo, grupoSlots],
-  );
-
-  const grupoLleno =
-    grupoCapacity != null &&
-    grupoCapacity.max != null &&
-    grupoCapacity.enrolled >= grupoCapacity.max;
 
   const aulaOptions = useMemo(
     () =>
@@ -2034,9 +2004,7 @@ function HorarioSubForm({
   const saveDisabled =
     saving ||
     !hasEspecialidad ||
-    (isColectiva &&
-      !horario &&
-      (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0)) ||
+    (isColectiva && !horario && (!enrollmentForm.idGrupo || grupoHorarioBlocks.length === 0)) ||
     (isIndividualSchedule && scheduleResourceConflict);
 
   const blockTitle =
@@ -2058,50 +2026,50 @@ function HorarioSubForm({
   return (
     <>
       <Card className="space-y-4 border-dashed p-4">
-      {((!showEnrollmentFields && !isColectiva) || appendMode) && (
-        <p className="text-xs font-medium text-muted-foreground">{blockTitle}</p>
-      )}
+        {((!showEnrollmentFields && !isColectiva) || appendMode) && (
+          <p className="text-xs font-medium text-muted-foreground">{blockTitle}</p>
+        )}
 
-      {showStandaloneScheduleEspecialidad && (
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">
-            Especialidad <span className="text-destructive">*</span>
-          </Label>
-          <Select
-            value={form.idEspecialidad || undefined}
-            onValueChange={(v) => patchField("idEspecialidad", v)}
-            disabled={saving}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Seleccionar especialidad" />
-            </SelectTrigger>
-            <SelectContent>
-              {selectOptions.especialidades.map((e) => (
-                <SelectItem key={e.id} value={e.id}>
-                  {e.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
+        {showStandaloneScheduleEspecialidad && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              Especialidad <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              value={form.idEspecialidad || undefined}
+              onValueChange={(v) => patchField("idEspecialidad", v)}
+              disabled={saving}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Seleccionar especialidad" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectOptions.especialidades.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
-      {(showEnrollmentFields || appendMode) && (
-        <MatriculaEnrollmentFields
-          form={form}
-          setForm={setForm}
-          selectOptions={selectOptions}
-          grupoSlots={grupoSlots}
-          saving={saving}
-          defaultProfesorId={defaultProfesorId}
-          alumnoCenterId={alumnoCenterId}
-          matriculaTarifaId={matriculaTarifaId}
-          matriculaCursoId={matriculaCursoId}
-          centros={centros}
-        />
-      )}
+        {(showEnrollmentFields || appendMode) && (
+          <MatriculaEnrollmentFields
+            form={form}
+            setForm={setForm}
+            selectOptions={selectOptions}
+            grupoSlots={grupoSlots}
+            saving={saving}
+            defaultProfesorId={defaultProfesorId}
+            alumnoCenterId={alumnoCenterId}
+            matriculaTarifaId={matriculaTarifaId}
+            matriculaCursoId={matriculaCursoId}
+            centros={centros}
+          />
+        )}
 
-      {showGrupoLockedSchedule && (
+        {showGrupoLockedSchedule && (
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Horarios del grupo</Label>
             {grupoHorarioBlocks.map((slot, index) => (
@@ -2115,202 +2083,208 @@ function HorarioSubForm({
           </div>
         )}
 
-      {(horario != null || !isColectiva || (appendMode && !showGrupoLockedSchedule)) &&
-        hasEspecialidad && (
-        <div className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Día</Label>
-              <Select
-                value={form.dia || undefined}
-                onValueChange={(v) => patchField("dia", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar día" />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIAS_SEMANA_OPCIONES.map((dia) => (
-                    <SelectItem key={dia} value={dia}>
-                      {dia}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Hora inicio</Label>
-              <Input
-                className="h-9"
-                type="time"
-                value={form.horaInicio}
-                onChange={(e) => handleHoraInicioChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Duración (min)</Label>
-              <Input
-                className="h-9"
-                type="number"
-                min={1}
-                step={1}
-                value={form.duracion}
-                onChange={(e) => handleDuracionChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Hora fin</Label>
-              <Input
-                className="h-9"
-                type="time"
-                value={form.horaFin}
-                onChange={(e) => handleHoraFinChange(e.target.value)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label className="text-xs text-muted-foreground">Profesor</Label>
-              <Select
-                value={form.idProfesor || undefined}
-                onValueChange={(v) => patchField("idProfesor", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {profesorOptions.map((p) => (
-                    <SelectItem
-                      key={p.id}
-                      value={p.id}
-                      disabled={
-                        hasIndividualScheduleWindow &&
-                        p.id !== form.idProfesor &&
-                        isProfesorOccupied(p.id)
-                      }
-                    >
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
-              <Label className="text-xs text-muted-foreground">Aula</Label>
-              <Select
-                value={form.idAula || undefined}
-                onValueChange={(v) => patchField("idAula", v)}
-                disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Seleccionar" />
-                </SelectTrigger>
-                <SelectContent>
-                  {aulaOptions.map((a) => (
-                    <SelectItem
-                      key={a.id}
-                      value={a.id}
-                      disabled={
-                        hasIndividualScheduleWindow &&
-                        a.id !== form.idAula &&
-                        isAulaOccupied(a.id)
-                      }
-                    >
-                      {a.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
-          {isIndividualSchedule && scheduleResourceConflict && (
-            <p className="text-xs font-medium text-destructive">
-              El profesor y/o el aula seleccionada ya están ocupados en este horario
-            </p>
-          )}
-          {appendMode && studentScheduleConflict && (
-            <p className="text-xs font-medium text-destructive">
-              El alumno ya tiene otra clase asignada en este horario
-            </p>
-          )}
-        </div>
-      )}
-
-      {exceedsTariffLimit && (
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Precio (€)</Label>
-          <Input
-            className="h-9"
-            type="number"
-            step="0.01"
-            value={form.precio}
-            onChange={(e) => patchField("precio", e.target.value)}
-            disabled={cascadeDisabled}
-          />
-        </div>
-      )}
-
-      <Accordion type="single" collapsible>
-        <AccordionItem value="advanced" className="border-none">
-          <AccordionTrigger
-            className="py-2 text-sm text-muted-foreground hover:no-underline"
-            disabled={!hasEspecialidad}
-          >
-            Opciones avanzadas
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
-              {(
-                [
-                  ["faltasRecuperables", "Faltas recuperables", "1"],
-                  ["faltasNoRecuperables", "Faltas no recuperables", "1"],
-                  ["recuperaciones", "Recuperaciones", "1"],
-                  ["saldo", "Saldo", "0.01"],
-                ] as const
-              ).map(([key, label, step]) => (
-                <div key={key} className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{label}</Label>
+        {(horario != null || !isColectiva || (appendMode && !showGrupoLockedSchedule)) &&
+          hasEspecialidad && (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Día</Label>
+                  <Select
+                    value={form.dia || undefined}
+                    onValueChange={(v) => patchField("dia", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar día" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DIAS_SEMANA_OPCIONES.map((dia) => (
+                        <SelectItem key={dia} value={dia}>
+                          {dia}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Hora inicio</Label>
+                  <Input
+                    className="h-9"
+                    type="time"
+                    value={form.horaInicio}
+                    onChange={(e) => handleHoraInicioChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Duración (min)</Label>
                   <Input
                     className="h-9"
                     type="number"
-                    step={step}
-                    value={form[key]}
-                    onChange={(e) => patchField(key, e.target.value)}
-                    disabled={cascadeDisabled}
+                    min={1}
+                    step={1}
+                    value={form.duracion}
+                    onChange={(e) => handleDuracionChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
                   />
                 </div>
-              ))}
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Hora fin</Label>
+                  <Input
+                    className="h-9"
+                    type="time"
+                    value={form.horaFin}
+                    onChange={(e) => handleHoraFinChange(e.target.value)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label className="text-xs text-muted-foreground">Profesor</Label>
+                  <Select
+                    value={form.idProfesor || undefined}
+                    onValueChange={(v) => patchField("idProfesor", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {profesorOptions.map((p) => (
+                        <SelectItem
+                          key={p.id}
+                          value={p.id}
+                          disabled={
+                            hasIndividualScheduleWindow &&
+                            p.id !== form.idProfesor &&
+                            isProfesorOccupied(p.id)
+                          }
+                        >
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label className="text-xs text-muted-foreground">Aula</Label>
+                  <Select
+                    value={form.idAula || undefined}
+                    onValueChange={(v) => patchField("idAula", v)}
+                    disabled={cascadeDisabled || isGrupoScheduleTimesLocked}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {aulaOptions.map((a) => (
+                        <SelectItem
+                          key={a.id}
+                          value={a.id}
+                          disabled={
+                            hasIndividualScheduleWindow &&
+                            a.id !== form.idAula &&
+                            isAulaOccupied(a.id)
+                          }
+                        >
+                          {a.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {chivato && !appendMode && <p className="text-xs text-muted-foreground">{chivato}</p>}
+              {isIndividualSchedule && scheduleResourceConflict && (
+                <p className="text-xs font-medium text-destructive">
+                  El profesor y/o el aula seleccionada ya están ocupados en este horario
+                </p>
+              )}
+              {appendMode && studentScheduleConflict && (
+                <p className="text-xs font-medium text-destructive">
+                  El alumno ya tiene otra clase asignada en este horario
+                </p>
+              )}
             </div>
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+          )}
 
-      <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
-        {onCancel && (
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
-            Cancelar
-          </Button>
+        {exceedsTariffLimit && (
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Precio (€)</Label>
+            <Input
+              className="h-9"
+              type="number"
+              step="0.01"
+              value={form.precio}
+              onChange={(e) => patchField("precio", e.target.value)}
+              disabled={cascadeDisabled}
+            />
+          </div>
         )}
-        {onDelete && (
+
+        <Accordion type="single" collapsible>
+          <AccordionItem value="advanced" className="border-none">
+            <AccordionTrigger
+              className="py-2 text-sm text-muted-foreground hover:no-underline"
+              disabled={!hasEspecialidad}
+            >
+              Opciones avanzadas
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="grid gap-3 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ["faltasRecuperables", "Faltas recuperables", "1"],
+                    ["faltasNoRecuperables", "Faltas no recuperables", "1"],
+                    ["recuperaciones", "Recuperaciones", "1"],
+                    ["saldo", "Saldo", "0.01"],
+                  ] as const
+                ).map(([key, label, step]) => (
+                  <div key={key} className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{label}</Label>
+                    <Input
+                      className="h-9"
+                      type="number"
+                      step={step}
+                      value={form[key]}
+                      onChange={(e) => patchField(key, e.target.value)}
+                      disabled={cascadeDisabled}
+                    />
+                  </div>
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        <div className="flex flex-wrap justify-end gap-2 border-t pt-3">
+          {onCancel && (
+            <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={saving}>
+              Cancelar
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              disabled={saving}
+              onClick={() => void onDelete()}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          )}
           <Button
             type="button"
-            variant="destructive"
+            variant="brand"
             size="sm"
-            disabled={saving}
-            onClick={() => void onDelete()}
+            disabled={saveDisabled}
+            onClick={() => void handleSave()}
           >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Eliminar
+            {saving ? "Guardando…" : horario ? "Guardar horario" : "Crear horario"}
           </Button>
-        )}
-        <Button type="button" size="sm" disabled={saveDisabled} onClick={() => void handleSave()}>
-          {saving ? "Guardando…" : horario ? "Guardar horario" : "Crear horario"}
-        </Button>
-      </div>
-    </Card>
+        </div>
+      </Card>
 
       <AlertDialog open={grupoCompletoConfirmOpen} onOpenChange={setGrupoCompletoConfirmOpen}>
         <AlertDialogContent>
@@ -2340,7 +2314,7 @@ function HorarioSubForm({
   );
 }
 
-function MatriculaHorariosGroup({
+export function MatriculaHorariosGroup({
   matricula,
   horarios,
   alumnoId,
@@ -2564,7 +2538,11 @@ function MatriculaHorariosGroup({
                   selectOptions={selectOptions}
                   grupoSlots={grupoSlots}
                   defaultProfesorId={matricula.ID_PROFESOR}
-                  defaultEspecialidadId={matricula.ESPECIALIDAD}
+                  defaultEspecialidadId={
+                    hasExistingHorarios
+                      ? sharedEnrollment.idEspecialidad || matricula.ESPECIALIDAD
+                      : matricula.ESPECIALIDAD
+                  }
                   alumnoCenterId={alumnoCenterId}
                   matriculaTarifaId={matricula.ID_TARIFA}
                   matriculaCursoId={matriculaCursoId}
@@ -2584,7 +2562,9 @@ function MatriculaHorariosGroup({
                   saving={horarioSaving}
                   onCancel={() => removeDraftHorario(draftId)}
                   onSave={async (patchOrPatches) => {
-                    const patches = Array.isArray(patchOrPatches) ? patchOrPatches : [patchOrPatches];
+                    const patches = Array.isArray(patchOrPatches)
+                      ? patchOrPatches
+                      : [patchOrPatches];
                     if (patches.length === 0) return;
                     try {
                       for (const patch of patches) {
@@ -2670,9 +2650,7 @@ function MatriculaRowEditor({
     setIdTarifa(matricula.ID_TARIFA ?? "");
     const centerId = matricula.ID_CENTRO?.trim() || alumnoCenterId?.trim() || "";
     const savedCurso = matricula.ID_CURSO?.trim() ?? "";
-    setIdCurso(
-      savedCurso || (centerId ? resolveCursoIdForCentro(centros, centerId, "") : ""),
-    );
+    setIdCurso(savedCurso || (centerId ? resolveCursoIdForCentro(centros, centerId, "") : ""));
   }, [
     matricula.ID_MATRICULA,
     matricula.ESPECIALIDAD,
@@ -2729,10 +2707,8 @@ function MatriculaRowEditor({
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            disabled={
-              saving || !dirty || !idCurso?.trim() || cursoOptions.length === 0
-            }
+            variant="brand"
+            disabled={saving || !dirty || !idCurso?.trim() || cursoOptions.length === 0}
             onClick={() => {
               if (!idCurso?.trim()) {
                 toast.error("Selecciona un curso escolar.");
@@ -2794,11 +2770,7 @@ function MatriculaRowEditor({
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Tarifa</Label>
-          <Select
-            value={idTarifa || undefined}
-            onValueChange={setIdTarifa}
-            disabled={saving}
-          >
+          <Select value={idTarifa || undefined} onValueChange={setIdTarifa} disabled={saving}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Seleccionar" />
             </SelectTrigger>
@@ -3051,6 +3023,7 @@ function DraftMatriculaPanel({
             </Button>
             <Button
               type="button"
+              variant="brand"
               size="sm"
               disabled={!newEspecialidad || (cursoOptions.length > 0 && !newCurso)}
               onClick={() => {
@@ -3215,9 +3188,7 @@ function MatriculaManagePanel({
     setNewEspecialidad("");
     setNewTarifa("");
     setNewProfesor("");
-    setNewCurso(
-      effectiveCenterId ? resolveCursoIdForCentro(centros, effectiveCenterId, "") : "",
-    );
+    setNewCurso(effectiveCenterId ? resolveCursoIdForCentro(centros, effectiveCenterId, "") : "");
     setShowAdd(false);
   };
 
@@ -3384,11 +3355,10 @@ function MatriculaManagePanel({
             </Button>
             <Button
               type="button"
+              variant="brand"
               size="sm"
               disabled={
-                matriculaSaving ||
-                !newEspecialidad ||
-                (cursoOptions.length > 0 && !newCurso)
+                matriculaSaving || !newEspecialidad || (cursoOptions.length > 0 && !newCurso)
               }
               onClick={async () => {
                 try {
@@ -3472,7 +3442,11 @@ export function AlumnoFormDialog({
   const { rol } = useActiveTenant();
   const initialId = initial?.ID_ALUMNO ?? null;
   const isCreate = !initial;
-  const { create: createCargoExtra, update: updateCargoExtra, listByAlumno: cargosExtraByAlumno } = useCargosExtra({
+  const {
+    create: createCargoExtra,
+    update: updateCargoExtra,
+    listByAlumno: cargosExtraByAlumno,
+  } = useCargosExtra({
     alumnoId: initialId,
   });
   const [internalActiveTab, setInternalActiveTab] = useState("resumen");
@@ -3490,10 +3464,7 @@ export function AlumnoFormDialog({
     [centros],
   );
   const alumnoCenterId =
-    watchedCentro?.trim() ||
-    initial?.ID_CENTRO?.trim() ||
-    assignedCenterId?.trim() ||
-    null;
+    watchedCentro?.trim() || initial?.ID_CENTRO?.trim() || assignedCenterId?.trim() || null;
   const nombreAlumno = form.watch("NOMBRE_ALUMNO") ?? "";
   const metodoPago = normalizeMetodoPago(form.watch("METODO_PAGO"));
   const tlfComunicacion = form.watch("TLF_COMUNICACION");
@@ -3526,7 +3497,11 @@ export function AlumnoFormDialog({
   const [cargoPrecioUnitario, setCargoPrecioUnitario] = useState("");
   const [cargoPorcentajeIva, setCargoPorcentajeIva] = useState("0");
   const canAddCargoExtra = canAddCargoExtraRole(rol);
-  const cargoExtraTotal = calcCargoExtraTotal(cargoCantidad, cargoPrecioUnitario, cargoPorcentajeIva);
+  const cargoExtraTotal = calcCargoExtraTotal(
+    cargoCantidad,
+    cargoPrecioUnitario,
+    cargoPorcentajeIva,
+  );
 
   const resetCargoExtraForm = () => {
     setCargoConcepto("");
@@ -3614,9 +3589,7 @@ export function AlumnoFormDialog({
     }
     const ajusteManual = values.AJUSTE_MANUAL_EUR;
     const ajusteDistintoDeCero =
-      ajusteManual != null &&
-      Number.isFinite(Number(ajusteManual)) &&
-      Number(ajusteManual) !== 0;
+      ajusteManual != null && Number.isFinite(Number(ajusteManual)) && Number(ajusteManual) !== 0;
     if (ajusteDistintoDeCero && !values.MOTIVO_AJUSTE?.trim()) {
       form.setError("MOTIVO_AJUSTE", {
         message: "El motivo es obligatorio cuando el ajuste manual es distinto de 0.",
@@ -3640,7 +3613,7 @@ export function AlumnoFormDialog({
             <TabsTrigger value="resumen">Resumen</TabsTrigger>
             <TabsTrigger value="personales">Datos personales</TabsTrigger>
             <TabsTrigger value="pago">Datos de pago</TabsTrigger>
-            <TabsTrigger value="matricula">Matrículas</TabsTrigger>
+            <TabsTrigger value="matricula">Académico</TabsTrigger>
           </TabsList>
 
           {showCentroSelector && (
@@ -3994,10 +3967,7 @@ export function AlumnoFormDialog({
                     <Select
                       value={resolveMetodoPagoSelectValue(field.value)}
                       onValueChange={(v) => {
-                        const next =
-                          v === "__unset__"
-                            ? null
-                            : (v as MetodoPagoOption);
+                        const next = v === "__unset__" ? null : (v as MetodoPagoOption);
                         field.onChange(next);
                         const normalized = normalizeMetodoPago(next);
                         if (!isBankRemittancePaymentMethod(normalized)) {
@@ -4187,7 +4157,10 @@ export function AlumnoFormDialog({
                         </TableRow>
                       ) : cargosExtraByAlumno.isError ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="py-6 text-center text-sm text-destructive">
+                          <TableCell
+                            colSpan={8}
+                            className="py-6 text-center text-sm text-destructive"
+                          >
                             {(cargosExtraByAlumno.error as Error)?.message ??
                               "Error al cargar los cargos extra."}
                           </TableCell>
@@ -4244,7 +4217,13 @@ export function AlumnoFormDialog({
 
             {!isCreate && initialId && canAddCargoExtra && (
               <div className="pt-2">
-                <Button type="button" variant="brand-outline" size="sm" onClick={handleOpenCargoExtra} disabled={submitting}>
+                <Button
+                  type="button"
+                  variant="brand-outline"
+                  size="sm"
+                  onClick={handleOpenCargoExtra}
+                  disabled={submitting}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Añadir cargo extra
                 </Button>
@@ -4383,7 +4362,12 @@ export function AlumnoFormDialog({
           >
             Cancelar
           </Button>
-          <Button type="button" onClick={handleSaveCargoExtra} disabled={createCargoExtra.isPending}>
+          <Button
+            type="button"
+            variant="brand"
+            onClick={handleSaveCargoExtra}
+            disabled={createCargoExtra.isPending}
+          >
             {createCargoExtra.isPending ? "Guardando..." : "Guardar cargo"}
           </Button>
         </DialogFooter>

@@ -186,25 +186,6 @@ function formatHorarioSlotCell(horario: GrupoData["GRUPOS_HORARIOS"][number]): s
   return `${dia} ${inicio} - ${fin}`;
 }
 
-function formatHorario(inicio: string | null, fin: string | null): string {
-  if (!inicio && !fin) return "—";
-  if (inicio?.includes(" | ")) {
-    const starts = inicio.split(" | ");
-    const ends = (fin ?? "").split(" | ");
-    return starts
-      .map((s, i) => {
-        const a = formatHora(s === "—" ? null : s);
-        const b = formatHora(ends[i] === "—" ? null : ends[i]);
-        return `${a} – ${b}`;
-      })
-      .join(", ");
-  }
-  const a = formatHora(inicio);
-  const b = formatHora(fin);
-  if (a === "—" && b === "—") return "—";
-  return `${a} – ${b}`;
-}
-
 function occupancyBadge(count: number, max: number | null) {
   if (max == null || max <= 0) {
     return (
@@ -214,9 +195,14 @@ function occupancyBadge(count: number, max: number | null) {
     );
   }
   const ratio = count / max;
-  const variant = ratio >= 1 ? "destructive" : ratio >= 0.8 ? "default" : "secondary";
+  const badgeClass =
+    ratio >= 1
+      ? "border-transparent bg-brand text-brand-foreground"
+      : ratio >= 0.8
+        ? "border-transparent bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+        : undefined;
   return (
-    <Badge variant={variant} className="text-xs font-normal tabular-nums">
+    <Badge variant="secondary" className={cn("text-xs font-normal tabular-nums", badgeClass)}>
       {count} / {max}
     </Badge>
   );
@@ -524,13 +510,7 @@ function GruposPage() {
   const { rol, perfil, centerId, tenantId } = useActiveTenant();
 
   if (isProfesorRole(rol)) {
-    return (
-      <Navigate
-        to="/app/grupos"
-        search={grupoId ? { grupoId } : {}}
-        replace
-      />
-    );
+    return <Navigate to="/app/grupos" search={grupoId ? { grupoId } : {}} replace />;
   }
 
   const navigate = Route.useNavigate();
@@ -707,10 +687,7 @@ function GruposPage() {
     [filtered],
   );
 
-  const activeGruposSorted = useMemo(
-    () => sortGruposForTable(activeFiltered),
-    [activeFiltered],
-  );
+  const activeGruposSorted = useMemo(() => sortGruposForTable(activeFiltered), [activeFiltered]);
 
   const inactiveGruposSorted = useMemo(
     () => sortGruposForTable(inactiveFiltered),
@@ -794,11 +771,22 @@ function GruposPage() {
     for (const slot of grupo.GRUPOS_HORARIOS ?? []) {
       const hard = validateScheduleAssignmentHard(
         scheduleAssignmentContext,
-        assignmentCheckFromGrupoSlot(slot as GrupoHorarioSlot, {
-          idAlumno: alumnoId,
-          idGrupo: grupo.ID_GRUPO,
-          extraAlumnoIds: [alumnoId],
-        }),
+        assignmentCheckFromGrupoSlot(
+          slot as Pick<
+            GrupoHorarioSlot,
+            | "ID_PROFESOR"
+            | "ID_AULA"
+            | "DIA_SEMANA"
+            | "HORA_INICIO"
+            | "HORA_FIN"
+            | "ID_GRUPO_HORARIO"
+          >,
+          {
+            idAlumno: alumnoId,
+            idGrupo: grupo.ID_GRUPO,
+            extraAlumnoIds: [alumnoId],
+          },
+        ),
       );
       if (hard) return hard;
     }
@@ -1151,10 +1139,7 @@ function GruposPage() {
         <TableCell className="text-sm">
           <div className="flex flex-col gap-0.5">
             {horarios.map((horario) => (
-              <span
-                key={horario.ID_GRUPO_HORARIO}
-                className="tabular-nums leading-snug"
-              >
+              <span key={horario.ID_GRUPO_HORARIO} className="tabular-nums leading-snug">
                 {formatHorarioSlotCell(horario)}
               </span>
             ))}

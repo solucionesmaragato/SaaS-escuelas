@@ -51,10 +51,7 @@ export async function captureClientIp(): Promise<string> {
 
 /** Collect eIDAS audit fields immediately before a sealed fichaje insert. */
 export async function collectFichajeComplianceMetadata(): Promise<FichajeComplianceMetadata> {
-  const [latitudLongitud, ipFichaje] = await Promise.all([
-    captureGeolocation(),
-    captureClientIp(),
-  ]);
+  const [latitudLongitud, ipFichaje] = await Promise.all([captureGeolocation(), captureClientIp()]);
 
   return {
     USER_AGENT: captureUserAgent(),

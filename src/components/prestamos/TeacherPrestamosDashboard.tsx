@@ -172,10 +172,7 @@ function PrestamoCard({
   const fechaLabel = cardFechaDevolucionLabel(row);
 
   return (
-    <Card
-      className="cursor-pointer p-4 transition-colors hover:bg-muted/40"
-      onClick={onOpen}
-    >
+    <Card className="cursor-pointer p-4 transition-colors hover:bg-muted/40" onClick={onOpen}>
       {/* Móvil / tablet pequeña: receptor → elemento → fecha */}
       <div className="min-w-0 lg:hidden">
         <div className="flex min-w-0 items-start justify-between gap-2">
@@ -193,7 +190,9 @@ function PrestamoCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="truncate font-medium">{elemento}</p>
-            <StatusBadge status={estadoDevolucionStatus(row.ESTADO_DEVOLUCION)}>{estado}</StatusBadge>
+            <StatusBadge status={estadoDevolucionStatus(row.ESTADO_DEVOLUCION)}>
+              {estado}
+            </StatusBadge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             {categoriaLabel(row.CATEGORIA)} · {receptorNombre}
@@ -281,8 +280,7 @@ function PrestamoDetailDialog({
     await onSave({
       ESTADO_DEVOLUCION: estadoDevolucion,
       FECHA_FIN_PRESTAMO: fechaFinPrestamo.trim() || null,
-      FECHA_DEVOLUCION:
-        resolveFechaDevolucionOnReturn(estadoDevolucion, fechaDevolucion) || null,
+      FECHA_DEVOLUCION: resolveFechaDevolucionOnReturn(estadoDevolucion, fechaDevolucion) || null,
       NOTAS: notas.trim() || null,
     });
     setMode("detail");
@@ -416,7 +414,12 @@ function PrestamoDetailDialog({
               >
                 Cancelar
               </Button>
-              <Button type="button" variant="brand" disabled={submitting} onClick={() => void handleSaveEdit()}>
+              <Button
+                type="button"
+                variant="brand"
+                disabled={submitting}
+                onClick={() => void handleSaveEdit()}
+              >
                 {saving ? "Guardando..." : "Guardar cambios"}
               </Button>
             </>
@@ -557,7 +560,9 @@ function NuevoPrestamoDialog({
       return;
     }
     if (!idReceptor.trim()) {
-      toast.error(categoria === "ALUMNO" ? "Selecciona un alumno" : "No se pudo determinar el receptor");
+      toast.error(
+        categoria === "ALUMNO" ? "Selecciona un alumno" : "No se pudo determinar el receptor",
+      );
       return;
     }
     if (!elemento.trim()) {
@@ -575,7 +580,7 @@ function NuevoPrestamoDialog({
 
     const alumnoCentro =
       categoria === "ALUMNO"
-        ? alumnos.find((a) => a.ID_ALUMNO === idReceptor.trim())?.ID_CENTRO?.trim() ?? ""
+        ? (alumnos.find((a) => a.ID_ALUMNO === idReceptor.trim())?.ID_CENTRO?.trim() ?? "")
         : "";
     const resolvedCentro = centerId?.trim() || alumnoCentro;
     if (!resolvedCentro) {
@@ -627,7 +632,9 @@ function NuevoPrestamoDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALUMNO">Alumno</SelectItem>
-                <SelectItem value="PROFESOR">Para mí ({profesorNombre?.trim() || "profesor"})</SelectItem>
+                <SelectItem value="PROFESOR">
+                  Para mí ({profesorNombre?.trim() || "profesor"})
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -730,7 +737,12 @@ function NuevoPrestamoDialog({
           <Button type="button" variant="outline" onClick={handleClose} disabled={submitting}>
             Cancelar
           </Button>
-          <Button type="button" variant="brand" disabled={submitting} onClick={() => void handleSubmit()}>
+          <Button
+            type="button"
+            variant="brand"
+            disabled={submitting}
+            onClick={() => void handleSubmit()}
+          >
             {submitting ? "Guardando..." : "Registrar préstamo"}
           </Button>
         </DialogFooter>
@@ -739,7 +751,13 @@ function NuevoPrestamoDialog({
   );
 }
 
-export function TeacherPrestamosDashboard() {
+export function TeacherPrestamosDashboard({
+  deepLinkPrestamoId,
+  onClearDeepLink,
+}: {
+  deepLinkPrestamoId?: string;
+  onClearDeepLink?: () => void;
+} = {}) {
   const { rol, perfil, centerId } = useActiveTenant();
   const canMutate = canWriteUi(rol, "prestamos:write");
   const profesorId = perfil.ID_PROFESOR;
@@ -761,6 +779,12 @@ export function TeacherPrestamosDashboard() {
   }, [alumnosList.data]);
 
   const prestamos = useMemo(() => sortPrestamos(list.data ?? []), [list.data]);
+
+  useEffect(() => {
+    if (!deepLinkPrestamoId || prestamos.length === 0) return;
+    const target = prestamos.find((p) => p.ID_PRESTAMO === deepLinkPrestamoId);
+    if (target) setSelectedPrestamo(target);
+  }, [deepLinkPrestamoId, prestamos]);
 
   const filtered = useMemo(() => {
     if (filter === "activos") {
@@ -821,7 +845,10 @@ export function TeacherPrestamosDashboard() {
 
   const selectedPrestamoFresh = useMemo(() => {
     if (!selectedPrestamo) return null;
-    return (list.data ?? []).find((p) => p.ID_PRESTAMO === selectedPrestamo.ID_PRESTAMO) ?? selectedPrestamo;
+    return (
+      (list.data ?? []).find((p) => p.ID_PRESTAMO === selectedPrestamo.ID_PRESTAMO) ??
+      selectedPrestamo
+    );
   }, [list.data, selectedPrestamo]);
 
   const canEditSelected =
@@ -847,7 +874,12 @@ export function TeacherPrestamosDashboard() {
         </Tabs>
 
         {canMutate ? (
-          <Button type="button" variant="brand" className="w-full sm:w-auto" onClick={() => setCreating(true)}>
+          <Button
+            type="button"
+            variant="brand"
+            className="w-full sm:w-auto"
+            onClick={() => setCreating(true)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Nuevo préstamo
           </Button>
@@ -889,7 +921,9 @@ export function TeacherPrestamosDashboard() {
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {filtered.map((row) => {
             const canReturn =
-              canMutate && isPrestadoActivo(row.ESTADO_DEVOLUCION) && canProfesorMarkReturned(row, profesorId);
+              canMutate &&
+              isPrestadoActivo(row.ESTADO_DEVOLUCION) &&
+              canProfesorMarkReturned(row, profesorId);
             const receptorNombre = resolveReceptorNombre(
               row,
               alumnoById,
@@ -915,7 +949,10 @@ export function TeacherPrestamosDashboard() {
       <PrestamoDetailDialog
         prestamo={selectedPrestamoFresh}
         open={!!selectedPrestamo}
-        onClose={() => setSelectedPrestamo(null)}
+        onClose={() => {
+          setSelectedPrestamo(null);
+          onClearDeepLink?.();
+        }}
         receptorNombre={
           selectedPrestamoFresh
             ? resolveReceptorNombre(selectedPrestamoFresh, alumnoById, profesorNombre, profesorId)
@@ -925,9 +962,7 @@ export function TeacherPrestamosDashboard() {
         canReturn={canReturnSelected}
         onReturn={() => selectedPrestamoFresh && void handleReturn(selectedPrestamoFresh)}
         onSave={(patch) =>
-          selectedPrestamoFresh
-            ? handleEditSave(selectedPrestamoFresh, patch)
-            : Promise.resolve()
+          selectedPrestamoFresh ? handleEditSave(selectedPrestamoFresh, patch) : Promise.resolve()
         }
         returning={update.isPending}
         saving={update.isPending}

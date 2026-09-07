@@ -88,10 +88,7 @@ export function useAlumnoHorariosEvaluacion(
         ]),
       );
 
-      return buildUniqueSpecialties(
-        (horarios ?? []) as HorarioEvaluacionRow[],
-        especialidadById,
-      );
+      return buildUniqueSpecialties((horarios ?? []) as HorarioEvaluacionRow[], especialidadById);
     },
   });
 }

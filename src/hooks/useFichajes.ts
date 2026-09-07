@@ -1,11 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import { CORRECCION_APROBADA, CORRECCION_PENDIENTE } from "@/lib/fichajeEidas";
-import {
-  appendCenterFilter,
-  centerFilterQueryKey,
-} from "@/lib/centroFilter";
+import { CORRECCION_PENDIENTE } from "@/lib/fichajeEidas";
+import { appendCenterFilter, centerFilterQueryKey } from "@/lib/centroFilter";
 import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 
 export type ProfesorLookup = {
@@ -23,6 +20,7 @@ export type FichajeData = {
   FECHA_HORA: string;
   FECHA_HORA_REAL: string;
   ESTADO_LEGAL: string | null;
+  ESTADO?: string | null;
   IP_FICHAJE: string | null;
   USER_AGENT: string | null;
   LATITUD_LONGITUD: string | null;
@@ -70,8 +68,10 @@ export type ProfesorFichajeRow = {
   MODALIDAD: string | null;
   FECHA_HORA_REAL: string;
   ESTADO_LEGAL: string | null;
+  ESTADO?: string | null;
   METODO: string | null;
   NOTAS: string | null;
+  ID_FICHAJE_CORREGIDO?: string | null;
   TOTAL_HORAS_INTERVALO: number | null;
   TOTAL_HORAS_ACUMULADAS_DIA: number | null;
 };
@@ -218,18 +218,16 @@ export function useFichajes(filterCenterId?: string | null, profesorId?: string 
       const { data: profesores, error: profError } = await profesoresQuery;
       if (profError) throw profError;
 
-      const fichajesMapped: FichajeData[] = ((fichajes ?? []) as FichajeLegalViewRow[]).map(
-        (f) => {
-          const { FECHA_HORA_REAL, NOMBRE_PROFESOR, ESTADO_LEGAL, ...rest } = f;
-          return {
-            ...rest,
-            FECHA_HORA: FECHA_HORA_REAL,
-            FECHA_HORA_REAL,
-            ESTADO_LEGAL,
-            PROFESOR: NOMBRE_PROFESOR ? { NOMBRE_PROFESOR } : null,
-          };
-        },
-      );
+      const fichajesMapped: FichajeData[] = ((fichajes ?? []) as FichajeLegalViewRow[]).map((f) => {
+        const { FECHA_HORA_REAL, NOMBRE_PROFESOR, ESTADO_LEGAL, ...rest } = f;
+        return {
+          ...rest,
+          FECHA_HORA: FECHA_HORA_REAL,
+          FECHA_HORA_REAL,
+          ESTADO_LEGAL,
+          PROFESOR: NOMBRE_PROFESOR ? { NOMBRE_PROFESOR } : null,
+        };
+      });
 
       return {
         fichajes: fichajesMapped,
@@ -259,11 +257,7 @@ export function useFichajes(filterCenterId?: string | null, profesorId?: string 
         MOTIVO_MODIFICACION: input.MOTIVO_MODIFICACION ?? null,
       };
       if (input.FECHA_HORA) payload.FECHA_HORA = input.FECHA_HORA;
-      const { data, error } = await supabase
-        .from("FICHAJES")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("FICHAJES").insert(payload).select().single();
       if (error) throw error;
       return data;
     },
@@ -317,20 +311,22 @@ export function useFichajes(filterCenterId?: string | null, profesorId?: string 
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
-  const approveCorrection = useMutation({
-    mutationFn: async (id: string) => {
-      const { data, error } = await supabase
-        .from("FICHAJES")
-        .update({ TIPO_MOVIMIENTO: CORRECCION_APROBADA })
-        .eq("ID_FICHAJE", id)
-        .eq("ID_CLIENTE", tenantId)
-        .eq("TIPO_MOVIMIENTO", CORRECCION_PENDIENTE)
-        .select()
-        .single();
+  const respondCorrection = useMutation({
+    mutationFn: async (input: { idFichaje: string; acepta: boolean; motivo?: string }) => {
+      const { error } = await supabase.rpc("fn_responder_correccion_fichaje_admin", {
+        p_id_fichaje: input.idFichaje,
+        p_acepta: input.acepta,
+        p_motivo: input.motivo ?? null,
+      });
       if (error) throw error;
-      return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({
+        queryKey: tenantListKey("fichajes-conciliacion-admin", rol, tenantId),
+      });
+      void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+    },
   });
 
   const update = useMutation({
@@ -366,7 +362,7 @@ export function useFichajes(filterCenterId?: string | null, profesorId?: string 
     create,
     createSealed,
     requestCorrection,
-    approveCorrection,
+    respondCorrection,
     update,
     remove,
   };
@@ -401,9 +397,39 @@ export function useProfesorFichajes() {
         ...buildFichajeInsertPayload(tenantId, input),
         NOTAS: input.NOTAS ?? null,
       };
+      const { data, error } = await supabase.from("FICHAJES").insert(payload).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey }),
+  });
+
+  const requestCorrection = useMutation({
+    mutationFn: async (input: {
+      idFichajeCorregido: string;
+      fechaHoraManual: string;
+      motivo: string;
+      compliance: {
+        IP_FICHAJE: string;
+        USER_AGENT: string;
+        LATITUD_LONGITUD: string;
+      };
+    }) => {
+      if (!profesorId) throw new Error("Profesor no vinculado.");
       const { data, error } = await supabase
         .from("FICHAJES")
-        .insert(payload)
+        .insert({
+          ID_CLIENTE: tenantId,
+          ID_PROFESOR: profesorId,
+          TIPO_MOVIMIENTO: CORRECCION_PENDIENTE,
+          ID_FICHAJE_CORREGIDO: input.idFichajeCorregido,
+          FECHA_HORA_MANUAL: input.fechaHoraManual,
+          MOTIVO_MODIFICACION: input.motivo,
+          IP_FICHAJE: input.compliance.IP_FICHAJE,
+          USER_AGENT: input.compliance.USER_AGENT,
+          LATITUD_LONGITUD: input.compliance.LATITUD_LONGITUD,
+          METODO: "Corrección",
+        })
         .select()
         .single();
       if (error) throw error;
@@ -412,5 +438,35 @@ export function useProfesorFichajes() {
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
 
-  return { list, insert };
+  const respondManualAcceptance = useMutation({
+    mutationFn: async (input: { idFichaje: string; acepta: boolean; motivo?: string }) => {
+      const { error } = await supabase.rpc("fn_responder_aceptacion_fichaje_manual", {
+        p_id_fichaje: input.idFichaje,
+        p_acepta: input.acepta,
+        p_motivo: input.motivo ?? null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+    },
+  });
+
+  const respondAdminModification = useMutation({
+    mutationFn: async (input: { idFichaje: string; acepta: boolean; motivo?: string }) => {
+      const { error } = await supabase.rpc("fn_responder_modificacion_fichaje_admin", {
+        p_id_fichaje: input.idFichaje,
+        p_acepta: input.acepta,
+        p_motivo: input.motivo ?? null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      void qc.invalidateQueries({ queryKey: tenantListKey("avisos-internos", rol, tenantId) });
+    },
+  });
+
+  return { list, insert, requestCorrection, respondManualAcceptance, respondAdminModification };
 }

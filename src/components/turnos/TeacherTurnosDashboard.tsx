@@ -47,12 +47,7 @@ function formatTimeBlock(abre: string | null, cierra: string | null): string {
 }
 
 function hasSchedule(turno: TurnoData): boolean {
-  return !!(
-    turno.ABRE_MAÑANA ||
-    turno.CIERRA_MAÑANA ||
-    turno.ABRE_TARDE ||
-    turno.CIERRA_TARDE
-  );
+  return !!(turno.ABRE_MAÑANA || turno.CIERRA_MAÑANA || turno.ABRE_TARDE || turno.CIERRA_TARDE);
 }
 
 function TurnoDayCard({ turno }: { turno: TurnoData }) {
@@ -101,10 +96,7 @@ export function TeacherTurnosDashboard() {
       .sort((a, b) => daySortKey(a.DIA_SEMANA) - daySortKey(b.DIA_SEMANA));
   }, [list.data?.turnos, perfil.ID_PROFESOR]);
 
-  const configuredDays = useMemo(
-    () => myTurnos.filter(hasSchedule).length,
-    [myTurnos],
-  );
+  const configuredDays = useMemo(() => myTurnos.filter(hasSchedule).length, [myTurnos]);
 
   if (list.isLoading) {
     return (

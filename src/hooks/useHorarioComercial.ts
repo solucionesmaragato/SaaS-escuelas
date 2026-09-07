@@ -1,12 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  isAdminRole,
-  isMasterRole,
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { isAdminRole, isMasterRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import { centerFilterQueryKey } from "@/lib/centroFilter";
 import type { UUID } from "@/types/database";
 
@@ -25,12 +20,7 @@ export interface HorarioData {
 export type HorarioCreateInput = Omit<HorarioData, "ID_HORARIO">;
 export type HorarioUpdateInput = Partial<Omit<HorarioData, "ID_HORARIO">>;
 
-const ADMIN_UPDATE_KEYS = [
-  "ABRE_MAÑANA",
-  "CIERRA_MAÑANA",
-  "ABRE_TARDE",
-  "CIERRA_TARDE",
-] as const;
+const ADMIN_UPDATE_KEYS = ["ABRE_MAÑANA", "CIERRA_MAÑANA", "ABRE_TARDE", "CIERRA_TARDE"] as const;
 
 function assertCanUpdate(
   rol: string | null | undefined,
@@ -89,10 +79,7 @@ export function diaSemanaSortKey(dia: string): number {
   const asNum = parseInt(trimmed, 10);
   if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= 7) return asNum;
 
-  const normalized = trimmed
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  const normalized = trimmed.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "");
 
   return DIA_SEMANA_ORDEN[normalized] ?? DIA_SEMANA_ORDEN[trimmed.toUpperCase()] ?? 99;
 }
@@ -106,7 +93,10 @@ export function sortHorarios(rows: HorarioData[]): HorarioData[] {
   });
 }
 
-function invalidateHorarioList(qc: ReturnType<typeof useQueryClient>, queryKey: readonly unknown[]) {
+function invalidateHorarioList(
+  qc: ReturnType<typeof useQueryClient>,
+  queryKey: readonly unknown[],
+) {
   void qc.invalidateQueries({ queryKey, refetchType: "active" });
 }
 

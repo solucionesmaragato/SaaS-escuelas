@@ -14,8 +14,14 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { loading, perfilesLoading, isAuthenticated, needsTenantSelection, activePerfil, perfiles } =
-    useApp();
+  const {
+    loading,
+    perfilesLoading,
+    isAuthenticated,
+    needsTenantSelection,
+    activePerfil,
+    perfiles,
+  } = useApp();
   const [submitting, setSubmitting] = useState(false);
 
   if (loading || (isAuthenticated && perfilesLoading)) {
@@ -77,7 +83,9 @@ function LoginPage() {
           <div className="mx-auto mb-3 flex justify-center">
             <AppLogo onLight className="max-h-20" />
           </div>
-          <CardDescription>Accede a tu escuela con tu cuenta corporativa o personal</CardDescription>
+          <CardDescription>
+            Accede a tu escuela con tu cuenta corporativa o personal
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <OAuthProviderButtons

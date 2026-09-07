@@ -3,10 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import {
   isAdminRole,
-  isDireccionRole,
   isMasterRole,
   isProfesorRole,
-  isSecretariaRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
@@ -90,9 +88,7 @@ function mapAulasWithEspecialidad(
   rows: AulaRow[],
   especialidades: EspecialidadLookup[],
 ): AulaData[] {
-  const espById = new Map(
-    especialidades.map((e) => [e.ID_ESPECIALIDAD, e.ESPECIALIDAD]),
-  );
+  const espById = new Map(especialidades.map((e) => [e.ID_ESPECIALIDAD, e.ESPECIALIDAD]));
 
   return rows.map((row) => {
     const ids = normalizeEspecialidadIds(row.ESPECIALIDAD);
@@ -131,8 +127,9 @@ export function useAulas() {
             .order("NOMBRE_AULA", { ascending: true })
         : aulaQuery.order("NOMBRE_AULA", { ascending: true });
 
-      const [{ data: aulas, error }, { data: especialidades, error: espError }] =
-        await Promise.all([runAulaQuery, espQuery]);
+      const [{ data: aulas, error }, { data: especialidades, error: espError }] = await Promise.all(
+        [runAulaQuery, espQuery],
+      );
 
       if (error) throw error;
       if (espError) throw espError;

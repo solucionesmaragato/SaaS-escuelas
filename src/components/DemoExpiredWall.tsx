@@ -7,7 +7,7 @@ import type { Perfil } from "@/types/database";
 
 type DemoExpiredWallProps = {
   activePerfil: Perfil;
-  onReactivated: () => Promise<void>;
+  onReactivated: () => Promise<void> | Promise<boolean>;
 };
 
 export function DemoExpiredWall({ activePerfil, onReactivated }: DemoExpiredWallProps) {
@@ -42,9 +42,7 @@ export function DemoExpiredWall({ activePerfil, onReactivated }: DemoExpiredWall
             <AppLogo onLight className="max-h-20" />
           </div>
           <CardTitle className="text-2xl">Tu prueba ha caducado</CardTitle>
-          <CardDescription>
-            Agenda una llamada para reabrir el entorno demo
-          </CardDescription>
+          <CardDescription>Agenda una llamada para reabrir el entorno demo</CardDescription>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col">
           {showCalEmbed ? (

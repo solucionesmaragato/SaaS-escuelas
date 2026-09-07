@@ -51,10 +51,7 @@ export async function verifyCursoDeleteOtp(
 }
 
 export async function deleteCursoEscolar(targetCourseId: string): Promise<void> {
-  const { error } = await supabase
-    .from("CURSO_ESCOLAR")
-    .delete()
-    .eq("ID_CURSO", targetCourseId);
+  const { error } = await supabase.from("CURSO_ESCOLAR").delete().eq("ID_CURSO", targetCourseId);
 
   if (error) throw error;
 }

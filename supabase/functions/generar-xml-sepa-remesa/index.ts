@@ -208,7 +208,9 @@ async function hasPriorSepaCobrado(
     .neq("ID_RECIBO", excludeReciboId);
 
   if (error) throw error;
-  return (data ?? []).some((row) => isSepaMetodoPago((row as { METODO_PAGO?: string | null }).METODO_PAGO));
+  return (data ?? []).some((row) =>
+    isSepaMetodoPago((row as { METODO_PAGO?: string | null }).METODO_PAGO),
+  );
 }
 
 function buildGroupedRemittanceInfo(
@@ -216,9 +218,9 @@ function buildGroupedRemittanceInfo(
   alumnoNames: string[],
   mesPeriodo: string,
 ): string {
-  const uniqueNames = [
-    ...new Set(alumnoNames.map((name) => name.trim()).filter(Boolean)),
-  ].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  const uniqueNames = [...new Set(alumnoNames.map((name) => name.trim()).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, "es", { sensitivity: "base" }),
+  );
   const text = `${nombreEscuela.trim()} - Alumnos: ${uniqueNames.join(", ")} - ${mesPeriodo.trim()}`;
   return sanitizeSepaId(text, 140);
 }
@@ -432,10 +434,12 @@ async function uploadSepaXml(
 ): Promise<string> {
   const timestamp = Date.now();
   const storagePath = `${idCliente}/remesas/${idRemesa}_sepa_${timestamp}.xml`;
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, xmlBytes, {
-    contentType: "application/xml",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, xmlBytes, {
+      contentType: "application/xml",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir XML SEPA: ${uploadErr.message}`);
   }
@@ -468,10 +472,13 @@ export default {
       const mesPeriodo = body.mes_periodo?.trim();
 
       if (!idCliente || !idCentro || !idCurso || !mesPeriodo) {
-        return new Response(JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
-        });
+        return new Response(
+          JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          },
+        );
       }
 
       const { error: scopeErr } = await ctx.supabase.rpc("assert_remesa_excel_scope", {
@@ -485,22 +492,28 @@ export default {
         });
       }
 
-      const { data: remesaMeta, error: remesaErr } = await ctx.supabase.rpc("get_remesa_excel_meta", {
-        p_id_cliente: idCliente,
-        p_id_centro: idCentro,
-        p_id_curso: idCurso,
-        p_mes_periodo: mesPeriodo,
-      });
+      const { data: remesaMeta, error: remesaErr } = await ctx.supabase.rpc(
+        "get_remesa_excel_meta",
+        {
+          p_id_cliente: idCliente,
+          p_id_centro: idCentro,
+          p_id_curso: idCurso,
+          p_mes_periodo: mesPeriodo,
+        },
+      );
       if (remesaErr) throw remesaErr;
 
       const remesaRow = (Array.isArray(remesaMeta) ? remesaMeta[0] : remesaMeta) as
         | { ID_REMESA?: string }
         | undefined;
       if (!remesaRow?.ID_REMESA) {
-        return new Response(JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 404,
-        });
+        return new Response(
+          JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 404,
+          },
+        );
       }
 
       const { data: remesaLinkRow, error: remesaLinkErr } = await ctx.supabase
@@ -512,14 +525,18 @@ export default {
 
       const remesa: RemesaMetaRow = {
         ID_REMESA: remesaRow.ID_REMESA,
-        LINK_XML_SEPA: (remesaLinkRow as { LINK_XML_SEPA?: string | null } | null)?.LINK_XML_SEPA ?? null,
+        LINK_XML_SEPA:
+          (remesaLinkRow as { LINK_XML_SEPA?: string | null } | null)?.LINK_XML_SEPA ?? null,
       };
 
       if (!remesa.ID_REMESA) {
-        return new Response(JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 404,
-        });
+        return new Response(
+          JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 404,
+          },
+        );
       }
 
       const { data: cliente, error: clienteErr } = await ctx.supabase
@@ -541,7 +558,9 @@ export default {
         throw new Error("Falta NOMBRE_ESCUELA del acreedor en CLIENTES.");
       }
       if (!creditorIban) {
-        throw new Error("Falta IBAN del acreedor en CLIENTES. Configuralo antes de enviar la remesa.");
+        throw new Error(
+          "Falta IBAN del acreedor en CLIENTES. Configuralo antes de enviar la remesa.",
+        );
       }
       if (!creditorSchemeId) {
         throw new Error(
@@ -574,13 +593,10 @@ export default {
           : sepaRecibos.filter((row) => includedIds.includes(row.ID_RECIBO));
 
       if (sepaRecibosFiltrados.length === 0) {
-        return new Response(
-          JSON.stringify({ link: null, skipped: true, tx_count: 0 }),
-          {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-          },
-        );
+        return new Response(JSON.stringify({ link: null, skipped: true, tx_count: 0 }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        });
       }
 
       const missingMandateNames: string[] = [];
@@ -609,7 +625,9 @@ export default {
 
         const amount = Number(recibo.TOTAL_DOC ?? 0);
         if (amount <= 0) {
-          throw new Error(`Importe invalido en recibo SEPA de ${alumnoLabel} (${recibo.REF_RECIBO}).`);
+          throw new Error(
+            `Importe invalido en recibo SEPA de ${alumnoLabel} (${recibo.REF_RECIBO}).`,
+          );
         }
 
         const priorCobrado = await hasPriorSepaCobrado(
@@ -688,15 +706,21 @@ export default {
         throw new Error(`XML generado pero no se pudo guardar LINK_XML_SEPA: ${saveErr.message}`);
       }
 
-      return new Response(JSON.stringify({ link: publicUrl, id_remesa: idRemesa, tx_count: transactions.length }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({ link: publicUrl, id_remesa: idRemesa, tx_count: transactions.length }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        },
+      );
     } catch (error) {
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        },
+      );
     }
   }),
 };

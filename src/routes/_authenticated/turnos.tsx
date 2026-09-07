@@ -100,16 +100,16 @@ function normalizeDayKey(dia: string | null | undefined): string {
   return dia.normalize("NFD").replace(/\p{M}/gu, "");
 }
 
-function resolveTurnoDiaSemana(dia: string | null | undefined): (typeof DIA_SEMANA_OPTIONS)[number] {
+function resolveTurnoDiaSemana(
+  dia: string | null | undefined,
+): (typeof DIA_SEMANA_OPTIONS)[number] {
   if (!dia?.trim()) return DIA_SEMANA_OPTIONS[0];
   const trimmed = dia.trim();
   if ((DIA_SEMANA_OPTIONS as readonly string[]).includes(trimmed)) {
     return trimmed as (typeof DIA_SEMANA_OPTIONS)[number];
   }
   const normalized = normalizeDayKey(trimmed).toLowerCase();
-  const match = DIA_SEMANA_OPTIONS.find(
-    (opt) => normalizeDayKey(opt).toLowerCase() === normalized,
-  );
+  const match = DIA_SEMANA_OPTIONS.find((opt) => normalizeDayKey(opt).toLowerCase() === normalized);
   if (match) return match;
   const alias = Object.keys(dayOrder).find(
     (key) => normalizeDayKey(key).toLowerCase() === normalized,
@@ -791,9 +791,7 @@ function TurnoFormDialog({
   onSubmit: (values: TurnoBulkCreateInput | TurnoCreateInput | TurnoUpdateInput) => void;
 }) {
   const [idProfesor, setIdProfesor] = useState(() => turnoFormStateFromInitial(initial).idProfesor);
-  const [diaSemana, setDiaSemana] = useState(
-    () => turnoFormStateFromInitial(initial).diaSemana,
-  );
+  const [diaSemana, setDiaSemana] = useState(() => turnoFormStateFromInitial(initial).diaSemana);
   const [diasSeleccionados, setDiasSeleccionados] = useState<string[]>([]);
   const [horariosPorDia, setHorariosPorDia] = useState<Record<string, DayScheduleFields>>({});
   const [abreManana, setAbreManana] = useState(() => turnoFormStateFromInitial(initial).abreManana);
@@ -946,7 +944,7 @@ function TurnoFormDialog({
             <Label htmlFor="turno-dia">Día de la semana *</Label>
             <Select
               value={diaSemana}
-              onValueChange={setDiaSemana}
+              onValueChange={(v) => setDiaSemana(v as typeof diaSemana)}
               disabled={assignmentFieldsLocked}
             >
               <SelectTrigger id="turno-dia">

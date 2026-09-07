@@ -38,11 +38,7 @@ export function calcVentaLineaSubtotal(
   return base;
 }
 
-function ventasLineasQueryKey(
-  reciboId: string,
-  rol: string | null | undefined,
-  tenantId: string,
-) {
+function ventasLineasQueryKey(reciboId: string, rol: string | null | undefined, tenantId: string) {
   return ["ventasLineas", reciboId, ...tenantListKey("ventas-lineas", rol, tenantId)] as const;
 }
 
@@ -121,7 +117,9 @@ export async function invokeGenerarExcelRemesaControl(
     if (status === 401) {
       throw new Error("No autorizado para generar el Excel de control.");
     }
-    throw new Error(error instanceof Error ? error.message : "Error al generar el Excel de control.");
+    throw new Error(
+      error instanceof Error ? error.message : "Error al generar el Excel de control.",
+    );
   }
 
   const payload = data as { link?: string; error?: string } | null;
@@ -223,7 +221,8 @@ export function useVentasLineas(reciboId: string | null | undefined) {
           });
         }
       } catch (err) {
-        excelError = err instanceof Error ? err.message : "No se pudo regenerar el Excel de control.";
+        excelError =
+          err instanceof Error ? err.message : "No se pudo regenerar el Excel de control.";
       }
 
       return { line: data as VentaLineaRow, pdfError, excelError };

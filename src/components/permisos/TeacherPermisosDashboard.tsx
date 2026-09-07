@@ -200,20 +200,11 @@ function MetricCard({
   );
 }
 
-function PermisoCard({
-  row,
-  onOpen,
-}: {
-  row: AusenciaData;
-  onOpen: () => void;
-}) {
+function PermisoCard({ row, onOpen }: { row: AusenciaData; onOpen: () => void }) {
   const dias = elapsedDays(row.FECHA_INICIO, row.FECHA_FIN);
 
   return (
-    <Card
-      className="cursor-pointer p-4 transition-colors hover:bg-muted/40"
-      onClick={onOpen}
-    >
+    <Card className="cursor-pointer p-4 transition-colors hover:bg-muted/40" onClick={onOpen}>
       <div className="flex min-w-0 items-start justify-between gap-2">
         <p className="min-w-0 flex-1 truncate font-medium leading-snug">{row.TIPO}</p>
         <EstadoBadge estado={row.ESTADO} />
@@ -462,7 +453,13 @@ function SolicitarPermisoDialog({
   );
 }
 
-export function TeacherPermisosDashboard() {
+export function TeacherPermisosDashboard({
+  deepLinkPermisoId,
+  onClearDeepLink,
+}: {
+  deepLinkPermisoId?: string;
+  onClearDeepLink?: () => void;
+} = {}) {
   const { perfil } = useActiveTenant();
   const profesorId = perfil.ID_PROFESOR;
 
@@ -499,6 +496,14 @@ export function TeacherPermisosDashboard() {
     }
     return ausencias;
   }, [ausencias, filter]);
+
+  useEffect(() => {
+    if (!deepLinkPermisoId || ausencias.length === 0) return;
+    const target = ausencias.find((row) => row.ID_PERMISO === deepLinkPermisoId);
+    if (!target) return;
+    setSelectedPermiso(target);
+    onClearDeepLink?.();
+  }, [deepLinkPermisoId, ausencias, onClearDeepLink]);
 
   const handleCreate = async (values: AusenciaCreateInput) => {
     try {

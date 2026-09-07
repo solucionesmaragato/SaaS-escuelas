@@ -46,10 +46,7 @@ function generarIdLinea(): string {
 }
 
 /** Previsualiza la REF que asignará el trigger generar_ref_recibo al insertar. */
-export async function previewNextRefRecibo(
-  idCliente: string,
-  idCentro: string,
-): Promise<string> {
+export async function previewNextRefRecibo(idCliente: string, idCentro: string): Promise<string> {
   const scopedCliente = idCliente.trim();
   const scopedCentro = idCentro.trim();
   if (!scopedCliente || !scopedCentro) {
@@ -201,11 +198,7 @@ export type ReciboRow = {
 };
 
 function normalizeMesNombre(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  return value.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
 export function mesPeriodoSortKey(mesPeriodo: string | null | undefined): number {
@@ -481,19 +474,17 @@ export async function resolveCobradoVerifactuEmision(
     body: { id_recibo: reciboId },
   });
 
-  const payload = data as
-    | {
-        error?: string;
-        link?: string | null;
-        pdfDownloaded?: boolean;
-        notification?: "success" | "pdf_missing";
-        NUM_FACTURA_KOREFACTU?: string | null;
-        LINK_FACTURA_KOREFACTU?: string | null;
-        URL_QR?: string | null;
-        HUELLA_HASH?: string | null;
-        excel_error?: string | null;
-      }
-    | null;
+  const payload = data as {
+    error?: string;
+    link?: string | null;
+    pdfDownloaded?: boolean;
+    notification?: "success" | "pdf_missing";
+    NUM_FACTURA_KOREFACTU?: string | null;
+    LINK_FACTURA_KOREFACTU?: string | null;
+    URL_QR?: string | null;
+    HUELLA_HASH?: string | null;
+    excel_error?: string | null;
+  } | null;
 
   if (payload?.error?.trim()) {
     throw new Error(sanitizeUserFacingError(payload.error.trim()));
@@ -505,7 +496,11 @@ export async function resolveCobradoVerifactuEmision(
     if (status === 401) {
       throw new Error("No autorizado para emitir la factura.");
     }
-    throw new Error(sanitizeUserFacingError(error instanceof Error ? error.message : "Error al emitir la factura con Verifactu."));
+    throw new Error(
+      sanitizeUserFacingError(
+        error instanceof Error ? error.message : "Error al emitir la factura con Verifactu.",
+      ),
+    );
   }
 
   const link = payload?.link?.trim() || null;
@@ -589,15 +584,13 @@ export async function resolveAnulacionVerifactu(
     body: invokeBody,
   });
 
-  const payload = data as
-    | {
-        error?: string;
-        link?: string | null;
-        notification?: string;
-        uuidAnulado?: string | null;
-        orphan?: boolean;
-      }
-    | null;
+  const payload = data as {
+    error?: string;
+    link?: string | null;
+    notification?: string;
+    uuidAnulado?: string | null;
+    orphan?: boolean;
+  } | null;
   if (payload?.error?.trim()) {
     throw new Error(sanitizeUserFacingError(payload.error.trim()));
   }
@@ -608,7 +601,11 @@ export async function resolveAnulacionVerifactu(
     if (status === 401) {
       throw new Error("No autorizado para anular la factura.");
     }
-    throw new Error(sanitizeUserFacingError(error instanceof Error ? error.message : "Error al anular la factura con Verifactu."));
+    throw new Error(
+      sanitizeUserFacingError(
+        error instanceof Error ? error.message : "Error al anular la factura con Verifactu.",
+      ),
+    );
   }
 
   return {

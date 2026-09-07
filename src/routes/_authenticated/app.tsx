@@ -10,10 +10,7 @@ function ProfesorAppLayout() {
   const { rol, perfil } = useActiveTenant();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
-  if (
-    pathname === "/app/datos-personales" &&
-    canViewMiPerfilNav(rol, perfil.ID_PROFESOR)
-  ) {
+  if (pathname === "/app/datos-personales" && canViewMiPerfilNav(rol, perfil.ID_PROFESOR)) {
     return <Outlet />;
   }
 

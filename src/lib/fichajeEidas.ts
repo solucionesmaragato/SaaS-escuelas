@@ -44,26 +44,41 @@ export function formatFichajeErrorMessage(error: unknown): string {
 
 export const CORRECCION_PENDIENTE = "Corrección Pendiente";
 export const CORRECCION_APROBADA = "Corrección Aprobada";
+export const MODIFICACION_PENDIENTE = "Modificación Pendiente";
 
-export const CLOCK_MOVEMENT_TYPES = new Set([
-  "Entrada",
-  "Salida",
-  "Inicio Pausa",
-  "Fin de Pausa",
-]);
+export const CLOCK_MOVEMENT_TYPES = new Set(["Entrada", "Salida", "Inicio Pausa", "Fin de Pausa"]);
 
 export function isCorrectionMovement(tipo: string | null | undefined): boolean {
   return (tipo ?? "").toLowerCase().includes("corrección");
 }
 
+function isOpenFichajeSolicitud(
+  row: {
+    ID_FICHAJE_CORREGIDO: string | null;
+    TIPO_MOVIMIENTO: string | null;
+    ESTADO?: string | null;
+  },
+  originalId: string,
+): boolean {
+  if (row.ID_FICHAJE_CORREGIDO !== originalId) return false;
+  const mov = (row.TIPO_MOVIMIENTO ?? "").trim();
+  const estado = (row.ESTADO ?? "").trim();
+  if (mov === CORRECCION_PENDIENTE && estado !== "Rechazado") return true;
+  if (mov === MODIFICACION_PENDIENTE && estado === "Pendiente de aceptación modificación") {
+    return true;
+  }
+  return false;
+}
+
 export function canRequestCorrection(
   record: { ID_FICHAJE: string; TIPO_MOVIMIENTO: string | null },
-  allRecords: Array<{ ID_FICHAJE: string; ID_FICHAJE_CORREGIDO: string | null; TIPO_MOVIMIENTO: string | null }>,
+  allRecords: Array<{
+    ID_FICHAJE: string;
+    ID_FICHAJE_CORREGIDO: string | null;
+    TIPO_MOVIMIENTO: string | null;
+    ESTADO?: string | null;
+  }>,
 ): boolean {
   if (isCorrectionMovement(record.TIPO_MOVIMIENTO)) return false;
-  return !allRecords.some(
-    (row) =>
-      row.ID_FICHAJE_CORREGIDO === record.ID_FICHAJE &&
-      (row.TIPO_MOVIMIENTO ?? "").trim() === CORRECCION_PENDIENTE,
-  );
+  return !allRecords.some((row) => isOpenFichajeSolicitud(row, record.ID_FICHAJE));
 }

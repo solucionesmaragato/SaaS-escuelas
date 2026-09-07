@@ -23,8 +23,8 @@ import {
 import { useAdminCentroFilter, type CentroData } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
+import { canWriteUi } from "@/lib/rbac";
 import {
-  canManageUsuarios,
   isAdminRole,
   isDireccionRole,
   isMasterRole,
@@ -124,7 +124,7 @@ function isOwnDocument(doc: DocumentoData, perfilProfesorId: string | null | und
 }
 
 function isEmployeeDocumentViewer(rol: string | null | undefined): boolean {
-  return isProfesorRole(rol) || isDireccionRole(rol) || isSecretariaRole(rol);
+  return isProfesorRole(rol) || isDireccionRole(rol);
 }
 
 function usesManagerDocumentView(
@@ -134,7 +134,7 @@ function usesManagerDocumentView(
 ): boolean {
   if (isEmployeeDocumentViewer(rol)) return false;
   if (isOwnDocument(doc, perfilProfesorId)) return false;
-  return isMasterRole(rol) || isAdminRole(rol);
+  return isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
 }
 
 function isAbiertoForViewer(
@@ -508,22 +508,18 @@ function DocumentoDetailOverlay({
 }
 
 function DocumentosPage() {
-  const { rol, perfil } = useActiveTenant();
+  const { rol, perfil, centerId: profileCenterId } = useActiveTenant();
   const { documentoId } = Route.useSearch();
+  const isSecretaria = isSecretariaRole(rol);
 
   if (isProfesorRole(rol)) {
-    return (
-      <Navigate
-        to="/app/documentos"
-        search={documentoId ? { documentoId } : {}}
-        replace
-      />
-    );
+    return <Navigate to="/app/documentos" search={documentoId ? { documentoId } : {}} replace />;
   }
 
   const navigate = Route.useNavigate();
   const isMaster = isMasterRole(rol);
-  const canMutate = canManageUsuarios(rol);
+  const isAdmin = isAdminRole(rol);
+  const canMutate = canWriteUi(rol, "documentos:write");
   const {
     centrosOrdenados,
     showCentroFilter,
@@ -531,7 +527,9 @@ function DocumentosPage() {
     setSelectedCenterId,
     filterCenterId,
   } = useAdminCentroFilter();
-  const { list, create, update, remove } = useDocumentos(filterCenterId);
+  const effectiveFilterCenterId = isSecretaria ? profileCenterId : filterCenterId;
+  const createCenterId = isSecretaria ? profileCenterId : filterCenterId;
+  const { list, create, update, remove } = useDocumentos(effectiveFilterCenterId);
 
   const documentos = useMemo(() => list.data?.documentos ?? [], [list.data?.documentos]);
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
@@ -626,7 +624,7 @@ function DocumentosPage() {
               className="pl-9"
             />
           </div>
-          {showCentroFilter && (
+          {showCentroFilter && !isSecretaria && (
             <CentroTableFilter
               id="documentos-centro-filter"
               centros={centrosOrdenados}
@@ -760,9 +758,20 @@ function DocumentosPage() {
         submitting={create.isPending}
         profesores={profesores}
         centros={centrosOrdenados}
+        fixedCenterId={createCenterId}
+        showCentroPickerOnCreate={(isAdmin || isMaster) && !filterCenterId}
         onSubmit={async (values: DocumentoCreateInput) => {
           try {
-            await create.mutateAsync(values);
+            const payload = { ...values };
+            const resolvedCenterId = createCenterId ?? filterCenterId;
+            if (resolvedCenterId) {
+              payload.ID_CENTRO = resolvedCenterId;
+            }
+            if (!payload.ID_CENTRO) {
+              toast.error("Selecciona un centro en el filtro o en el formulario.");
+              return;
+            }
+            await create.mutateAsync(payload);
             toast.success("Documento registrado correctamente");
             setCreating(false);
           } catch (err) {
@@ -856,36 +865,44 @@ function DocumentosPage() {
   );
 }
 
-type DocumentoFormDialogCreateProps = {
+type DocumentoFormDialogBaseProps = {
   open: boolean;
   onClose: () => void;
   title: string;
   submitLabel: string;
-  initial?: undefined;
   submitting: boolean;
   profesores: ProfesorLookup[];
   centros: CentroData[];
+  fixedCenterId?: string | null;
+  showCentroPickerOnCreate?: boolean;
   embedded?: boolean;
+};
+
+type DocumentoFormDialogCreateProps = DocumentoFormDialogBaseProps & {
+  initial?: undefined;
   onSubmit: (values: DocumentoCreateInput) => void;
 };
 
-type DocumentoFormDialogEditProps = {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  submitLabel: string;
+type DocumentoFormDialogEditProps = DocumentoFormDialogBaseProps & {
   initial: DocumentoData;
-  submitting: boolean;
-  profesores: ProfesorLookup[];
-  centros: CentroData[];
-  embedded?: boolean;
   onSubmit: (values: DocumentoUpdateInput) => void;
 };
 
 type DocumentoFormDialogProps = DocumentoFormDialogCreateProps | DocumentoFormDialogEditProps;
 
 function DocumentoFormDialog(props: DocumentoFormDialogProps) {
-  const { open, onClose, title, submitLabel, submitting, profesores, centros, embedded } = props;
+  const {
+    open,
+    onClose,
+    title,
+    submitLabel,
+    submitting,
+    profesores,
+    centros,
+    embedded,
+    fixedCenterId,
+    showCentroPickerOnCreate,
+  } = props;
   const initial = "initial" in props ? props.initial : undefined;
   const isEdit = initial != null;
 
@@ -900,7 +917,7 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
   useEffect(() => {
     if (!open) return;
     setIdProfesor(initial?.ID_PROFESOR ?? "");
-    setIdCentro(initial?.ID_CENTRO ?? "");
+    setIdCentro(fixedCenterId ?? initial?.ID_CENTRO ?? "");
     const cat = initial?.CATEGORIA ?? CATEGORIA_OPTIONS[0];
     if (CATEGORIA_OPTIONS.includes(cat as (typeof CATEGORIA_OPTIONS)[number])) {
       setCategoria(cat);
@@ -912,7 +929,7 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
     setFile(null);
     setRequiereFirma(initial?.REQUIERE_FIRMA ?? false);
     setFechaCaducidad(initial?.FECHA_CADUCIDAD ?? "");
-  }, [open, initial]);
+  }, [open, initial, fixedCenterId]);
 
   const categoriaFinal = categoria === "Otro" ? categoriaCustom.trim() : categoria;
 
@@ -928,6 +945,7 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
         e.preventDefault();
         if (!idProfesor || !categoriaFinal) return;
         if (!isEdit && !file) return;
+        if (!isEdit && showCentroPickerOnCreate && !fixedCenterId && !idCentro) return;
 
         if (isEdit && initial) {
           const patch: DocumentoUpdateInput = {
@@ -943,7 +961,7 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
 
         const payload: DocumentoCreateInput = {
           ID_PROFESOR: idProfesor,
-          ID_CENTRO: idCentro || null,
+          ID_CENTRO: fixedCenterId ?? (idCentro || null),
           CATEGORIA: categoriaFinal,
           file: file ?? undefined,
           REQUIERE_FIRMA: requiereFirma,
@@ -970,25 +988,40 @@ function DocumentoFormDialog(props: DocumentoFormDialogProps) {
       </div>
 
       <div className="space-y-2">
-        <Label>Centro</Label>
-        <Select
-          value={idCentro || GLOBAL_CENTRO_VALUE}
-          onValueChange={(v) => setIdCentro(v === GLOBAL_CENTRO_VALUE ? "" : v)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Seleccionar centro" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={GLOBAL_CENTRO_VALUE}>
-              Global (Válido para todas las sedes)
-            </SelectItem>
-            {centros.map((centro) => (
-              <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
-                {centro.NOMBRE_CENTRO}
+        <Label>Centro{showCentroPickerOnCreate && !fixedCenterId ? " *" : ""}</Label>
+        {showCentroPickerOnCreate && !fixedCenterId ? (
+          <Select value={idCentro} onValueChange={setIdCentro}>
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccionar centro" />
+            </SelectTrigger>
+            <SelectContent>
+              {centros.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <Select
+            value={idCentro || GLOBAL_CENTRO_VALUE}
+            onValueChange={(v) => setIdCentro(v === GLOBAL_CENTRO_VALUE ? "" : v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccionar centro" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={GLOBAL_CENTRO_VALUE}>
+                Global (Válido para todas las sedes)
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              {centros.map((centro) => (
+                <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                  {centro.NOMBRE_CENTRO}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="space-y-2">

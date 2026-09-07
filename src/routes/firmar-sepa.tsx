@@ -54,7 +54,8 @@ const SEPA_LEGAL_TEXT = [
 
 export const Route = createFileRoute("/firmar-sepa")({
   validateSearch: (search: Record<string, unknown>): FirmarSepaSearch => {
-    const token = typeof search.token === "string" && search.token.trim() ? search.token : undefined;
+    const token =
+      typeof search.token === "string" && search.token.trim() ? search.token : undefined;
     return { token };
   },
   component: FirmarSepaPage,
@@ -150,8 +151,7 @@ function FirmarSepaPage() {
   const clienteCif = displayValue(cliente?.CIF);
   const clienteDireccion = displayValue(cliente?.DIRECCION);
   const alumnoNombre = displayValue(alumno?.NOMBRE_ALUMNO);
-  const accountHolder =
-    alumno?.TITULAR_CUENTA?.trim() || alumno?.NOMBRE_ALUMNO?.trim() || "—";
+  const accountHolder = alumno?.TITULAR_CUENTA?.trim() || alumno?.NOMBRE_ALUMNO?.trim() || "—";
   const ibanDisplay = maskIban(alumno?.IBAN);
   const reference = displayValue(mandato?.TOKEN_PUBLICO ?? token);
 
@@ -239,7 +239,10 @@ function FirmarSepaPage() {
               <p className="text-sm text-slate-600">{centroName}</p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Badge variant="outline" className="border-slate-200 bg-slate-50 font-normal text-slate-600">
+              <Badge
+                variant="outline"
+                className="border-slate-200 bg-slate-50 font-normal text-slate-600"
+              >
                 Referencia {reference}
               </Badge>
               {token ? (
@@ -272,10 +275,7 @@ function FirmarSepaPage() {
                 >
                   <div className="mb-3 flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-slate-500" aria-hidden />
-                    <h2
-                      id="sepa-creditor-details"
-                      className="text-sm font-semibold text-slate-800"
-                    >
+                    <h2 id="sepa-creditor-details" className="text-sm font-semibold text-slate-800">
                       Datos del acreedor
                     </h2>
                   </div>
@@ -307,10 +307,7 @@ function FirmarSepaPage() {
                 >
                   <div className="mb-3 flex items-center gap-2">
                     <ShieldCheck className="h-4 w-4 text-slate-500" aria-hidden />
-                    <h2
-                      id="sepa-account-details"
-                      className="text-sm font-semibold text-slate-800"
-                    >
+                    <h2 id="sepa-account-details" className="text-sm font-semibold text-slate-800">
                       Datos del mandato
                     </h2>
                   </div>
@@ -350,10 +347,7 @@ function FirmarSepaPage() {
                 </section>
 
                 <div className="rounded-xl border border-slate-200 bg-white p-4">
-                  <label
-                    htmlFor="sepa-consent"
-                    className="flex cursor-pointer items-start gap-3"
-                  >
+                  <label htmlFor="sepa-consent" className="flex cursor-pointer items-start gap-3">
                     <Checkbox
                       id="sepa-consent"
                       checked={consentAccepted}
@@ -362,8 +356,8 @@ function FirmarSepaPage() {
                       className="mt-0.5"
                     />
                     <span className="text-sm leading-relaxed text-slate-700">
-                      He leído y acepto el mandato SEPA. Autorizo el registro de mi dirección IP
-                      y huella digital como evidencia legal de firma.
+                      He leído y acepto el mandato SEPA. Autorizo el registro de mi dirección IP y
+                      huella digital como evidencia legal de firma.
                     </span>
                   </label>
                 </div>
@@ -423,8 +417,8 @@ function SuccessState({
         Mandato Firmado y Registrado Correctamente
       </h2>
       <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-500">
-        Hemos registrado su autorización de domiciliación bancaria. Recibirá una copia en su
-        correo electrónico en los próximos minutos.
+        Hemos registrado su autorización de domiciliación bancaria. Recibirá una copia en su correo
+        electrónico en los próximos minutos.
       </p>
       <Button
         type="button"

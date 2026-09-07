@@ -261,7 +261,9 @@ function readBulletinCriteria(
 function buildGroupedBulletinsPrintHtml(bulletins: Record<string, unknown>[]): string {
   const pages = bulletins
     .map((student) => {
-      const studentName = escapeHtml(readBulletinField(student, ["nombre_alumno"]) || "Desconocido");
+      const studentName = escapeHtml(
+        readBulletinField(student, ["nombre_alumno"]) || "Desconocido",
+      );
       const trimestre = escapeHtml(readBulletinField(student, ["trimestre", "TRIMESTRE"]) || "—");
       const evaluaciones = readBulletinSpecialties(student);
 
@@ -574,10 +576,7 @@ function EvaluacionesTab() {
       aulasQuery = scopeTenantQuery(aulasQuery, rol, tenantId);
 
       const [{ data: grupos, error: gruposError }, { data: aulas, error: aulasError }] =
-        await Promise.all([
-          gruposQuery,
-          aulasQuery.order("NOMBRE_AULA", { ascending: true }),
-        ]);
+        await Promise.all([gruposQuery, aulasQuery.order("NOMBRE_AULA", { ascending: true })]);
 
       if (gruposError) throw gruposError;
       if (aulasError) throw aulasError;
@@ -838,7 +837,7 @@ function EvaluacionesTab() {
 
         (groupedMap.get(key)!.evaluaciones as Record<string, unknown>[]).push({
           nombre_especialidad: especialidadById.get(row.ID_ESPECIALIDAD) || "Desconocido",
-          nombre_profesor: row.ID_PROFESOR ? (profesorById.get(row.ID_PROFESOR) || "—") : "—",
+          nombre_profesor: row.ID_PROFESOR ? profesorById.get(row.ID_PROFESOR) || "—" : "—",
           nota_media: row.NOTA_MEDIA,
           resultados_rubrica: row.RESULTADOS_RUBRICA,
         });
@@ -1014,13 +1013,15 @@ function EvaluacionesTab() {
               disabled={generatingBulletins}
               className="w-full sm:w-auto"
             >
-              {generatingBulletins ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
+              {generatingBulletins ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Generar Boletines PDF
             </Button>
             {canMutate && (
-              <Button variant="brand" onClick={() => setCreating(true)} className="w-full sm:w-auto">
+              <Button
+                variant="brand"
+                onClick={() => setCreating(true)}
+                className="w-full sm:w-auto"
+              >
                 <Plus className="mr-2 h-4 w-4" />
                 Nueva evaluación
               </Button>
@@ -1249,13 +1250,7 @@ function EvaluacionDetailDialog({
           </DialogTitle>
           <div className="flex shrink-0 items-center gap-2">
             {canMutate && (
-              <Button
-                type="button"
-                variant="brand"
-                size="sm"
-                className="gap-2"
-                onClick={onEdit}
-              >
+              <Button type="button" variant="brand" size="sm" className="gap-2" onClick={onEdit}>
                 <Pencil className="h-4 w-4" />
                 Editar
               </Button>
@@ -1733,156 +1728,156 @@ function EvaluacionFormDialog(props: EvaluacionFormDialogProps) {
           className="flex min-h-0 flex-1 flex-col"
         >
           <div className="shrink-0 space-y-5">
-          <SearchableEntitySelect
-            label="Alumno"
-            placeholder="Buscar alumno..."
-            options={alumnoOptions}
-            value={idAlumno}
-            onChange={handleAlumnoChange}
-            disabled={fieldsDisabled || isEdit}
-            loading={alumnosLoading}
-          />
+            <SearchableEntitySelect
+              label="Alumno"
+              placeholder="Buscar alumno..."
+              options={alumnoOptions}
+              value={idAlumno}
+              onChange={handleAlumnoChange}
+              disabled={fieldsDisabled || isEdit}
+              loading={alumnosLoading}
+            />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Año académico</Label>
-              <Select
-                value={idCurso || undefined}
-                onValueChange={handleCursoChange}
-                disabled={fieldsDisabled || cursosLoading || isEdit}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccionar año académico" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[280px] overflow-y-auto">
-                  {cursosEscolares.map((curso) => (
-                    <SelectItem key={curso.ID_CURSO} value={curso.ID_CURSO}>
-                      {curso.NOMBRE_CURSO}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Año académico</Label>
+                <Select
+                  value={idCurso || undefined}
+                  onValueChange={handleCursoChange}
+                  disabled={fieldsDisabled || cursosLoading || isEdit}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar año académico" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[280px] overflow-y-auto">
+                    {cursosEscolares.map((curso) => (
+                      <SelectItem key={curso.ID_CURSO} value={curso.ID_CURSO}>
+                        {curso.NOMBRE_CURSO}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="space-y-2">
-              <Label>Trimestre</Label>
-              <Select value={trimestre} onValueChange={setTrimestre} disabled={fieldsDisabled}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TRIMESTRE_VALUES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t === "FINAL" ? "Final" : `Trimestre ${t}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-2">
+                <Label>Trimestre</Label>
+                <Select value={trimestre} onValueChange={setTrimestre} disabled={fieldsDisabled}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRIMESTRE_VALUES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t === "FINAL" ? "Final" : `Trimestre ${t}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
           </div>
 
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain py-5">
-          {canFetchSpecialties && especialidadesLoading && (
-            <div className="space-y-2">
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
-            </div>
-          )}
+            {canFetchSpecialties && especialidadesLoading && (
+              <div className="space-y-2">
+                <Skeleton className="h-28 w-full" />
+                <Skeleton className="h-28 w-full" />
+              </div>
+            )}
 
-          {canFetchSpecialties && especialidadesError && (
-            <p className="text-sm text-destructive">
-              Error al cargar especialidades: {(especialidadesErrorObj as Error)?.message}
-            </p>
-          )}
+            {canFetchSpecialties && especialidadesError && (
+              <p className="text-sm text-destructive">
+                Error al cargar especialidades: {(especialidadesErrorObj as Error)?.message}
+              </p>
+            )}
 
-          {canFetchSpecialties && !especialidadesLoading && visibleCards.length === 0 && (
-            <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              No hay especialidades activas para este alumno en el año académico seleccionado.
-            </p>
-          )}
+            {canFetchSpecialties && !especialidadesLoading && visibleCards.length === 0 && (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                No hay especialidades activas para este alumno en el año académico seleccionado.
+              </p>
+            )}
 
-          <div className="space-y-3">
-            {visibleCards.map((card) => {
-              const selectedRubrica =
-                card.idRubrica !== RUBRICA_NONE_VALUE ? rubricaById.get(card.idRubrica) : null;
-              const criteria = parseRubricCriteria(selectedRubrica?.ESTRUCTURA ?? null);
-              const criterioGrades = cardEdits[card.idEspecialidad]?.criterioGrades ?? {};
+            <div className="space-y-3">
+              {visibleCards.map((card) => {
+                const selectedRubrica =
+                  card.idRubrica !== RUBRICA_NONE_VALUE ? rubricaById.get(card.idRubrica) : null;
+                const criteria = parseRubricCriteria(selectedRubrica?.ESTRUCTURA ?? null);
+                const criterioGrades = cardEdits[card.idEspecialidad]?.criterioGrades ?? {};
 
-              return (
-                <Card key={card.idEspecialidad} className="border bg-muted/10 p-4 shadow-sm">
-                  <div className="mb-4">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Especialidad
-                    </p>
-                    <p className="text-base font-semibold">{card.nombreEspecialidad || "—"}</p>
-                  </div>
+                return (
+                  <Card key={card.idEspecialidad} className="border bg-muted/10 p-4 shadow-sm">
+                    <div className="mb-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Especialidad
+                      </p>
+                      <p className="text-base font-semibold">{card.nombreEspecialidad || "—"}</p>
+                    </div>
 
-                  <div className="grid gap-4">
-                    <div className="space-y-2">
-                      <Label>Rúbrica de evaluación</Label>
-                      <Select
-                        value={card.idRubrica}
-                        onValueChange={(value) => handleRubricaChange(card.idEspecialidad, value)}
-                        disabled={fieldsDisabled || rubricasLoading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin rúbrica" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={RUBRICA_NONE_VALUE}>
-                            Sin rúbrica (nota manual)
-                          </SelectItem>
-                          {activeRubricas.map((rubrica) => (
-                            <SelectItem key={rubrica.ID_RUBRICA} value={rubrica.ID_RUBRICA}>
-                              {rubrica.NOMBRE}
+                    <div className="grid gap-4">
+                      <div className="space-y-2">
+                        <Label>Rúbrica de evaluación</Label>
+                        <Select
+                          value={card.idRubrica}
+                          onValueChange={(value) => handleRubricaChange(card.idEspecialidad, value)}
+                          disabled={fieldsDisabled || rubricasLoading}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sin rúbrica" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={RUBRICA_NONE_VALUE}>
+                              Sin rúbrica (nota manual)
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                            {activeRubricas.map((rubrica) => (
+                              <SelectItem key={rubrica.ID_RUBRICA} value={rubrica.ID_RUBRICA}>
+                                {rubrica.NOMBRE}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                    {selectedRubrica && criteria.length > 0 && (
-                      <SpecialtyRubricCriteriaFields
-                        criteria={criteria}
-                        values={criterioGrades}
-                        disabled={fieldsDisabled}
-                        onChange={(criterionKey, value) =>
-                          updateCriterioGrade(card.idEspecialidad, criterionKey, value)
-                        }
-                      />
-                    )}
+                      {selectedRubrica && criteria.length > 0 && (
+                        <SpecialtyRubricCriteriaFields
+                          criteria={criteria}
+                          values={criterioGrades}
+                          disabled={fieldsDisabled}
+                          onChange={(criterionKey, value) =>
+                            updateCriterioGrade(card.idEspecialidad, criterionKey, value)
+                          }
+                        />
+                      )}
 
-                    <div className="space-y-2">
-                      <Label>Nota final</Label>
-                      <Input
-                        type="text"
-                        value={card.notaFinal}
-                        onChange={(e) =>
-                          updateCardDraft(card.idEspecialidad, { notaFinal: e.target.value })
-                        }
-                        placeholder="Ej. 8.50, A, Aprobado"
-                        disabled={fieldsDisabled}
-                      />
-                    </div>
+                      <div className="space-y-2">
+                        <Label>Nota final</Label>
+                        <Input
+                          type="text"
+                          value={card.notaFinal}
+                          onChange={(e) =>
+                            updateCardDraft(card.idEspecialidad, { notaFinal: e.target.value })
+                          }
+                          placeholder="Ej. 8.50, A, Aprobado"
+                          disabled={fieldsDisabled}
+                        />
+                      </div>
 
-                    <div className="space-y-2">
-                      <Label>Observaciones</Label>
-                      <Textarea
-                        value={card.observaciones}
-                        onChange={(e) =>
-                          updateCardDraft(card.idEspecialidad, { observaciones: e.target.value })
-                        }
-                        placeholder="Comentarios sobre el progreso del alumno..."
-                        rows={3}
-                        disabled={fieldsDisabled}
-                      />
+                      <div className="space-y-2">
+                        <Label>Observaciones</Label>
+                        <Textarea
+                          value={card.observaciones}
+                          onChange={(e) =>
+                            updateCardDraft(card.idEspecialidad, { observaciones: e.target.value })
+                          }
+                          placeholder="Comentarios sobre el progreso del alumno..."
+                          rows={3}
+                          disabled={fieldsDisabled}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
 
           <DialogFooter className="shrink-0">

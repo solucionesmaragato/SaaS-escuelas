@@ -7,11 +7,7 @@ import {
   centerFilterQueryKey,
   fetchAlumnoIdsForCenter,
 } from "@/lib/centroFilter";
-import {
-  isMasterRole,
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { isMasterRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 
 const EVALUACION_SELECT_COLUMNS =
   "ID_EVALUACION, ID_CLIENTE, ID_PROFESOR, TRIMESTRE, ID_CURSO, ID_ALUMNO, ID_ESPECIALIDAD, NOTA_MEDIA, COMENTARIOS, ID_RUBRICA, RESULTADOS_RUBRICA, ESTADO" as const;
@@ -143,9 +139,7 @@ export class EvaluacionDuplicateError extends Error {
 export function isEvaluacionDuplicateError(error: unknown): boolean {
   if (error instanceof EvaluacionDuplicateError) return true;
   return (
-    error != null &&
-    typeof error === "object" &&
-    (error as SupabaseErrorLike).code === "23505"
+    error != null && typeof error === "object" && (error as SupabaseErrorLike).code === "23505"
   );
 }
 
@@ -176,12 +170,9 @@ export function formatSupabaseError(error: unknown): string {
   }
 
   const e = error as SupabaseErrorLike;
-  const parts = [
-    e.message,
-    e.details,
-    e.hint,
-    e.code ? `[${e.code}]` : null,
-  ].filter((part) => part && String(part).trim());
+  const parts = [e.message, e.details, e.hint, e.code ? `[${e.code}]` : null].filter(
+    (part) => part && String(part).trim(),
+  );
 
   return parts.length > 0 ? parts.join(" — ") : "Error desconocido";
 }
@@ -348,9 +339,7 @@ export function useEvaluaciones(
       const alumnoIds = await fetchAlumnoIdsForCenter(tenantId, rol, filterCenterId);
       if (alumnoIds && alumnoIds.length === 0) return [];
 
-      let query = supabase
-        .from("EVALUACIONES")
-        .select(EVALUACION_SELECT_COLUMNS);
+      let query = supabase.from("EVALUACIONES").select(EVALUACION_SELECT_COLUMNS);
       query = scopeTenantQuery(query, rol, tenantId);
       const scoped = appendIdInFilter(query, "ID_ALUMNO", alumnoIds);
       if (scoped === "empty") return [];
@@ -412,27 +401,16 @@ export function useEvaluaciones(
   });
 
   const update = useMutation({
-    mutationFn: async ({
-      id,
-      patch,
-    }: {
-      id: string;
-      patch: EvaluacionUpdateInput;
-    }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: EvaluacionUpdateInput }) => {
       const finalPatch = buildUpdatePayload(patch);
 
-      let query = supabase
-        .from("EVALUACIONES")
-        .update(finalPatch)
-        .eq("ID_EVALUACION", id);
+      let query = supabase.from("EVALUACIONES").update(finalPatch).eq("ID_EVALUACION", id);
 
       if (!isMasterRole(rol)) {
         query = query.eq("ID_CLIENTE", tenantId);
       }
 
-      const { data, error } = await query
-        .select(EVALUACION_SELECT_COLUMNS)
-        .maybeSingle();
+      const { data, error } = await query.select(EVALUACION_SELECT_COLUMNS).maybeSingle();
 
       if (error) {
         logSupabaseError("EVALUACION UPDATE", error);
@@ -455,18 +433,13 @@ export function useEvaluaciones(
       for (const item of items) {
         if (item.id) {
           const finalPatch = buildUpdatePayload(item.input);
-          let query = supabase
-            .from("EVALUACIONES")
-            .update(finalPatch)
-            .eq("ID_EVALUACION", item.id);
+          let query = supabase.from("EVALUACIONES").update(finalPatch).eq("ID_EVALUACION", item.id);
 
           if (!isMasterRole(rol)) {
             query = query.eq("ID_CLIENTE", tenantId);
           }
 
-          const { data, error } = await query
-            .select(EVALUACION_SELECT_COLUMNS)
-            .maybeSingle();
+          const { data, error } = await query.select(EVALUACION_SELECT_COLUMNS).maybeSingle();
 
           if (error) {
             logSupabaseError("EVALUACION BATCH UPDATE", error);

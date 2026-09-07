@@ -13,7 +13,7 @@ function slugify(value: string): string {
     .replace(/[^\w]/g, "");
 }
 
-function parseCriterionItem(item: unknown, index: number): RubricCriterion | null {
+function parseCriterionItem(item: unknown): RubricCriterion | null {
   if (typeof item === "string" && item.trim()) {
     const label = item.trim();
     return { key: slugify(label), label };
@@ -22,13 +22,7 @@ function parseCriterionItem(item: unknown, index: number): RubricCriterion | nul
 
   const obj = item as Record<string, unknown>;
   const label = String(
-    obj.nombre ??
-      obj.NOMBRE ??
-      obj.name ??
-      obj.label ??
-      obj.criterio ??
-      obj.CRITERIO ??
-      "",
+    obj.nombre ?? obj.NOMBRE ?? obj.name ?? obj.label ?? obj.criterio ?? obj.CRITERIO ?? "",
   ).trim();
   if (!label) return null;
 
@@ -41,7 +35,7 @@ function parseCriterionArray(items: unknown[]): RubricCriterion[] {
   const seen = new Set<string>();
 
   for (let i = 0; i < items.length; i++) {
-    const parsed = parseCriterionItem(items[i], i);
+    const parsed = parseCriterionItem(items[i]);
     if (!parsed) continue;
     let uniqueKey = parsed.key;
     let suffix = 1;
@@ -112,9 +106,7 @@ export function buildResultadosRubrica(
     const raw = values[criterion.key]?.trim();
     if (!raw) continue;
     const num = Number(raw);
-    result[criterion.key] = Number.isFinite(num)
-      ? Math.round(num * 100) / 100
-      : raw;
+    result[criterion.key] = Number.isFinite(num) ? Math.round(num * 100) / 100 : raw;
     hasValue = true;
   }
 
@@ -151,9 +143,7 @@ export function buildResultadosRubricaByLabel(
 }
 
 /** Average with 2 decimals only when every non-empty criterion value is numeric. */
-export function computeAutoNotaMediaFromCriteria(
-  values: Record<string, string>,
-): string | null {
+export function computeAutoNotaMediaFromCriteria(values: Record<string, string>): string | null {
   const nonEmpty = Object.values(values)
     .map((value) => value.trim())
     .filter((value) => value !== "");
@@ -187,9 +177,7 @@ export function isRubricaActiva(estado: string | null | undefined): boolean {
 
 export type RubricaEstructuraItem = { criterio: string };
 
-export function buildEstructuraFromCriterionNames(
-  names: string[],
-): RubricaEstructuraItem[] {
+export function buildEstructuraFromCriterionNames(names: string[]): RubricaEstructuraItem[] {
   return names
     .map((name) => name.trim())
     .filter(Boolean)

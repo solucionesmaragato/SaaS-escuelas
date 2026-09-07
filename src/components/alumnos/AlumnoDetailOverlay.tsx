@@ -216,7 +216,9 @@ export function AlumnoDetailOverlay({
   const { rol } = useActiveTenant();
   const [activeTab, setActiveTab] = useState("resumen");
   const alumnoId = alumno?.ID_ALUMNO ?? null;
-  const { listByAlumno: cargosExtraByAlumno, update: updateCargoExtra } = useCargosExtra({ alumnoId });
+  const { listByAlumno: cargosExtraByAlumno, update: updateCargoExtra } = useCargosExtra({
+    alumnoId,
+  });
   const [selectedCargoExtra, setSelectedCargoExtra] = useState<CargoExtraRow | null>(null);
   const [cargoExtraDetailOpen, setCargoExtraDetailOpen] = useState(false);
   const canEditCargoExtra = canEditCargoExtraRole(rol);
@@ -358,13 +360,7 @@ export function AlumnoDetailOverlay({
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="brand"
-                  size="sm"
-                  className="gap-2"
-                  onClick={onEdit}
-                >
+                <Button type="button" variant="brand" size="sm" className="gap-2" onClick={onEdit}>
                   <Pencil className="h-4 w-4" />
                   Editar Alumno
                 </Button>
@@ -484,9 +480,7 @@ export function AlumnoDetailOverlay({
                     </>
                   )}
 
-                  {isBizum && (
-                    <ReadOnlyField label="Teléfono Bizum" value={alumno.TLF_BIZUM} />
-                  )}
+                  {isBizum && <ReadOnlyField label="Teléfono Bizum" value={alumno.TLF_BIZUM} />}
 
                   {isSepa && (
                     <SepaMandatoBlock
@@ -517,8 +511,8 @@ export function AlumnoDetailOverlay({
                 </div>
 
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  El ajuste manual pendiente se convertirá en una línea del próximo recibo al generar
-                  la remesa; no modifica recibos ya emitidos.
+                  El ajuste manual pendiente se convertirá en una línea del próximo recibo al
+                  generar la remesa; no modifica recibos ya emitidos.
                 </p>
 
                 <div className="space-y-3 border-t pt-4">
@@ -540,20 +534,29 @@ export function AlumnoDetailOverlay({
                       <TableBody>
                         {cargosExtraByAlumno.isLoading ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                            <TableCell
+                              colSpan={8}
+                              className="py-6 text-center text-muted-foreground"
+                            >
                               Cargando cargos extra...
                             </TableCell>
                           </TableRow>
                         ) : cargosExtraByAlumno.isError ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="py-6 text-center text-sm text-destructive">
+                            <TableCell
+                              colSpan={8}
+                              className="py-6 text-center text-sm text-destructive"
+                            >
                               {(cargosExtraByAlumno.error as Error)?.message ??
                                 "Error al cargar los cargos extra."}
                             </TableCell>
                           </TableRow>
                         ) : (cargosExtraByAlumno.data ?? []).length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="py-6 text-center text-muted-foreground">
+                            <TableCell
+                              colSpan={8}
+                              className="py-6 text-center text-muted-foreground"
+                            >
                               Sin cargos extra
                             </TableCell>
                           </TableRow>

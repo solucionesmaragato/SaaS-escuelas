@@ -15,10 +15,7 @@ interface ReciboZipRow {
   REF_RECIBO: string;
   LINK_PDF_RECIBO: string | null;
   LINK_FACTURA_KOREFACTU: string | null;
-  ALUMNOS:
-    | { NOMBRE_ALUMNO: string | null }
-    | { NOMBRE_ALUMNO: string | null }[]
-    | null;
+  ALUMNOS: { NOMBRE_ALUMNO: string | null } | { NOMBRE_ALUMNO: string | null }[] | null;
 }
 
 const corsHeaders = {
@@ -64,7 +61,12 @@ function buildPdfEntryName(refRecibo: string, alumnoNombre: string): string {
 }
 
 function sanitizeZipFileName(mesPeriodo: string): string {
-  return mesPeriodo.trim().replace(/[\\/:*?"<>|]/g, "").slice(0, 120) || "remesa";
+  return (
+    mesPeriodo
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "")
+      .slice(0, 120) || "remesa"
+  );
 }
 
 function extractStoragePathFromPublicUrl(publicUrl: string, bucket: string): string | null {
@@ -104,10 +106,12 @@ async function uploadRecibosZip(
   const zipFileName = `${sanitizeZipFileName(mesPeriodo)}.zip`;
   const storagePath = `${idCliente}/remesas/${idRemesa}_facturas_${timestamp}/${zipFileName}`;
 
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, zipBytes, {
-    contentType: "application/zip",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, zipBytes, {
+      contentType: "application/zip",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir ZIP de recibos: ${uploadErr.message}`);
   }
@@ -140,10 +144,13 @@ export default {
       const mesPeriodo = body.mes_periodo?.trim();
 
       if (!idCliente || !idCentro || !idCurso || !mesPeriodo) {
-        return new Response(JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
-        });
+        return new Response(
+          JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          },
+        );
       }
 
       const { error: scopeErr } = await ctx.supabase.rpc("assert_remesa_excel_scope", {
@@ -157,22 +164,28 @@ export default {
         });
       }
 
-      const { data: remesaMeta, error: remesaErr } = await ctx.supabase.rpc("get_remesa_excel_meta", {
-        p_id_cliente: idCliente,
-        p_id_centro: idCentro,
-        p_id_curso: idCurso,
-        p_mes_periodo: mesPeriodo,
-      });
+      const { data: remesaMeta, error: remesaErr } = await ctx.supabase.rpc(
+        "get_remesa_excel_meta",
+        {
+          p_id_cliente: idCliente,
+          p_id_centro: idCentro,
+          p_id_curso: idCurso,
+          p_mes_periodo: mesPeriodo,
+        },
+      );
       if (remesaErr) throw remesaErr;
 
       const remesaRow = (Array.isArray(remesaMeta) ? remesaMeta[0] : remesaMeta) as
         | { ID_REMESA?: string }
         | undefined;
       if (!remesaRow?.ID_REMESA) {
-        return new Response(JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 404,
-        });
+        return new Response(
+          JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese lote." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 404,
+          },
+        );
       }
 
       const { data: remesaLinkRow, error: remesaLinkErr } = await ctx.supabase
@@ -187,7 +200,9 @@ export default {
 
       const { data: recibos, error: recibosErr } = await ctx.supabase
         .from("RECIBOS_MENSUALES")
-        .select("ID_RECIBO, REF_RECIBO, LINK_PDF_RECIBO, LINK_FACTURA_KOREFACTU, ALUMNOS(NOMBRE_ALUMNO)")
+        .select(
+          "ID_RECIBO, REF_RECIBO, LINK_PDF_RECIBO, LINK_FACTURA_KOREFACTU, ALUMNOS(NOMBRE_ALUMNO)",
+        )
         .eq("ID_CLIENTE", idCliente)
         .eq("ID_CENTRO", idCentro)
         .eq("ID_CURSO", idCurso)
@@ -253,7 +268,9 @@ export default {
         );
       }
 
-      const zipBytes = new Uint8Array(await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" }));
+      const zipBytes = new Uint8Array(
+        await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" }),
+      );
       const publicUrl = await uploadRecibosZip(
         ctx.supabase,
         idCliente,
@@ -271,7 +288,9 @@ export default {
         p_link: publicUrl,
       });
       if (saveErr) {
-        throw new Error(`ZIP generado pero no se pudo guardar LINK_RECIBOS_ZIP: ${saveErr.message}`);
+        throw new Error(
+          `ZIP generado pero no se pudo guardar LINK_RECIBOS_ZIP: ${saveErr.message}`,
+        );
       }
 
       return new Response(
@@ -287,10 +306,13 @@ export default {
         },
       );
     } catch (error) {
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        },
+      );
     }
   }),
 };

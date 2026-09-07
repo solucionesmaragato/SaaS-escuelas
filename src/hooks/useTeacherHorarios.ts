@@ -77,11 +77,8 @@ export function formatDiaSemana(value: string | null | undefined): string {
   if (!value) return "—";
   const trimmed = value.trim();
   if (!trimmed) return "—";
-  const upper = trimmed
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toUpperCase();
-  return DIA_LABELS[upper] ?? (trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
+  const upper = trimmed.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase();
+  return DIA_LABELS[upper] ?? trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 }
 
 export function formatHoraSlot(value: string | null | undefined): string {

@@ -16,14 +16,10 @@ import {
 function toLocalDatetimeValue(iso: string | null | undefined): string {
   if (!iso) {
     const now = new Date();
-    return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   }
   const date = new Date(iso);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 export function CorrectionRequestDialog({
@@ -54,8 +50,8 @@ export function CorrectionRequestDialog({
         <DialogHeader>
           <DialogTitle>Solicitar corrección</DialogTitle>
           <DialogDescription>
-            No se modifica el registro sellado. Se creará una solicitud de corrección para
-            revisión administrativa.
+            No se modifica el registro sellado. Se creará una solicitud de corrección para revisión
+            administrativa.
           </DialogDescription>
         </DialogHeader>
 

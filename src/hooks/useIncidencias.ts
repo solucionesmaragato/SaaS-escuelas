@@ -59,10 +59,7 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
       if (isProfesorRole(rol)) {
         if (!perfil?.ID_PROFESOR) return [];
 
-        let query = supabase
-          .from("INCIDENCIAS")
-          .select("*")
-          .eq("ID_PROFESOR", perfil.ID_PROFESOR);
+        let query = supabase.from("INCIDENCIAS").select("*").eq("ID_PROFESOR", perfil.ID_PROFESOR);
         query = scopeTenantQuery(query, rol, tenantId);
         if (alumnoId) query = query.eq("ID_ALUMNO", alumnoId);
 
@@ -87,20 +84,14 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
 
       if (isProfesorRole(rol)) {
         alumnoIds = [
-          ...new Set(
-            incidencias
-              .map((inc) => inc.ID_ALUMNO?.trim())
-              .filter(Boolean) as string[],
-          ),
+          ...new Set(incidencias.map((inc) => inc.ID_ALUMNO?.trim()).filter(Boolean) as string[]),
         ];
       }
 
       const profesorIds = isProfesorRole(rol)
         ? [
             ...new Set(
-              incidencias
-                .map((inc) => inc.ID_PROFESOR?.trim())
-                .filter(Boolean) as string[],
+              incidencias.map((inc) => inc.ID_PROFESOR?.trim()).filter(Boolean) as string[],
             ),
           ]
         : null;
@@ -108,17 +99,14 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
       const especialidadIds = isProfesorRole(rol)
         ? [
             ...new Set(
-              incidencias
-                .map((inc) => inc.ID_ESPECIALIDAD?.trim())
-                .filter(Boolean) as string[],
+              incidencias.map((inc) => inc.ID_ESPECIALIDAD?.trim()).filter(Boolean) as string[],
             ),
           ]
         : null;
 
       // 2. Descargamos los diccionarios que ya tenemos creados para cruzar los nombres
       let alumnos: { ID_ALUMNO: string; NOMBRE_ALUMNO: string }[] = [];
-      const skipAlumnosQuery =
-        isProfesorRole(rol) && !alumnoId && (alumnoIds?.length ?? 0) === 0;
+      const skipAlumnosQuery = isProfesorRole(rol) && !alumnoId && (alumnoIds?.length ?? 0) === 0;
 
       if (!skipAlumnosQuery) {
         let alumnosQuery = supabase.from("ALUMNOS").select("*");
@@ -148,8 +136,7 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
       }
 
       let especialidades: { ID_ESPECIALIDAD: string; ESPECIALIDAD: string }[] = [];
-      const skipEspecialidadesQuery =
-        isProfesorRole(rol) && (especialidadIds?.length ?? 0) === 0;
+      const skipEspecialidadesQuery = isProfesorRole(rol) && (especialidadIds?.length ?? 0) === 0;
 
       if (!skipEspecialidadesQuery) {
         let especialidadesQuery = supabase.from("ESPECIALIDADES").select("*");
@@ -213,9 +200,7 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
       if (previous) {
         qc.setQueryData<IncidenciaData[]>(
           queryKey,
-          previous.map((inc) =>
-            inc.ID_INCIDENCIA === id ? { ...inc, ...patch } : inc,
-          ),
+          previous.map((inc) => (inc.ID_INCIDENCIA === id ? { ...inc, ...patch } : inc)),
         );
       }
       return { previous };
@@ -230,7 +215,11 @@ export function useIncidencias(filterCenterId?: string | null, alumnoId?: string
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      let query = supabase.from("INCIDENCIAS").delete().eq("ID_INCIDENCIA", id).eq("ID_CLIENTE", tenantId);
+      let query = supabase
+        .from("INCIDENCIAS")
+        .delete()
+        .eq("ID_INCIDENCIA", id)
+        .eq("ID_CLIENTE", tenantId);
       if (isProfesorRole(rol) && perfil?.ID_PROFESOR) {
         query = query.eq("ID_PROFESOR", perfil.ID_PROFESOR);
       }

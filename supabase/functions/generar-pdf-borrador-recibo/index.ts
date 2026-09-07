@@ -81,10 +81,7 @@ function parseMesPeriodo(mesPeriodo: string): { month: number; year: number } | 
   const match = mesPeriodo.trim().match(/^([A-Za-zÁÉÍÓÚáéíóúÑñ]+)\s+(\d{4})$/);
   if (!match) return null;
 
-  const monthName = match[1]
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  const monthName = match[1].toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
   const monthIdx = MESES_ES.findIndex((m) => m === monthName);
   if (monthIdx < 0) return null;
 
@@ -99,7 +96,9 @@ function formatPeriodoDelAl(mesPeriodo: string | null | undefined): string {
   const { month, year } = parsed;
   const lastDay = new Date(year, month + 1, 0).getDate();
   const monthName = MESES_ES[month];
-  return sanitizePdfText(`Del 1 de ${monthName} de ${year} al ${lastDay} de ${monthName} de ${year}`);
+  return sanitizePdfText(
+    `Del 1 de ${monthName} de ${year} al ${lastDay} de ${monthName} de ${year}`,
+  );
 }
 
 function isReciboBorrador(estado: string | null | undefined): boolean {
@@ -302,7 +301,9 @@ async function buildBorradorPdf(params: {
   const leftRows = [
     params.cliente.CIF ? `CIF: ${params.cliente.CIF}` : null,
     params.cliente.NOMBRE_ESCUELA?.trim() || null,
-    [params.cliente.DIRECCION?.trim(), params.cliente.TLF_REAL?.trim()].filter(Boolean).join(". ") || null,
+    [params.cliente.DIRECCION?.trim(), params.cliente.TLF_REAL?.trim()]
+      .filter(Boolean)
+      .join(". ") || null,
   ].filter(Boolean) as string[];
 
   for (const row of leftRows) {
@@ -329,7 +330,14 @@ async function buildBorradorPdf(params: {
 
   let cursorY = Math.min(leftY, rightY) - 18;
   drawTextSafe(pageRef.page, `Número: ${params.recibo.REF_RECIBO}`, margin, cursorY, 9, font);
-  drawTextSafe(pageRef.page, `Fecha: ${formatFecha(params.recibo.FECHA)}`, pageWidth - margin - 140, cursorY, 9, font);
+  drawTextSafe(
+    pageRef.page,
+    `Fecha: ${formatFecha(params.recibo.FECHA)}`,
+    pageWidth - margin - 140,
+    cursorY,
+    9,
+    font,
+  );
   cursorY -= 22;
 
   const headers = ["Concepto", "Precio unit.", "Cantidad", "Subtotal", "IVA %"];
@@ -390,9 +398,23 @@ async function buildBorradorPdf(params: {
     font,
   );
   cursorY -= 12;
-  drawTextSafe(pageRef.page, `IVA: ${formatMoney(params.recibo.TOTAL_IVA)}`, totalsX, cursorY, 9, font);
+  drawTextSafe(
+    pageRef.page,
+    `IVA: ${formatMoney(params.recibo.TOTAL_IVA)}`,
+    totalsX,
+    cursorY,
+    9,
+    font,
+  );
   cursorY -= 12;
-  drawTextSafe(pageRef.page, `Total: ${formatMoney(params.recibo.TOTAL_DOC)}`, totalsX, cursorY, 10, fontBold);
+  drawTextSafe(
+    pageRef.page,
+    `Total: ${formatMoney(params.recibo.TOTAL_DOC)}`,
+    totalsX,
+    cursorY,
+    10,
+    fontBold,
+  );
   cursorY -= 18;
 
   const footerParts: string[] = [];
@@ -411,7 +433,16 @@ async function buildBorradorPdf(params: {
 
   for (const part of footerParts) {
     cursorY = ensureSpace(pdfDoc, pageRef, pageWidth, pageHeight, cursorY, 24, margin);
-    cursorY = drawWrappedText(pageRef.page, part, margin, cursorY, pageWidth - margin * 2, 8, font, 10);
+    cursorY = drawWrappedText(
+      pageRef.page,
+      part,
+      margin,
+      cursorY,
+      pageWidth - margin * 2,
+      8,
+      font,
+      10,
+    );
     cursorY -= 4;
   }
 
@@ -427,10 +458,12 @@ async function uploadBorradorPdf(
 ): Promise<string> {
   const timestamp = Date.now();
   const storagePath = `${idCliente}/recibos/${idRecibo}_borrador_${timestamp}.pdf`;
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, pdfBytes, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, pdfBytes, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir PDF borrador: ${uploadErr.message}`);
   }
@@ -483,7 +516,9 @@ export default {
 
       if (!isReciboBorrador(recibo.ESTADO_PAGO)) {
         return new Response(
-          JSON.stringify({ error: "Solo se puede generar PDF borrador para recibos en estado Borrador." }),
+          JSON.stringify({
+            error: "Solo se puede generar PDF borrador para recibos en estado Borrador.",
+          }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 400,
@@ -502,20 +537,27 @@ export default {
         });
       }
 
-      const [{ data: lineas, error: lineasErr }, { data: cliente, error: clienteErr }, { data: alumno, error: alumnoErr }] =
-        await Promise.all([
-          ctx.supabase
-            .from("VENTAS_LINEAS")
-            .select("CONCEPTO, CANTIDAD, PRECIO_UNITARIO, SUBTOTAL, IVA_PORCENTAJE")
-            .eq("ID_RECIBO", idRecibo)
-            .order("CONCEPTO", { ascending: true }),
-          ctx.supabase
-            .from("CLIENTES")
-            .select("APP_LOGO, CIF, NOMBRE_ESCUELA, DIRECCION, TLF_REAL, IBAN")
-            .eq("ID_CLIENTE", recibo.ID_CLIENTE)
-            .maybeSingle(),
-          ctx.supabase.from("ALUMNOS").select("NOMBRE_ALUMNO").eq("ID_ALUMNO", recibo.ID_ALUMNO).maybeSingle(),
-        ]);
+      const [
+        { data: lineas, error: lineasErr },
+        { data: cliente, error: clienteErr },
+        { data: alumno, error: alumnoErr },
+      ] = await Promise.all([
+        ctx.supabase
+          .from("VENTAS_LINEAS")
+          .select("CONCEPTO, CANTIDAD, PRECIO_UNITARIO, SUBTOTAL, IVA_PORCENTAJE")
+          .eq("ID_RECIBO", idRecibo)
+          .order("CONCEPTO", { ascending: true }),
+        ctx.supabase
+          .from("CLIENTES")
+          .select("APP_LOGO, CIF, NOMBRE_ESCUELA, DIRECCION, TLF_REAL, IBAN")
+          .eq("ID_CLIENTE", recibo.ID_CLIENTE)
+          .maybeSingle(),
+        ctx.supabase
+          .from("ALUMNOS")
+          .select("NOMBRE_ALUMNO")
+          .eq("ID_ALUMNO", recibo.ID_ALUMNO)
+          .maybeSingle(),
+      ]);
 
       if (lineasErr) throw lineasErr;
       if (clienteErr) throw clienteErr;
@@ -546,7 +588,9 @@ export default {
         .eq("ID_RECIBO", idRecibo);
 
       if (updateErr) {
-        throw new Error(`PDF generado pero no se pudo guardar LINK_PDF_BORRADOR: ${updateErr.message}`);
+        throw new Error(
+          `PDF generado pero no se pudo guardar LINK_PDF_BORRADOR: ${updateErr.message}`,
+        );
       }
 
       return new Response(JSON.stringify({ link: publicUrl }), {
@@ -554,10 +598,13 @@ export default {
         status: 200,
       });
     } catch (error) {
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        },
+      );
     }
   }),
 };

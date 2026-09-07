@@ -75,7 +75,9 @@ function isReciboAnulableEnHarmony(estado: string | null | undefined): boolean {
   return isReciboCobrado(estado) || isReciboAnulado(estado);
 }
 
-function identificadorFromNumFactura(numFactura: string | null | undefined): KorefactuIdentificador {
+function identificadorFromNumFactura(
+  numFactura: string | null | undefined,
+): KorefactuIdentificador {
   const trimmed = numFactura?.trim() ?? "";
   if (!trimmed) return {};
   const parts = trimmed.split("-");
@@ -173,10 +175,12 @@ async function uploadOfficialPdf(
 ): Promise<string> {
   const timestamp = Date.now();
   const storagePath = `${idCliente}/facturas/${idRecibo}_korefactu_${timestamp}.pdf`;
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, pdfBytes, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, pdfBytes, {
+      contentType: "application/pdf",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir PDF de factura: ${uploadErr.message}`);
   }
@@ -243,11 +247,11 @@ async function fetchFacturaForCancel(
     },
   });
 
-  const payload = await readKorefactuJson(
+  const payload = (await readKorefactuJson(
     response,
     apiKey,
     "No se pudo leer la factura en Korefactu por uuid.",
-  ) as KorefactuGetResponse;
+  )) as KorefactuGetResponse;
   assertKorefactuCancelSuccess(payload);
 
   const datos = unwrapFacturaDatos(payload);
@@ -452,7 +456,9 @@ export default {
           .update(updatePatch)
           .eq("ID_RECIBO", idRecibo);
         if (updateErr) {
-          throw new Error(`Anulacion en Korefactu OK pero no se pudo actualizar el recibo: ${updateErr.message}`);
+          throw new Error(
+            `Anulacion en Korefactu OK pero no se pudo actualizar el recibo: ${updateErr.message}`,
+          );
         }
       }
 

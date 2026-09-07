@@ -28,10 +28,13 @@ export default {
       const mesPeriodo = body.mes_periodo?.trim();
 
       if (!idCliente || !idCentro || !idCurso || !mesPeriodo) {
-        return new Response(JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-          status: 400,
-        });
+        return new Response(
+          JSON.stringify({ error: "Faltan id_cliente, id_centro, id_curso o mes_periodo." }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          },
+        );
       }
 
       const link = await regenerarExcelControlRemesa(ctx.supabase, {
@@ -43,7 +46,9 @@ export default {
 
       if (!link) {
         return new Response(
-          JSON.stringify({ error: "No se encontro CONTROL_REMESAS para ese cliente, centro, curso y periodo." }),
+          JSON.stringify({
+            error: "No se encontro CONTROL_REMESAS para ese cliente, centro, curso y periodo.",
+          }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 404,
@@ -56,10 +61,13 @@ export default {
         status: 200,
       });
     } catch (error) {
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        },
+      );
     }
   }),
 };

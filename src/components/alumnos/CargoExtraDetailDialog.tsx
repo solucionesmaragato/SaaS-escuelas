@@ -75,7 +75,7 @@ export function CargoExtraDetailDialog({
     setCantidad(String(cargo.CANTIDAD ?? ""));
     setPrecioUnitario(String(cargo.PRECIO_UNITARIO ?? ""));
     setPorcentajeIva(String(cargo.PORCENTAJE_IVA ?? ""));
-  }, [open, cargo?.ID_CARGO]);
+  }, [open, cargo]);
 
   const handleClose = () => {
     setMode("detail");
@@ -167,7 +167,12 @@ export function CargoExtraDetailDialog({
               </div>
               <div className="space-y-2">
                 <Label>Fecha</Label>
-                <Input value={formatCargoExtraFecha(cargo)} readOnly disabled className="bg-muted/40" />
+                <Input
+                  value={formatCargoExtraFecha(cargo)}
+                  readOnly
+                  disabled
+                  className="bg-muted/40"
+                />
               </div>
             </div>
 
@@ -186,16 +191,26 @@ export function CargoExtraDetailDialog({
         <DialogFooter>
           {mode === "edit" ? (
             <>
-              <Button type="button" variant="ghost" onClick={handleCancelEdit} disabled={updating}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancelEdit}
+                disabled={updating}
+              >
                 Cancelar
               </Button>
-              <Button type="button" variant="brand" onClick={() => void handleSave()} disabled={updating}>
+              <Button
+                type="button"
+                variant="brand"
+                onClick={() => void handleSave()}
+                disabled={updating}
+              >
                 {updating ? "Guardando..." : "Guardar"}
               </Button>
             </>
           ) : (
             <>
-              <Button type="button" variant="ghost" onClick={handleClose}>
+              <Button type="button" variant="outline" onClick={handleClose}>
                 Cerrar
               </Button>
               {!editInHeader && editable ? (

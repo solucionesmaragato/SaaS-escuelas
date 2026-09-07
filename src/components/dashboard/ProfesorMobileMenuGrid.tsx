@@ -88,7 +88,9 @@ function MenuCard({ item }: { item: MenuItem }) {
       >
         <Icon className="h-6 w-6 stroke-[2.5]" strokeWidth={2.5} />
       </div>
-      <span className={cn("break-words text-center text-xs font-medium leading-tight", labelClasses)}>
+      <span
+        className={cn("break-words text-center text-xs font-medium leading-tight", labelClasses)}
+      >
         {item.title}
       </span>
     </Card>
@@ -110,9 +112,7 @@ export function ProfesorMobileMenuGrid() {
   const { list: gruposList } = useGrupos();
   const grupos = gruposList.data?.grupos ?? [];
   const showGruposNav = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
-  const visibleItems = MENU_ITEMS.filter(
-    (item) => item.to !== "/app/grupos" || showGruposNav,
-  );
+  const visibleItems = MENU_ITEMS.filter((item) => item.to !== "/app/grupos" || showGruposNav);
 
   return (
     <div className="px-4 py-4">

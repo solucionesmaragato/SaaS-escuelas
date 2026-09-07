@@ -7,7 +7,9 @@ import { DemoCalComBanner } from "@/components/DemoCalComBanner";
 import { DemoExpiredWall } from "@/components/DemoExpiredWall";
 import { MobileBouncer } from "@/components/MobileBouncer";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
-import { useApp } from "@/context/AppContext";
+import { AvisosHeaderBell } from "@/components/dashboard/AvisosHeaderBell";
+import { HelpVideosHeaderButton } from "@/components/help/HelpVideosHeaderButton";
+import { useApp, ACTIVE_PERFIL_STORAGE_KEY } from "@/context/AppContext";
 import { useProfesorMobileShell } from "@/hooks/useProfesorMobileShell";
 import { cn } from "@/lib/utils";
 
@@ -37,10 +39,24 @@ function AuthenticatedLayout() {
     );
   }
   if (!isAuthenticated) return <Navigate to="/login" />;
-  if (needsTenantSelection || (!activePerfil && perfiles.length > 1)) {
+  const storedPerfilId =
+    typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_PERFIL_STORAGE_KEY) : null;
+  const hasStoredValidPerfil =
+    !!storedPerfilId && perfiles.some((p) => p.ID_PERFIL === storedPerfilId);
+  if (
+    (needsTenantSelection || (!activePerfil && perfiles.length > 1)) &&
+    !hasStoredValidPerfil
+  ) {
     return <Navigate to="/select-tenant" />;
   }
   if (!activePerfil) {
+    if (hasStoredValidPerfil) {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      );
+    }
     return <Navigate to="/registro" replace />;
   }
   if (demoTrialError) {
@@ -51,12 +67,7 @@ function AuthenticatedLayout() {
     );
   }
   if (demoTrialBlocked) {
-    return (
-      <DemoExpiredWall
-        activePerfil={activePerfil}
-        onReactivated={refreshDemoTrialGate}
-      />
-    );
+    return <DemoExpiredWall activePerfil={activePerfil} onReactivated={refreshDemoTrialGate} />;
   }
 
   return <AuthenticatedAppShell />;
@@ -72,10 +83,7 @@ function AuthenticatedAppShell() {
       onOpenChange={setIsSidebarOpen}
       className="min-h-dvh h-dvh overflow-hidden"
     >
-      <AuthenticatedShellContent
-        isSidebarOpen={isSidebarOpen}
-        showMobileShell={showMobileShell}
-      />
+      <AuthenticatedShellContent isSidebarOpen={isSidebarOpen} showMobileShell={showMobileShell} />
     </SidebarProvider>
   );
 }
@@ -131,30 +139,37 @@ function AuthenticatedShellContent({
   showMobileShell: boolean;
 }) {
   const { activePerfil, session } = useApp();
+  const isAppRoute = useRouterState({ select: (s) => s.location.pathname.startsWith("/app") });
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-muted/30">
       <div className="flex min-h-0 flex-1">
         {!showMobileShell && <AppSidebar isOpen={isSidebarOpen} />}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
-          <WorkspaceSwitcher />
-          {activePerfil ? (
-            <DemoCalComBanner
-              activePerfil={activePerfil}
-              sessionAccessToken={session?.access_token}
-            />
-          ) : null}
-        </header>
-        <main
-          className={cn(
-            "min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6",
-            showMobileShell && "pb-bottom-nav",
-          )}
-        >
-          <Outlet />
-        </main>
-        {showMobileShell && <ProfesorBottomNav />}
+          <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
+            <div className="min-w-0 flex-1">
+              <WorkspaceSwitcher />
+            </div>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {isAppRoute ? <AvisosHeaderBell className="shrink-0" /> : null}
+              {!showMobileShell ? <HelpVideosHeaderButton /> : null}
+            </div>
+            {activePerfil ? (
+              <DemoCalComBanner
+                activePerfil={activePerfil}
+                sessionAccessToken={session?.access_token}
+              />
+            ) : null}
+          </header>
+          <main
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-4 sm:p-6",
+              showMobileShell && "pb-bottom-nav",
+            )}
+          >
+            <Outlet />
+          </main>
+          {showMobileShell && <ProfesorBottomNav />}
         </div>
       </div>
       <MobileBouncer />

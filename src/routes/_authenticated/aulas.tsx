@@ -659,7 +659,9 @@ function AulaFormDialog(props: AulaFormDialogProps) {
     if (!effectiveIdCliente) return [];
     return rows
       .filter((c) => c.ID_CLIENTE === effectiveIdCliente)
-      .sort((a, b) => a.NOMBRE_CENTRO.localeCompare(b.NOMBRE_CENTRO, "es", { sensitivity: "base" }));
+      .sort((a, b) =>
+        a.NOMBRE_CENTRO.localeCompare(b.NOMBRE_CENTRO, "es", { sensitivity: "base" }),
+      );
   }, [centrosList.data, effectiveIdCliente]);
 
   const especialidadesFiltradas = useMemo(() => {

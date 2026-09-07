@@ -7,12 +7,7 @@ import {
   fetchProfesorIdsForCenter,
   resolveCenterFilterId,
 } from "@/lib/centroFilter";
-import {
-  isMasterRole,
-  isProfesorRole,
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { isMasterRole, isProfesorRole, scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import type { Perfil } from "@/types/database";
 
 const PRESTAMO_SELECT_COLUMNS =
@@ -78,12 +73,9 @@ export function formatSupabaseError(error: unknown): string {
   }
 
   const e = error as SupabaseErrorLike;
-  const parts = [
-    e.message,
-    e.details,
-    e.hint,
-    e.code ? `[${e.code}]` : null,
-  ].filter((part) => part && String(part).trim());
+  const parts = [e.message, e.details, e.hint, e.code ? `[${e.code}]` : null].filter(
+    (part) => part && String(part).trim(),
+  );
 
   return parts.length > 0 ? parts.join(" — ") : "Error desconocido";
 }
@@ -104,9 +96,7 @@ function logSupabaseError(context: string, error: unknown) {
 function normalizeCategoria(value: string): PrestamoCategoria {
   const trimmed = value.trim();
   if (isPrestamoCategoria(trimmed)) return trimmed;
-  throw new Error(
-    `CATEGORIA inválida: "${value}". Solo se permite ALUMNO o PROFESOR.`,
-  );
+  throw new Error(`CATEGORIA inválida: "${value}". Solo se permite ALUMNO o PROFESOR.`);
 }
 
 function generatePrestamoId(): string {
@@ -254,11 +244,7 @@ export function usePrestamosMaterial(filterCenterId?: string | null) {
           ])
         : [null, null];
 
-      if (
-        centerId &&
-        (alumnoIdsList?.length === 0) &&
-        (profesorIdsList?.length === 0)
-      ) {
+      if (centerId && alumnoIdsList?.length === 0 && profesorIdsList?.length === 0) {
         return [];
       }
 
@@ -298,7 +284,6 @@ export function usePrestamosMaterial(filterCenterId?: string | null) {
       const payload = buildCreatePayload(input);
       payload.ID_PRESTAMO = generatePrestamoId();
       payload.ID_CLIENTE = tenantId;
-      console.log("PAYLOAD SENT TO SUPABASE (CREATE):", payload);
 
       const { data, error } = await supabase
         .from("PRESTAMOS_MATERIAL")
@@ -317,20 +302,10 @@ export function usePrestamosMaterial(filterCenterId?: string | null) {
   });
 
   const update = useMutation({
-    mutationFn: async ({
-      id,
-      patch,
-    }: {
-      id: string;
-      patch: PrestamoMaterialUpdateInput;
-    }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: PrestamoMaterialUpdateInput }) => {
       const finalPatch = buildUpdatePayload(patch);
-      console.log("PAYLOAD SENT TO SUPABASE (UPDATE):", finalPatch);
 
-      let query = supabase
-        .from("PRESTAMOS_MATERIAL")
-        .update(finalPatch)
-        .eq("ID_PRESTAMO", id);
+      let query = supabase.from("PRESTAMOS_MATERIAL").update(finalPatch).eq("ID_PRESTAMO", id);
 
       if (!isMasterRole(rol)) {
         query = query.eq("ID_CLIENTE", tenantId);

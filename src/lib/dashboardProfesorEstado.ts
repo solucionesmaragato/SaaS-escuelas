@@ -1,7 +1,4 @@
-import {
-  CLOCK_MOVEMENT_TYPES,
-  isCorrectionMovement,
-} from "@/lib/fichajeEidas";
+import { CLOCK_MOVEMENT_TYPES, isCorrectionMovement } from "@/lib/fichajeEidas";
 
 export type ProfesorDashboardBucket = "en_clase" | "ocupado" | "libre" | "alerta_grave";
 
@@ -41,9 +38,7 @@ export function isActivelyClockedIn(lastMovement: string | null): boolean {
 }
 
 export function getLastClockMovement(records: FichajeClockRecord[]): string | null {
-  const sorted = [...records].sort((a, b) =>
-    b.FECHA_HORA_REAL.localeCompare(a.FECHA_HORA_REAL),
-  );
+  const sorted = [...records].sort((a, b) => b.FECHA_HORA_REAL.localeCompare(a.FECHA_HORA_REAL));
 
   for (const record of sorted) {
     if (isCorrectionMovement(record.TIPO_MOVIMIENTO)) continue;

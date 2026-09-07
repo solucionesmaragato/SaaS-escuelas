@@ -1,21 +1,49 @@
 import { useMemo } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Bell, Users, GraduationCap, DoorOpen, Music2,
-  CalendarDays, ClipboardList, AlertTriangle, UserPlus,
-  Tags, Banknote, Clock, CalendarOff, FileText, CalendarClock,
-  Building2, LogOut, UserCog, MessageSquare, UsersRound, UserCircle, Package,
-  ClipboardCheck, ScrollText, HardDrive, ShoppingCart,
+  Bell,
+  Users,
+  GraduationCap,
+  DoorOpen,
+  Music2,
+  CalendarDays,
+  ClipboardList,
+  AlertTriangle,
+  UserPlus,
+  Tags,
+  Banknote,
+  Clock,
+  CalendarOff,
+  FileText,
+  CalendarClock,
+  Building2,
+  LogOut,
+  UserCog,
+  MessageSquare,
+  UsersRound,
+  UserCircle,
+  Package,
+  ClipboardCheck,
+  ScrollText,
+  HardDrive,
+  ShoppingCart,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
-  SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton,
-  SidebarMenuItem, SidebarFooter, useSidebar,
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useApp, useActiveTenant } from "@/context/AppContext";
 import { useGrupos, canViewGruposNav } from "@/hooks/useGrupos";
@@ -67,7 +95,7 @@ interface NavGroup {
 
 /** Soft pastel icon tones for light backgrounds. */
 const NAV_GROUP_ICON_COLORS: Record<string, string> = {
-  Personas: "text-indigo-400",
+  Alumnos: "text-indigo-400",
   Académico: "text-emerald-400",
   "Recursos humanos": "text-amber-500",
   Facturación: "text-purple-400",
@@ -79,7 +107,7 @@ const NAV_GROUP_ICON_COLORS: Record<string, string> = {
 const PROFESOR_GROUP_ICON_COLORS: Record<string, string> = {
   Académico: "text-emerald-400",
   "Recursos humanos": "text-amber-500",
-  Personas: "text-blue-500",
+  Alumnos: "text-blue-500",
   Alertas: "text-red-500",
 };
 
@@ -89,7 +117,13 @@ const NAV: NavGroup[] = [
   {
     label: "Panel",
     items: [
-      { title: "Avisos", to: "/dashboard", icon: Bell, hideForProfesor: true, hideForDireccion: true },
+      {
+        title: "Avisos",
+        to: "/dashboard",
+        icon: Bell,
+        hideForProfesor: true,
+        hideForDireccion: true,
+      },
       {
         title: "Mis datos personales",
         to: "/app/datos-personales",
@@ -99,12 +133,16 @@ const NAV: NavGroup[] = [
     ],
   },
   {
-    label: "Personas",
+    label: "Alumnos",
     items: [
       { title: "Alumnos", to: "/alumnos", icon: Users, alumnosModuleAccess: true },
       { title: "Nuevos Alumnos", to: "/leads", icon: UserPlus, perms: ["leads:read"] },
-      { title: "Incidencias", to: "/incidencias", icon: AlertTriangle, perms: ["incidencias:read"] },
-      { title: "Profesores", to: "/profesores", icon: GraduationCap, perms: ["profesores:read"] },
+      {
+        title: "Incidencias",
+        to: "/incidencias",
+        icon: AlertTriangle,
+        perms: ["incidencias:read"],
+      },
     ],
   },
   {
@@ -112,7 +150,12 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Sesiones", to: "/sesiones", icon: CalendarDays, perms: ["sesiones:read"] },
       { title: "Grupos", to: "/grupos", icon: UsersRound, gruposAccess: true },
-      { title: "Evaluaciones", to: "/evaluaciones", icon: ClipboardCheck, perms: ["evaluaciones:read"] },
+      {
+        title: "Evaluaciones",
+        to: "/evaluaciones",
+        icon: ClipboardCheck,
+        perms: ["evaluaciones:read"],
+      },
       { title: "Matrículas", to: "/matriculas", icon: ClipboardList, perms: ["matriculas:read"] },
       {
         title: "Préstamos de material",
@@ -139,20 +182,51 @@ const NAV: NavGroup[] = [
   {
     label: "Recursos humanos",
     items: [
-      { title: "Fichajes", to: "/fichajes", icon: Clock, perms: ["fichajes:read:all", "fichajes:write:own"] },
-      { title: "Permisos", to: "/ausencias", icon: CalendarOff, perms: ["ausencias:write", "ausencias:read"] },
-      { title: "Documentos legales", to: "/documentos", icon: FileText, perms: ["documentos:write", "documentos:read"] },
-      { title: "Disponibilidad horaria", to: "/turnos", icon: CalendarClock, perms: ["turnos:read", "turnos:write"] },
+      {
+        title: "Fichajes",
+        to: "/fichajes",
+        icon: Clock,
+        perms: ["fichajes:read:all", "fichajes:write:own"],
+      },
+      {
+        title: "Permisos",
+        to: "/ausencias",
+        icon: CalendarOff,
+        perms: ["ausencias:write", "ausencias:read"],
+      },
+      {
+        title: "Documentos legales",
+        to: "/documentos",
+        icon: FileText,
+        perms: ["documentos:write", "documentos:read"],
+      },
+      {
+        title: "Disponibilidad horaria",
+        to: "/turnos",
+        icon: CalendarClock,
+        perms: ["turnos:read", "turnos:write"],
+      },
     ],
   },
   {
     label: "Configuración",
     items: [
       { title: "Usuarios", to: "/usuarios", icon: UserCog, usuariosAccess: true },
+      { title: "Profesores", to: "/profesores", icon: GraduationCap, perms: ["profesores:read"] },
       { title: "Aulas", to: "/aulas", icon: DoorOpen, perms: ["aulas:write"] },
-      { title: "Especialidades", to: "/especialidades", icon: Music2, perms: ["especialidades:write"] },
+      {
+        title: "Especialidades",
+        to: "/especialidades",
+        icon: Music2,
+        perms: ["especialidades:write"],
+      },
       { title: "Escuela y centros", to: "/escuela", icon: Building2, perms: ["clientes:write"] },
-      { title: "Mensajes automáticos", to: "/mensajesAutomaticos", icon: MessageSquare, mensajesAccess: true },
+      {
+        title: "Mensajes automáticos",
+        to: "/mensajesAutomaticos",
+        icon: MessageSquare,
+        mensajesAccess: true,
+      },
       { title: "Clientes", to: "/clientes", icon: Building2, masterOnly: true },
     ],
   },
@@ -165,7 +239,12 @@ const PROFESOR_NAV: NavGroup[] = [
     items: [
       { title: "Sesiones", to: "/app/sesiones", icon: CalendarDays, perms: ["sesiones:read"] },
       { title: "Grupos", to: "/app/grupos", icon: UsersRound, gruposAccess: true },
-      { title: "Evaluaciones", to: "/app/evaluaciones", icon: ClipboardCheck, perms: ["evaluaciones:read"] },
+      {
+        title: "Evaluaciones",
+        to: "/app/evaluaciones",
+        icon: ClipboardCheck,
+        perms: ["evaluaciones:read"],
+      },
       {
         title: "Préstamos de material",
         to: "/app/prestamos",
@@ -178,14 +257,29 @@ const PROFESOR_NAV: NavGroup[] = [
     label: "Recursos humanos",
     items: [
       { title: "Fichajes", to: "/app/fichajes", icon: Clock, perms: ["fichajes:write:own"] },
-      { title: "Permisos", to: "/app/permisos", icon: CalendarOff, perms: ["ausencias:write", "ausencias:read"] },
-      { title: "Disponibilidad horaria", to: "/app/turnos", icon: CalendarClock, perms: ["turnos:read"] },
-      { title: "Documentos legales", to: "/app/documentos", icon: FileText, perms: ["documentos:read"] },
+      {
+        title: "Permisos",
+        to: "/app/permisos",
+        icon: CalendarOff,
+        perms: ["ausencias:write", "ausencias:read"],
+      },
+      {
+        title: "Disponibilidad horaria",
+        to: "/app/turnos",
+        icon: CalendarClock,
+        perms: ["turnos:read"],
+      },
+      {
+        title: "Documentos legales",
+        to: "/app/documentos",
+        icon: FileText,
+        perms: ["documentos:read"],
+      },
       { title: "Mis archivos", to: "/app/archivos", icon: HardDrive },
     ],
   },
   {
-    label: "Personas",
+    label: "Alumnos",
     items: [
       { title: "Alumnos", to: "/app/alumnos", icon: Users, perms: ["alumnos:read"] },
       {
@@ -199,7 +293,12 @@ const PROFESOR_NAV: NavGroup[] = [
   {
     label: "Alertas",
     items: [
-      { title: "Incidencias", to: "/app/incidencias", icon: AlertTriangle, perms: ["incidencias:read"] },
+      {
+        title: "Incidencias",
+        to: "/app/incidencias",
+        icon: AlertTriangle,
+        perms: ["incidencias:read"],
+      },
     ],
   },
 ];
@@ -227,11 +326,11 @@ function AvisosNavIcon({ baseColorClass }: { baseColorClass: string }) {
 }
 
 export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
-  const { isMobile, toggleSidebar, state } = useSidebar();
+  const { isMobile, toggleSidebar, state, openMobile } = useSidebar();
+  const isSidebarExpanded = isMobile ? openMobile : state === "expanded";
   const currentPath = useRouterState({ select: (s) => s.location.pathname });
   const { rol, perfil } = useActiveTenant();
   const { activePerfil, signOut } = useApp();
-  const isDemoTenant = (activePerfil?.ID_CLIENTE ?? "").startsWith("DEMO-");
   const { list: gruposList } = useGrupos();
   const grupos = gruposList.data?.grupos ?? [];
   const showGruposNav = canViewGruposNav(rol, grupos, perfil.ID_PROFESOR);
@@ -259,10 +358,10 @@ export function AppSidebar({ isOpen = true }: { isOpen?: boolean }) {
         <div className="flex h-full items-center gap-2 px-2">
           <button
             type="button"
-            className="h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-border/40 bg-white p-0"
+            className="h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/40 bg-white p-0"
             onClick={toggleSidebar}
-            aria-label={state === "expanded" ? "Contraer menú lateral" : "Expandir menú lateral"}
-            aria-expanded={state === "expanded"}
+            aria-label={isSidebarExpanded ? "Contraer menú lateral" : "Expandir menú lateral"}
+            aria-expanded={isSidebarExpanded}
           >
             <img
               src={MYSINCOPPA_SIDEBAR_LOGO_URL}

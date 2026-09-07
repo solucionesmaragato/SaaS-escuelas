@@ -1,13 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  ChevronRight,
-  FileImage,
-  FileText,
-  Folder,
-  Plus,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { ChevronRight, FileImage, FileText, Folder, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
   useArchivosProfesor,
@@ -100,7 +92,13 @@ function FolderRow({
           <Folder className="h-5 w-5 shrink-0 text-muted-foreground" />
           <span className="truncate font-medium">{folder.name}</span>
         </button>
-        <Button type="button" variant="ghost" size="icon" onClick={onDelete} aria-label="Eliminar carpeta">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          aria-label="Eliminar carpeta"
+        >
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       </div>
@@ -125,12 +123,22 @@ function FileRow({
       <div className="flex items-start gap-3">
         <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1 space-y-1">
-          <button type="button" onClick={onOpen} className="block w-full truncate text-left font-medium">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="block w-full truncate text-left font-medium"
+          >
             {label}
           </button>
           <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
         </div>
-        <Button type="button" variant="ghost" size="icon" onClick={onDelete} aria-label="Eliminar archivo">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onDelete}
+          aria-label="Eliminar archivo"
+        >
           <Trash2 className="h-4 w-4 text-destructive" />
         </Button>
       </div>
@@ -219,7 +227,9 @@ export function TeacherArchivosDashboard() {
         <button
           type="button"
           onClick={() => setCarpeta(null)}
-          className={carpeta ? "font-medium text-primary hover:underline" : "font-semibold text-foreground"}
+          className={
+            carpeta ? "font-medium text-primary hover:underline" : "font-semibold text-foreground"
+          }
         >
           Mis archivos
         </button>
@@ -233,7 +243,12 @@ export function TeacherArchivosDashboard() {
 
       <div className="flex flex-wrap gap-2">
         {!carpeta ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setFolderDialogOpen(true)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setFolderDialogOpen(true)}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Crear carpeta
           </Button>
@@ -310,9 +325,7 @@ export function TeacherArchivosDashboard() {
         </>
       ) : null}
 
-      {openingPath ? (
-        <p className="text-xs text-muted-foreground">Abriendo archivo…</p>
-      ) : null}
+      {openingPath ? <p className="text-xs text-muted-foreground">Abriendo archivo…</p> : null}
 
       <Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -335,7 +348,11 @@ export function TeacherArchivosDashboard() {
             <Button type="button" variant="outline" onClick={() => setFolderDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void handleCreateFolder()} disabled={createFolder.isPending}>
+            <Button
+              type="button"
+              onClick={() => void handleCreateFolder()}
+              disabled={createFolder.isPending}
+            >
               Crear
             </Button>
           </DialogFooter>

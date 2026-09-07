@@ -9,11 +9,14 @@ export type EntityLinkType =
   | "matricula"
   | "aula"
   | "factura"
-  | "documento";
+  | "documento"
+  | "fichaje";
 
 export interface EntityLinkProps {
   type: EntityLinkType;
   id?: string | number | null;
+  /** Solo para type="fichaje": filtra Control Horario por profesor. */
+  profesorId?: string | null;
   children: React.ReactNode;
   className?: string;
 }
@@ -27,7 +30,7 @@ function stopRowClick(event: React.MouseEvent) {
   event.stopPropagation();
 }
 
-export function EntityLink({ type, id, children, className }: EntityLinkProps) {
+export function EntityLink({ type, id, profesorId, children, className }: EntityLinkProps) {
   if (id === undefined || id === null || id === "") {
     return <span className={className}>{children}</span>;
   }
@@ -110,6 +113,21 @@ export function EntityLink({ type, id, children, className }: EntityLinkProps) {
         <Link
           to="/documentos"
           search={{ documentoId: entityId }}
+          className={linkClassName}
+          onClick={stopRowClick}
+        >
+          {children}
+        </Link>
+      );
+    case "fichaje":
+      return (
+        <Link
+          to="/fichajes"
+          search={
+            profesorId
+              ? { fichajeId: entityId, profesorId: String(profesorId) }
+              : { fichajeId: entityId }
+          }
           className={linkClassName}
           onClick={stopRowClick}
         >

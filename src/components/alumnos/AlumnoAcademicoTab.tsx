@@ -409,10 +409,7 @@ function GruposSubSection({
                     {g.GRUPOS_HORARIOS.length > 0 ? (
                       <div className="flex flex-col gap-1">
                         {g.GRUPOS_HORARIOS.map((horario) => (
-                          <span
-                            key={`${horario.ID_GRUPO_HORARIO}-prof`}
-                            className="leading-snug"
-                          >
+                          <span key={`${horario.ID_GRUPO_HORARIO}-prof`} className="leading-snug">
                             {horario.PROFESOR?.NOMBRE_PROFESOR ?? "—"}
                           </span>
                         ))}
@@ -425,10 +422,7 @@ function GruposSubSection({
                     {g.GRUPOS_HORARIOS.length > 0 ? (
                       <div className="flex flex-col gap-1">
                         {g.GRUPOS_HORARIOS.map((horario) => (
-                          <span
-                            key={`${horario.ID_GRUPO_HORARIO}-aula`}
-                            className="leading-snug"
-                          >
+                          <span key={`${horario.ID_GRUPO_HORARIO}-aula`} className="leading-snug">
                             {horario.AULA?.NOMBRE_AULA ?? "—"}
                           </span>
                         ))}

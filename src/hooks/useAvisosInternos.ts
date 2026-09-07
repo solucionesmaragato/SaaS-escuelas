@@ -7,6 +7,7 @@ import type { AvisosInternos } from "@/types/database";
 /** Raw row from VISTA_AVISOS_INTERNOS. ID_* fields kept for internal actions (e.g. reassign schedule). */
 export type AvisoInternoRaw = AvisosInternos & {
   NOMBRE_LEAD?: string | null;
+  NOMBRE_ALUMNO?: string | null;
 };
 
 /** Enriched row for table display — human-readable names, IDs retained for logic. */
@@ -40,13 +41,8 @@ export function useAvisosInternos() {
         .select("ID_ESPECIALIDAD, ESPECIALIDAD");
       especialidadesQuery = scopeTenantQuery(especialidadesQuery, rol, tenantId);
 
-      const [
-        { data: avisos, error: avisosError },
-        { data: especialidades, error: espError },
-      ] = await Promise.all([
-        avisosQuery.order("FECHA", { ascending: false }),
-        especialidadesQuery,
-      ]);
+      const [{ data: avisos, error: avisosError }, { data: especialidades, error: espError }] =
+        await Promise.all([avisosQuery.order("FECHA", { ascending: false }), especialidadesQuery]);
 
       if (avisosError) throw avisosError;
       if (espError) throw espError;
@@ -78,9 +74,7 @@ export function useAvisosInternos() {
       await qc.cancelQueries({ queryKey });
       const previous = qc.getQueryData<AvisoInterno[]>(queryKey);
       qc.setQueryData<AvisoInterno[]>(queryKey, (old) =>
-        old?.map((aviso) =>
-          aviso.ID_AVISO === id ? { ...aviso, LEIDO: true } : aviso,
-        ),
+        old?.map((aviso) => (aviso.ID_AVISO === id ? { ...aviso, LEIDO: true } : aviso)),
       );
       return { previous };
     },

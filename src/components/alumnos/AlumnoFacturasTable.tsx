@@ -1,6 +1,16 @@
 import { Calendar, CreditCard } from "lucide-react";
-import { useRecibos, normalizeEstadoPago, estadoPagoStatus, reciboTieneFacturaOficial, type ReciboRow } from "@/hooks/useRecibos";
-import { FacturaPdfDownloadButton, FacturaOficialPdfButton, formatFacturaReferencia } from "@/components/facturas/FacturaTableCells";
+import {
+  useRecibos,
+  normalizeEstadoPago,
+  estadoPagoStatus,
+  reciboTieneFacturaOficial,
+  type ReciboRow,
+} from "@/hooks/useRecibos";
+import {
+  FacturaPdfDownloadButton,
+  FacturaOficialPdfButton,
+  formatFacturaReferencia,
+} from "@/components/facturas/FacturaTableCells";
 import { normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
 import { formatCurrency } from "@/lib/format";
 import type { OnNavigateToEntity } from "@/lib/entityNavigation";

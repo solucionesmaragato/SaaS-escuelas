@@ -21,10 +21,7 @@ function ProfesorTurnosPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <PageHeader
-        title="Mi disponibilidad"
-        description="Consulta tus franjas horarias semanales"
-      />
+      <PageHeader title="Mi disponibilidad" description="Consulta tus franjas horarias semanales" />
       <TeacherTurnosDashboard />
     </div>
   );

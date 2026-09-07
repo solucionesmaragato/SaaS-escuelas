@@ -4,10 +4,7 @@ import { ChevronsUpDown, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  previewNextRefRecibo,
-  type CreateReciboBorradorInput,
-} from "@/hooks/useRecibos";
+import { previewNextRefRecibo, type CreateReciboBorradorInput } from "@/hooks/useRecibos";
 import { calcVentaLineaSubtotal } from "@/hooks/useVentasLineas";
 import { normalizeMetodoPago } from "@/lib/alumnoPaymentUtils";
 import { MESES_ANIO } from "@/lib/alumnosMatriculasUtils";
@@ -67,7 +64,7 @@ type LineaDraft = {
   IVA_PORCENTAJE: string;
 };
 
-function defaultMesPeriodo(): string {
+function resolveDefaultMesPeriodo(): string {
   const now = new Date();
   return `${MESES_ANIO[now.getMonth()]} ${now.getFullYear()}`;
 }
@@ -86,11 +83,33 @@ function resolveReceptorNombre(alumno: AlumnoPickerRow): string {
   return alumno.NOMBRE_ALUMNO?.trim() || "";
 }
 
+export type NuevaFacturaLineaPrefill = {
+  CONCEPTO: string;
+  CANTIDAD: number;
+  PRECIO_UNITARIO: number;
+  IVA_PORCENTAJE: number;
+};
+
+function lineasFromPrefill(lineas?: NuevaFacturaLineaPrefill[]): LineaDraft[] {
+  if (!lineas?.length) return [newLineaDraft()];
+  return lineas.map((linea) => ({
+    key: crypto.randomUUID(),
+    CONCEPTO: linea.CONCEPTO,
+    CANTIDAD: String(linea.CANTIDAD),
+    PRECIO_UNITARIO: String(linea.PRECIO_UNITARIO),
+    IVA_PORCENTAJE: String(linea.IVA_PORCENTAJE),
+  }));
+}
+
 export function NuevaFacturaDialog({
   open,
   onClose,
   submitting,
   defaultCentroId,
+  defaultAlumnoId,
+  defaultCursoId,
+  defaultMesPeriodo,
+  defaultLineas,
   centros,
   cursos,
   onSubmit,
@@ -99,6 +118,10 @@ export function NuevaFacturaDialog({
   onClose: () => void;
   submitting: boolean;
   defaultCentroId?: string | null;
+  defaultAlumnoId?: string | null;
+  defaultCursoId?: string | null;
+  defaultMesPeriodo?: string | null;
+  defaultLineas?: NuevaFacturaLineaPrefill[];
   centros: CentroData[];
   cursos: CursoEscolarData[];
   onSubmit: (input: CreateReciboBorradorInput) => void;
@@ -123,7 +146,7 @@ export function NuevaFacturaDialog({
   const [provincia, setProvincia] = useState("");
 
   const [fecha, setFecha] = useState(() => new Date().toISOString().slice(0, 10));
-  const [mesPeriodo, setMesPeriodo] = useState(defaultMesPeriodo);
+  const [mesPeriodo, setMesPeriodo] = useState(resolveDefaultMesPeriodo);
   const [metodoPago, setMetodoPago] = useState("Transferencia");
   const [lineas, setLineas] = useState<LineaDraft[]>([newLineaDraft()]);
 
@@ -160,7 +183,12 @@ export function NuevaFacturaDialog({
       const cantidad = Number(linea.CANTIDAD);
       const precio = Number(linea.PRECIO_UNITARIO);
       const iva = Number(linea.IVA_PORCENTAJE);
-      if (!linea.CONCEPTO.trim() || Number.isNaN(cantidad) || Number.isNaN(precio) || Number.isNaN(iva)) {
+      if (
+        !linea.CONCEPTO.trim() ||
+        Number.isNaN(cantidad) ||
+        Number.isNaN(precio) ||
+        Number.isNaN(iva)
+      ) {
         return acc;
       }
       return acc + calcVentaLineaSubtotal(cantidad, precio, iva);
@@ -170,8 +198,8 @@ export function NuevaFacturaDialog({
   useEffect(() => {
     if (!open) return;
     setIdCentro(defaultCentroId ?? "");
-    setIdCurso("");
-    setIdAlumno(null);
+    setIdCurso(defaultCursoId ?? "");
+    setIdAlumno(defaultAlumnoId?.trim() || null);
     setReceptorNombre("");
     setCifDni("");
     setMail("");
@@ -181,12 +209,12 @@ export function NuevaFacturaDialog({
     setMunicipio("");
     setProvincia("");
     setFecha(new Date().toISOString().slice(0, 10));
-    setMesPeriodo(defaultMesPeriodo());
+    setMesPeriodo(defaultMesPeriodo?.trim() || resolveDefaultMesPeriodo());
     setMetodoPago("Transferencia");
-    setLineas([newLineaDraft()]);
+    setLineas(lineasFromPrefill(defaultLineas));
     setPreviewRef("");
     setPreviewRefError("");
-  }, [open, defaultCentroId]);
+  }, [open, defaultCentroId, defaultAlumnoId, defaultCursoId, defaultMesPeriodo, defaultLineas]);
 
   useEffect(() => {
     if (!open || !idCentro.trim() || !tenantId) {
@@ -246,7 +274,8 @@ export function NuevaFacturaDialog({
     }
     if (previewRefError || !previewRef.trim()) {
       toast.error(
-        previewRefError || "No se puede crear el recibo sin referencia. Configura REF_FACTURA en el centro.",
+        previewRefError ||
+          "No se puede crear el recibo sin referencia. Configura REF_FACTURA en el centro.",
       );
       return;
     }
@@ -325,11 +354,7 @@ export function NuevaFacturaDialog({
               <Label>Referencia (automática)</Label>
               <Input
                 value={
-                  loadingRef
-                    ? "Calculando…"
-                    : previewRefError
-                      ? previewRefError
-                      : previewRef || "—"
+                  loadingRef ? "Calculando…" : previewRefError ? previewRefError : previewRef || "—"
                 }
                 readOnly
                 disabled
@@ -448,7 +473,11 @@ export function NuevaFacturaDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Receptor *</Label>
-              <Input value={receptorNombre} onChange={(e) => setReceptorNombre(e.target.value)} required />
+              <Input
+                value={receptorNombre}
+                onChange={(e) => setReceptorNombre(e.target.value)}
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label>CIF / DNI *</Label>
@@ -478,11 +507,19 @@ export function NuevaFacturaDialog({
             </div>
             <div className="space-y-2">
               <Label>Municipio{idAlumno ? "" : " *"}</Label>
-              <Input value={municipio} onChange={(e) => setMunicipio(e.target.value)} required={!idAlumno} />
+              <Input
+                value={municipio}
+                onChange={(e) => setMunicipio(e.target.value)}
+                required={!idAlumno}
+              />
             </div>
             <div className="space-y-2">
               <Label>Provincia{idAlumno ? "" : " *"}</Label>
-              <Input value={provincia} onChange={(e) => setProvincia(e.target.value)} required={!idAlumno} />
+              <Input
+                value={provincia}
+                onChange={(e) => setProvincia(e.target.value)}
+                required={!idAlumno}
+              />
             </div>
           </div>
 
@@ -527,7 +564,10 @@ export function NuevaFacturaDialog({
               </Button>
             </div>
             {lineas.map((linea, index) => (
-              <div key={linea.key} className="grid gap-2 rounded border bg-muted/20 p-2 sm:grid-cols-12">
+              <div
+                key={linea.key}
+                className="grid gap-2 rounded border bg-muted/20 p-2 sm:grid-cols-12"
+              >
                 <div className="sm:col-span-5 space-y-1">
                   <Label className="text-[10px]">Concepto</Label>
                   <Input

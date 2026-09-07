@@ -173,13 +173,7 @@ export function ProfesorDetailOverlay({
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  type="button"
-                  variant="brand"
-                  size="sm"
-                  className="gap-2"
-                  onClick={onEdit}
-                >
+                <Button type="button" variant="brand" size="sm" className="gap-2" onClick={onEdit}>
                   <Pencil className="h-4 w-4" />
                   Editar Profesor
                 </Button>

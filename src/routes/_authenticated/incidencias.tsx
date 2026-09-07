@@ -309,9 +309,7 @@ function IncidenciaDetailOverlay({
               </div>
               <div>
                 <dt className="text-muted-foreground">Especialidad</dt>
-                <dd>
-                  {incidencia.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}
-                </dd>
+                <dd>{incidencia.ESPECIALIDADES?.ESPECIALIDAD ?? "—"}</dd>
               </div>
               <div className="col-span-2 border-t pt-2 mt-1">
                 <dt className="text-muted-foreground font-semibold mb-1">Personas implicadas</dt>
@@ -433,9 +431,7 @@ function IncidenciasPage() {
       (b.FECHA_CREACION || "").localeCompare(a.FECHA_CREACION || "");
 
     return {
-      faltasRows: filtered
-        .filter((inc) => inc.TIPO_INCIDENCIA === "Falta")
-        .sort(sortByFechaExacta),
+      faltasRows: filtered.filter((inc) => inc.TIPO_INCIDENCIA === "Falta").sort(sortByFechaExacta),
       recuperacionesRows: filtered
         .filter((inc) => inc.TIPO_INCIDENCIA === "Recuperación")
         .sort(sortByFechaExacta),
@@ -452,8 +448,7 @@ function IncidenciasPage() {
         ? recuperacionesRows
         : consultasRows;
   const totalPages = Math.max(1, Math.ceil(activeTabRows.length / PAGE_SIZE));
-  const paginate = (rows: IncidenciaData[]) =>
-    rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginate = (rows: IncidenciaData[]) => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const faltasPageRows = paginate(faltasRows);
   const recuperacionesPageRows = paginate(recuperacionesRows);
   const consultasPageRows = paginate(consultasRows);
@@ -544,9 +539,7 @@ function IncidenciasPage() {
             <IncidenciaScheduleTable
               rows={recuperacionesPageRows}
               isLoading={list.isLoading}
-              emptyMessage={
-                query ? "Sin resultados." : "No hay recuperaciones registradas."
-              }
+              emptyMessage={query ? "Sin resultados." : "No hay recuperaciones registradas."}
               canWrite={canWrite}
               onOpenDetail={(id) => setOverlay({ id, mode: "detail" })}
               onOpenEdit={(id) => setOverlay({ id, mode: "edit" })}
@@ -923,10 +916,7 @@ function SchedulePlaceholderBadge({
   return (
     <Badge
       variant="secondary"
-      className={cn(
-        "border-transparent bg-muted/80 text-muted-foreground font-normal",
-        className,
-      )}
+      className={cn("border-transparent bg-muted/80 text-muted-foreground font-normal", className)}
     >
       {incidenciaSchedulePlaceholder(tipo)}
     </Badge>
@@ -1221,9 +1211,7 @@ function IncidenciaFormDialog({
   const [fechaExacta, setFechaExacta] = useState(() =>
     toDateInputValue(initial?.FECHA_EXACTA ?? ""),
   );
-  const [horaInicio, setHoraInicio] = useState(() =>
-    toTimeInputValue(initial?.HORA_INICIO ?? ""),
-  );
+  const [horaInicio, setHoraInicio] = useState(() => toTimeInputValue(initial?.HORA_INICIO ?? ""));
   const [horaFin, setHoraFin] = useState(() => toTimeInputValue(initial?.HORA_FIN ?? ""));
   const [estadoConsulta, setEstadoConsulta] = useState(() =>
     String(initial?.ESTADO_CONSULTA ?? "Pendiente"),
@@ -1567,18 +1555,20 @@ function IncidenciaFormDialog({
     () => alumnoHorariosActivosQuery.data ?? [],
     [alumnoHorariosActivosQuery.data],
   );
-  const alumnoHorariosLoading = isConsulta && !!selectedAlumnoId && alumnoHorariosActivosQuery.isLoading;
+  const alumnoHorariosLoading =
+    isConsulta && !!selectedAlumnoId && alumnoHorariosActivosQuery.isLoading;
   const consultaEspecialidadesOptions = useMemo(
     () => buildAlumnoScopedEspecialidades(alumnoHorariosActivos, especialidades),
     [alumnoHorariosActivos, especialidades],
   );
   const consultaProfesoresOptions = useMemo(
-    () =>
-      buildAlumnoScopedProfesores(alumnoHorariosActivos, profesores, selectedEspecialidadId),
+    () => buildAlumnoScopedProfesores(alumnoHorariosActivos, profesores, selectedEspecialidadId),
     [alumnoHorariosActivos, profesores, selectedEspecialidadId],
   );
   const activeProfesoresOptions = isConsulta ? consultaProfesoresOptions : profesoresOptions;
-  const activeEspecialidadesOptions = isConsulta ? consultaEspecialidadesOptions : especialidadesOptions;
+  const activeEspecialidadesOptions = isConsulta
+    ? consultaEspecialidadesOptions
+    : especialidadesOptions;
   const sesionesOptions = useMemo(
     () => dedupeSelectOptions(sesionesQuery.data ?? [], (s) => s.ID_SESION),
     [sesionesQuery.data],
@@ -1757,10 +1747,8 @@ function IncidenciaFormDialog({
   };
 
   const showScheduleFields =
-    !isEditing &&
-    (isRecuperacion || (!isConsulta && (!isFalta || Boolean(selectedSessionId))));
-  const showPersonFields =
-    !isEditing && (isConsulta || (isFalta && Boolean(selectedSessionId)));
+    !isEditing && (isRecuperacion || (!isConsulta && (!isFalta || Boolean(selectedSessionId))));
+  const showPersonFields = !isEditing && (isConsulta || (isFalta && Boolean(selectedSessionId)));
 
   const alumnoSelectValue = recuperacionAlumnosLoading
     ? LOADING_REC_ALUMNOS
@@ -1793,7 +1781,10 @@ function IncidenciaFormDialog({
             ])
     : activeProfesoresOptions.length === 0
       ? EMPTY_PROFESORES
-      : safeSelectValue(idProfesor, activeProfesoresOptions.map((p) => ({ id: p.ID_PROFESOR })));
+      : safeSelectValue(
+          idProfesor,
+          activeProfesoresOptions.map((p) => ({ id: p.ID_PROFESOR })),
+        );
   const especialidadSelectValue = isConsulta
     ? !selectedAlumnoId
       ? SELECT_ALUMNO_FIRST
@@ -1807,7 +1798,10 @@ function IncidenciaFormDialog({
             ])
     : activeEspecialidadesOptions.length === 0
       ? EMPTY_ESPECIALIDADES
-      : safeSelectValue(idEspecialidad, activeEspecialidadesOptions.map((e) => ({ id: e.ID_ESPECIALIDAD })));
+      : safeSelectValue(
+          idEspecialidad,
+          activeEspecialidadesOptions.map((e) => ({ id: e.ID_ESPECIALIDAD })),
+        );
   const recuperacionEspecialidadSelectValue = recuperacionEspQuery.isLoading
     ? LOADING_REC_ESPECIALIDADES
     : (recuperacionEspQuery.data ?? []).length === 0
@@ -2036,11 +2030,7 @@ function IncidenciaFormDialog({
               <Select
                 value={alumnoSelectValue}
                 onValueChange={(v) => {
-                  if (
-                    v === EMPTY_ALUMNOS ||
-                    v === LOADING_REC_ALUMNOS ||
-                    v === EMPTY_REC_ALUMNOS
-                  ) {
+                  if (v === EMPTY_ALUMNOS || v === LOADING_REC_ALUMNOS || v === EMPTY_REC_ALUMNOS) {
                     return;
                   }
                   handleAlumnoChange(v === NONE_VALUE ? "" : v);
@@ -2412,7 +2402,11 @@ function IncidenciaFormDialog({
                         Cargando profesores...
                       </SelectItem>
                     ) : isConsulta && activeProfesoresOptions.length === 0 ? (
-                      <SelectItem key={EMPTY_ALUMNO_HORARIOS} value={EMPTY_ALUMNO_HORARIOS} disabled>
+                      <SelectItem
+                        key={EMPTY_ALUMNO_HORARIOS}
+                        value={EMPTY_ALUMNO_HORARIOS}
+                        disabled
+                      >
                         No hay profesores activos para este alumno
                       </SelectItem>
                     ) : (
@@ -2491,7 +2485,11 @@ function IncidenciaFormDialog({
                         Cargando especialidades...
                       </SelectItem>
                     ) : isConsulta && activeEspecialidadesOptions.length === 0 ? (
-                      <SelectItem key={EMPTY_ALUMNO_HORARIOS} value={EMPTY_ALUMNO_HORARIOS} disabled>
+                      <SelectItem
+                        key={EMPTY_ALUMNO_HORARIOS}
+                        value={EMPTY_ALUMNO_HORARIOS}
+                        disabled
+                      >
                         No hay especialidades activas para este alumno
                       </SelectItem>
                     ) : (
@@ -2502,7 +2500,11 @@ function IncidenciaFormDialog({
                           </SelectItem>
                         )}
                         {!isConsulta && activeEspecialidadesOptions.length === 0 ? (
-                          <SelectItem key={EMPTY_ESPECIALIDADES} value={EMPTY_ESPECIALIDADES} disabled>
+                          <SelectItem
+                            key={EMPTY_ESPECIALIDADES}
+                            value={EMPTY_ESPECIALIDADES}
+                            disabled
+                          >
                             No hay especialidades disponibles
                           </SelectItem>
                         ) : (

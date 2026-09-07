@@ -27,7 +27,11 @@ export function PhoneQuickActions({
         className={btnClass}
         onClick={(e) => {
           e.stopPropagation();
-          window.open(`https://wa.me/${formatWhatsAppNumber(phone)}`, "_blank", "noopener,noreferrer");
+          window.open(
+            `https://wa.me/${formatWhatsAppNumber(phone)}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
         }}
       >
         <MessageCircle className={cn(iconClass, "text-green-500")} />

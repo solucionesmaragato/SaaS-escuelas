@@ -162,10 +162,21 @@ export function CalendarQuickIncidenciaForm({
       </div>
 
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={create.isPending}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onCancel}
+          disabled={create.isPending}
+        >
           Cancelar
         </Button>
-        <Button type="button" size="sm" onClick={() => void handleSave()} disabled={create.isPending}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void handleSave()}
+          disabled={create.isPending}
+        >
           Guardar
         </Button>
       </div>

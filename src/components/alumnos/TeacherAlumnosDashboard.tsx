@@ -7,12 +7,7 @@ import {
 } from "@/hooks/useAlumnosProfesor";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const dayOrder: Record<string, number> = {
@@ -45,7 +40,10 @@ function formatFechaNacimiento(value: string | null | undefined): string {
   return date.toLocaleDateString("es-ES");
 }
 
-function formatHorarioRange(inicio: string | null | undefined, fin: string | null | undefined): string {
+function formatHorarioRange(
+  inicio: string | null | undefined,
+  fin: string | null | undefined,
+): string {
   const start = inicio?.slice(0, 5) ?? "—";
   const end = fin?.slice(0, 5) ?? "—";
   return `${start} – ${end}`;
@@ -65,13 +63,7 @@ function sortHorarios(rows: ProfesorAlumnoHorario[]): ProfesorAlumnoHorario[] {
   );
 }
 
-function AlumnoRow({
-  alumno,
-  onOpen,
-}: {
-  alumno: ProfesorAlumnoLista;
-  onOpen: () => void;
-}) {
+function AlumnoRow({ alumno, onOpen }: { alumno: ProfesorAlumnoLista; onOpen: () => void }) {
   const edadLabel =
     alumno.EDAD != null
       ? `${alumno.EDAD} años`
@@ -81,11 +73,7 @@ function AlumnoRow({
 
   return (
     <Card className="p-4">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full items-start gap-3 text-left"
-      >
+      <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 text-left">
         <UserRound className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-start justify-between gap-3">
@@ -101,7 +89,8 @@ function AlumnoRow({
             <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </div>
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Tutor:</span> {formatTutores(alumno.TUTORES)}
+            <span className="font-medium text-foreground">Tutor:</span>{" "}
+            {formatTutores(alumno.TUTORES)}
           </p>
         </div>
       </button>
@@ -226,7 +215,8 @@ export function TeacherAlumnosDashboard() {
                     </span>
                   </div>
                   <p>
-                    <span className="font-medium">Tutor:</span> {formatTutores(selectedAlumno.TUTORES)}
+                    <span className="font-medium">Tutor:</span>{" "}
+                    {formatTutores(selectedAlumno.TUTORES)}
                   </p>
                 </div>
               </Card>

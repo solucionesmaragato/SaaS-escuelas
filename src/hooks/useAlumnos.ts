@@ -23,11 +23,7 @@ export function useAlumnos() {
   const create = useMutation({
     mutationFn: async (input: Omit<Alumno, "ID_ALUMNO" | "ID_CLIENTE">) => {
       const payload = { ...input, ID_CLIENTE: tenantId };
-      const { data, error } = await supabase
-        .from("ALUMNOS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("ALUMNOS").insert(payload).select().single();
       if (error) throw error;
       return data as Alumno;
     },

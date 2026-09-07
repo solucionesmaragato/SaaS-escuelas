@@ -19,12 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 
 type SepaMandatoBlockProps = {
@@ -60,9 +55,7 @@ function formatMandatoShortDate(iso: string | null | undefined): string {
 function formatHistoryMandatoLabel(mandato: MandatoSepaRow): string {
   const status = parseMandatoSepaStatus(mandato.ESTADO);
   const dateIso =
-    status === "revocado"
-      ? mandato.created_at
-      : (mandato.FIRMADO_AT ?? mandato.created_at);
+    status === "revocado" ? mandato.created_at : (mandato.FIRMADO_AT ?? mandato.created_at);
   const dateLabel = formatMandatoShortDate(dateIso);
 
   if (status === "revocado") return `Revocado el ${dateLabel}`;

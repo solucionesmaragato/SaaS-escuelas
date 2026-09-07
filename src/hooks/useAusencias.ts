@@ -11,6 +11,7 @@ import {
   isDireccionRole,
   isMasterRole,
   isProfesorRole,
+  isSecretariaRole,
   scopeTenantQuery,
   tenantListKey,
 } from "@/lib/tenantQuery";
@@ -49,6 +50,7 @@ export type AusenciaCreateInput = {
   ESTADO?: string | null;
   JUSTIFICANTE?: string | null;
   ID_CLIENTE?: string;
+  ID_CENTRO?: string | null;
 };
 
 export type AusenciaUpdateInput = Partial<AusenciaCreateInput>;
@@ -80,6 +82,15 @@ function assertCanUpdate(rol: string | null | undefined) {
   throw new Error("No tienes permiso para modificar permisos.");
 }
 
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    const message = String((error as { message: unknown }).message);
+    if (message) return message;
+  }
+  return "Error desconocido";
+}
+
 function assertCanDelete(rol: string | null | undefined) {
   if (!isMasterRole(rol)) {
     throw new Error("Solo Master puede eliminar permisos.");
@@ -94,10 +105,7 @@ function buildAdminUpdatePatch(patch: AusenciaUpdateInput): AusenciaUpdateInput 
   return result;
 }
 
-function mapAusencias(
-  rows: AusenciaRow[],
-  profesores: ProfesorLookup[],
-): AusenciaData[] {
+function mapAusencias(rows: AusenciaRow[], profesores: ProfesorLookup[]): AusenciaData[] {
   const profById = new Map(profesores.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR]));
 
   return rows.map((row) => ({
@@ -128,11 +136,8 @@ function sortAusencias(rows: AusenciaData[]): AusenciaData[] {
   return indexed.map(({ row }) => row);
 }
 
-export function useAusencias(
-  filterCenterId?: string | null,
-  forcedProfesorId?: string | null,
-) {
-  const { tenantId, rol, perfil } = useActiveTenant();
+export function useAusencias(filterCenterId?: string | null, forcedProfesorId?: string | null) {
+  const { tenantId, rol, perfil, centerId } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("ausencias", rol, tenantId),
@@ -172,7 +177,10 @@ export function useAusencias(
       }
 
       const [{ data: ausencias, error }, { data: profesores, error: profError }] =
-        await Promise.all([ausenciaQuery, profesorQuery.order("NOMBRE_PROFESOR", { ascending: true })]);
+        await Promise.all([
+          ausenciaQuery,
+          profesorQuery.order("NOMBRE_PROFESOR", { ascending: true }),
+        ]);
 
       if (error) throw error;
       if (profError) throw profError;
@@ -184,10 +192,7 @@ export function useAusencias(
         SALDO_AP: normalizeSaldo(p.SALDO_AP),
       }));
 
-      const mappedAusencias = mapAusencias(
-        (ausencias ?? []) as AusenciaRow[],
-        profesoresMapped,
-      );
+      const mappedAusencias = mapAusencias((ausencias ?? []) as AusenciaRow[], profesoresMapped);
 
       return {
         ausencias: sortAusencias(mappedAusencias),
@@ -215,8 +220,17 @@ export function useAusencias(
         throw new Error("Debes seleccionar un trabajador.");
       }
 
+      let idCentro = input.ID_CENTRO?.trim() || null;
+      if (!idCentro && (isProfesorRole(rol) || isSecretariaRole(rol) || isDireccionRole(rol))) {
+        idCentro = centerId?.trim() || null;
+      }
+      if (!idCentro) {
+        throw new Error("Debes seleccionar un centro.");
+      }
+
       const payload = {
         ID_CLIENTE: idCliente,
+        ID_CENTRO: idCentro,
         ID_PROFESOR: idProfesor,
         TIPO: input.TIPO,
         FECHA_INICIO: input.FECHA_INICIO,
@@ -242,23 +256,24 @@ export function useAusencias(
 
       const finalPatch = isMasterRole(rol) ? patch : buildAdminUpdatePatch(patch);
 
-      console.log("PAYLOAD SENT TO SUPABASE:", finalPatch);
-
-      let query = supabase
-        .from("AUSENCIAS_PERMISOS")
-        .update(finalPatch)
-        .eq("ID_PERMISO", id);
+      let query = supabase.from("AUSENCIAS_PERMISOS").update(finalPatch).eq("ID_PERMISO", id);
 
       if (!isMasterRole(rol)) {
         query = query.eq("ID_CLIENTE", tenantId);
       }
 
-      const { data, error } = await query.select(AUSENCIA_SELECT_COLUMNS).single();
+      const { data, error } = await query.select(AUSENCIA_SELECT_COLUMNS);
       if (error) {
         console.error("SUPABASE ERROR DETAILS:", error);
-        throw error;
+        throw new Error(extractErrorMessage(error));
       }
-      return data as AusenciaRow;
+      const row = data?.[0];
+      if (!row) {
+        throw new Error(
+          "No se pudo actualizar el permiso. Comprueba tu centro o permisos de acceso.",
+        );
+      }
+      return row as AusenciaRow;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey }),
   });
@@ -266,10 +281,7 @@ export function useAusencias(
   const remove = useMutation({
     mutationFn: async (id: string) => {
       assertCanDelete(rol);
-      const { error } = await supabase
-        .from("AUSENCIAS_PERMISOS")
-        .delete()
-        .eq("ID_PERMISO", id);
+      const { error } = await supabase.from("AUSENCIAS_PERMISOS").delete().eq("ID_PERMISO", id);
       if (error) throw error;
       return id;
     },

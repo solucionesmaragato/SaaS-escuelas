@@ -7,18 +7,10 @@ import { AvisosWidget } from "@/components/dashboard/AvisosWidget";
 import { CalendarWidget } from "@/components/sesiones/CalendarWidget";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  useDashboardLive,
-  type DashboardLiveEntity,
-} from "@/hooks/useDashboardLive";
+import { useDashboardLive, type DashboardLiveEntity } from "@/hooks/useDashboardLive";
 import {
   isAdminRole,
   isDireccionRole,
@@ -46,10 +38,7 @@ function LiveStatCard({
   onClick: () => void;
 }) {
   return (
-    <Card
-      className="cursor-pointer transition-colors hover:bg-muted/30"
-      onClick={onClick}
-    >
+    <Card className="cursor-pointer transition-colors hover:bg-muted/30" onClick={onClick}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
         <Icon className="h-4 w-4 text-muted-foreground" />
@@ -154,11 +143,7 @@ function FourColumnProfesoresList({
             ) : null}
             {column.title}
           </h4>
-          <LiveEntityList
-            items={column.items}
-            emptyLabel="Ninguno"
-            onItemClick={onItemClick}
-          />
+          <LiveEntityList items={column.items} emptyLabel="Ninguno" onItemClick={onItemClick} />
         </div>
       ))}
     </div>
@@ -212,10 +197,8 @@ function AdminLiveDashboard() {
   const navigate = useNavigate();
   const { rol, centerId } = useActiveTenant();
   const showCorrectionsPanel = isAdminRole(rol) || isMasterRole(rol);
-  const showCalendarWidget =
-    isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
-  const showAvisosWidget =
-    isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
+  const showCalendarWidget = isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
+  const showAvisosWidget = isAdminRole(rol) || isMasterRole(rol) || isSecretariaRole(rol);
   const canFilterByCentro = showCorrectionsPanel;
   const hasFixedWorkspaceCenter = isSecretariaRole(rol) || isDireccionRole(rol);
   const {
@@ -265,11 +248,9 @@ function AdminLiveDashboard() {
       : undefined;
 
   return (
-    <div className="-m-4 flex h-full min-h-0 flex-1 w-full flex-col overflow-hidden p-4 sm:-m-6 sm:p-6">
+    <div className="-m-4 flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col overflow-hidden p-4 sm:-m-6 sm:p-6">
       <div className="mb-2 grid shrink-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {showAvisosWidget && (
-          <AvisosWidget filterCenterId={avisosFilterCenterId} />
-        )}
+        {showAvisosWidget && <AvisosWidget filterCenterId={avisosFilterCenterId} />}
         <LiveStatCard
           label="Alumnos"
           value={`${liveData?.alumnos?.presentes_count ?? 0} / ${liveData?.alumnos?.totales_count ?? 0}`}
@@ -294,7 +275,7 @@ function AdminLiveDashboard() {
       </div>
 
       {showCalendarWidget && (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <CalendarWidget
             embedded
             hideFilters
@@ -378,9 +359,7 @@ function AdminLiveDashboard() {
               onLeftClick={(item) => {
                 setAulasOpen(false);
                 const sesionId =
-                  "id_sesion" in item && typeof item.id_sesion === "string"
-                    ? item.id_sesion
-                    : null;
+                  "id_sesion" in item && typeof item.id_sesion === "string" ? item.id_sesion : null;
                 if (sesionId) {
                   navigate({ to: "/sesiones", search: { sesionId } });
                   return;

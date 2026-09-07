@@ -118,10 +118,12 @@ async function uploadControlExcel(
 ): Promise<string> {
   const timestamp = Date.now();
   const storagePath = `${idCliente}/remesas/${idRemesa}_control_${timestamp}.xlsx`;
-  const { error: uploadErr } = await supabase.storage.from(DOCUMENTOS_BUCKET).upload(storagePath, xlsxBytes, {
-    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    upsert: false,
-  });
+  const { error: uploadErr } = await supabase.storage
+    .from(DOCUMENTOS_BUCKET)
+    .upload(storagePath, xlsxBytes, {
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      upsert: false,
+    });
   if (uploadErr) {
     throw new Error(`Error al subir Excel de control: ${uploadErr.message}`);
   }
@@ -159,7 +161,9 @@ export async function regenerarExcelControlRemesa(
   });
   if (remesaErr) throw remesaErr;
 
-  const remesa = (Array.isArray(remesaMeta) ? remesaMeta[0] : remesaMeta) as RemesaExcelMetaRow | undefined;
+  const remesa = (Array.isArray(remesaMeta) ? remesaMeta[0] : remesaMeta) as
+    | RemesaExcelMetaRow
+    | undefined;
   if (!remesa?.ID_REMESA) {
     return null;
   }
@@ -190,7 +194,9 @@ export async function regenerarExcelControlRemesa(
     p_link: publicUrl,
   });
   if (saveErr) {
-    throw new Error(`Excel generado pero no se pudo guardar LINK_EXCEL_CONTABILIDAD: ${saveErr.message}`);
+    throw new Error(
+      `Excel generado pero no se pudo guardar LINK_EXCEL_CONTABILIDAD: ${saveErr.message}`,
+    );
   }
 
   return publicUrl;

@@ -91,18 +91,22 @@ function normalizeBool(value: unknown): boolean {
   return value === true || value === "TRUE" || value === "true" || value === 1;
 }
 
+export function canManageDocumentosLegales(rol: string | null | undefined): boolean {
+  return isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+}
+
 function assertCanCreate(rol: string | null | undefined) {
-  if (isMasterRole(rol) || isAdminRole(rol)) return;
+  if (canManageDocumentosLegales(rol)) return;
   throw new Error("No tienes permiso para crear documentos.");
 }
 
 function assertCanDelete(rol: string | null | undefined) {
-  if (isMasterRole(rol) || isAdminRole(rol)) return;
+  if (canManageDocumentosLegales(rol)) return;
   throw new Error("No tienes permiso para eliminar documentos.");
 }
 
-function isEmployeeDocumentRole(rol: string | null | undefined): boolean {
-  return isProfesorRole(rol) || isDireccionRole(rol) || isSecretariaRole(rol);
+function isOwnDocumentEmployeeRole(rol: string | null | undefined): boolean {
+  return isProfesorRole(rol) || isDireccionRole(rol);
 }
 
 function buildProfesorUpdatePatch(patch: DocumentoUpdateInput): DocumentoUpdateInput {
@@ -112,8 +116,22 @@ function buildProfesorUpdatePatch(patch: DocumentoUpdateInput): DocumentoUpdateI
   return result;
 }
 
+function validateDocumentoLegalFile(file: File): void {
+  if (!file || file.size <= 0) {
+    throw new Error("El archivo está vacío. Vuelve a seleccionarlo.");
+  }
+}
+
 async function uploadDocumentoLegalFile(filePath: string, file: File): Promise<string> {
-  const { error } = await supabase.storage.from(DOCUMENTOS_LEGALES_BUCKET).upload(filePath, file);
+  validateDocumentoLegalFile(file);
+
+  const contentType = file.type?.trim() || "application/pdf";
+  const body = new Blob([await file.arrayBuffer()], { type: contentType });
+
+  const { error } = await supabase.storage.from(DOCUMENTOS_LEGALES_BUCKET).upload(filePath, body, {
+    contentType,
+    upsert: false,
+  });
   if (error) throw error;
 
   const {
@@ -158,19 +176,14 @@ function mapDocumentoRow(row: DocumentoRow, nombreProfesor: string): DocumentoDa
   };
 }
 
-function mapDocumentos(
-  rows: DocumentoRow[],
-  profesores: ProfesorLookup[],
-): DocumentoData[] {
+function mapDocumentos(rows: DocumentoRow[], profesores: ProfesorLookup[]): DocumentoData[] {
   const profById = new Map(profesores.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR]));
 
-  return rows.map((row) =>
-    mapDocumentoRow(row, profById.get(row.ID_PROFESOR) ?? row.ID_PROFESOR),
-  );
+  return rows.map((row) => mapDocumentoRow(row, profById.get(row.ID_PROFESOR) ?? row.ID_PROFESOR));
 }
 
 export function useDocumentos(filterCenterId?: string | null, profesorId?: string | null) {
-  const { tenantId, rol, perfil } = useActiveTenant();
+  const { tenantId, rol, perfil, centerId: profileCenterId } = useActiveTenant();
   const qc = useQueryClient();
   const queryKey = [
     ...tenantListKey("documentos", rol, tenantId),
@@ -190,7 +203,7 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
       let documentoQuery = supabase.from("DOCUMENTOS_LEGALES_V2").select(DOCUMENTO_SELECT_COLUMNS);
       documentoQuery = scopeTenantQuery(documentoQuery, rol, tenantId);
 
-      if (isEmployeeDocumentRole(rol) && perfil?.ID_PROFESOR) {
+      if (isOwnDocumentEmployeeRole(rol) && perfil?.ID_PROFESOR) {
         documentoQuery = documentoQuery.eq("ID_PROFESOR", perfil.ID_PROFESOR);
       } else {
         const scoped = appendIdInFilter(documentoQuery, "ID_PROFESOR", profesorIds);
@@ -204,7 +217,7 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
       let profesorQuery = supabase.from("PROFESOR").select(PROFESOR_LOOKUP_COLUMNS);
       profesorQuery = scopeTenantQuery(profesorQuery, rol, tenantId);
 
-      if (isEmployeeDocumentRole(rol) && perfil?.ID_PROFESOR) {
+      if (isOwnDocumentEmployeeRole(rol) && perfil?.ID_PROFESOR) {
         profesorQuery = profesorQuery.eq("ID_PROFESOR", perfil.ID_PROFESOR);
       } else if (profesorIds) {
         profesorQuery = profesorQuery.in("ID_PROFESOR", profesorIds);
@@ -224,10 +237,7 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
         NOMBRE_PROFESOR: p.NOMBRE_PROFESOR,
       }));
 
-      const mappedData = mapDocumentos(
-        (documentos ?? []) as DocumentoRow[],
-        profesoresMapped,
-      );
+      const mappedData = mapDocumentos((documentos ?? []) as DocumentoRow[], profesoresMapped);
 
       const sortedData = [...mappedData].sort((a: DocumentoData, b: DocumentoData) => {
         const aReqFirma =
@@ -267,9 +277,21 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
       const filePath = `${tenantId}/original_${crypto.randomUUID()}.${fileExt}`;
       const publicUrl = await uploadDocumentoLegalFile(filePath, newDoc.file);
 
+      let idCentro = newDoc.ID_CENTRO?.trim() || null;
+      if (isSecretariaRole(rol)) {
+        idCentro = idCentro || profileCenterId?.trim() || null;
+        if (!idCentro) {
+          throw new Error("Tu perfil no tiene un centro asignado.");
+        }
+      } else if (isMasterRole(rol) || isAdminRole(rol)) {
+        if (!idCentro) {
+          throw new Error("Debes seleccionar un centro.");
+        }
+      }
+
       const payload = {
         ID_PROFESOR: newDoc.ID_PROFESOR || null,
-        ID_CENTRO: newDoc.ID_CENTRO || null,
+        ID_CENTRO: idCentro,
         CATEGORIA: newDoc.CATEGORIA,
         URL_ORIGINAL: publicUrl,
         REQUIERE_FIRMA: newDoc.REQUIERE_FIRMA || false,
@@ -296,9 +318,9 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
     mutationFn: async ({ id, patch }: { id: string; patch: DocumentoUpdateInput }) => {
       let finalPatch: DocumentoUpdateInput;
 
-      if (isMasterRole(rol) || isAdminRole(rol)) {
+      if (canManageDocumentosLegales(rol)) {
         finalPatch = patch;
-      } else if (isEmployeeDocumentRole(rol)) {
+      } else if (isOwnDocumentEmployeeRole(rol)) {
         if (!perfil?.ID_PROFESOR) {
           throw new Error("Tu perfil no tiene un trabajador asociado.");
         }
@@ -324,10 +346,7 @@ export function useDocumentos(filterCenterId?: string | null, profesorId?: strin
       if (!tenantId) throw new Error("No hay un tenant activo.");
       const dbPatch = await resolveDocumentoDbPatch(finalPatch, tenantId, id);
 
-      let query = supabase
-        .from("DOCUMENTOS_LEGALES_V2")
-        .update(dbPatch)
-        .eq("ID_DOCUMENTO", id);
+      let query = supabase.from("DOCUMENTOS_LEGALES_V2").update(dbPatch).eq("ID_DOCUMENTO", id);
 
       if (!isMasterRole(rol)) {
         query = query.eq("ID_CLIENTE", tenantId);

@@ -92,11 +92,7 @@ function isTimesOnlyEditor(
 ): boolean {
   if (isProfesorRole(rol)) return true;
   if (isDireccionRole(rol)) {
-    return (
-      !!perfilProfesorId &&
-      !!turnoProfesorId &&
-      perfilProfesorId === turnoProfesorId
-    );
+    return !!perfilProfesorId && !!turnoProfesorId && perfilProfesorId === turnoProfesorId;
   }
   return false;
 }
@@ -145,11 +141,7 @@ function assertCanCreate(rol: string | null | undefined) {
 }
 
 function assertCanModify(rol: string | null | undefined) {
-  if (
-    isMasterRole(rol) ||
-    isAdminRole(rol) ||
-    isDireccionRole(rol)
-  ) {
+  if (isMasterRole(rol) || isAdminRole(rol) || isDireccionRole(rol)) {
     return;
   }
   throw new Error("No tienes permiso para modificar turnos.");
@@ -191,9 +183,7 @@ function normalizeJsonArrayField(ids: string[] | null | undefined): string[] | n
   return cleaned.length > 0 ? cleaned : null;
 }
 
-function sanitizeTurnoPayload(
-  input: TurnoCreateInput | TurnoUpdateInput,
-): Record<string, unknown> {
+function sanitizeTurnoPayload(input: TurnoCreateInput | TurnoUpdateInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
 
   if ("ID_PROFESOR" in input && input.ID_PROFESOR !== undefined) {
@@ -290,11 +280,7 @@ export function useTurnos() {
       const especialidadesRows = (esp ?? []) as EspecialidadLookup[];
 
       return {
-        turnos: mapTurnos(
-          (turnos ?? []) as TurnoRow[],
-          profesoresRows,
-          especialidadesRows,
-        ),
+        turnos: mapTurnos((turnos ?? []) as TurnoRow[], profesoresRows, especialidadesRows),
         profesores: profesoresRows,
         especialidades: especialidadesRows,
       };
@@ -308,9 +294,7 @@ export function useTurnos() {
       const registros = [...input.registros]
         .filter((r) => r.DIA_SEMANA?.trim())
         .sort(
-          (a, b) =>
-            (DAY_INSERT_ORDER[a.DIA_SEMANA] ?? 99) -
-            (DAY_INSERT_ORDER[b.DIA_SEMANA] ?? 99),
+          (a, b) => (DAY_INSERT_ORDER[a.DIA_SEMANA] ?? 99) - (DAY_INSERT_ORDER[b.DIA_SEMANA] ?? 99),
         );
 
       if (registros.length === 0) {
@@ -329,10 +313,7 @@ export function useTurnos() {
         }),
       );
 
-      const { data, error } = await supabase
-        .from("TURNOS_PROFESORES")
-        .insert(payloads)
-        .select();
+      const { data, error } = await supabase.from("TURNOS_PROFESORES").insert(payloads).select();
       if (error) throw error;
       return data;
     },

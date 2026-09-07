@@ -90,10 +90,7 @@ type SesionRow = {
 type LookupRow = { id: string; name: string };
 
 function normalizeTitulo(titulo: string | null | undefined): string {
-  return (titulo ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  return (titulo ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
 function resolveColorIncidencia(
@@ -150,8 +147,7 @@ function mapSesiones(
     TEXTO_ALUMNO: (s.ID_ALUMNO && aluById.get(s.ID_ALUMNO)) || s.ID_ALUMNO || "—",
     TEXTO_PROFESOR: (s.ID_PROFESOR && profById.get(s.ID_PROFESOR)) || s.ID_PROFESOR || "—",
     TEXTO_AULA: (s.ID_AULA && aulaById.get(s.ID_AULA)) || s.ID_AULA || "—",
-    TEXTO_ESPECIALIDAD:
-      (s.ESPECIALIDAD && espById.get(s.ESPECIALIDAD)) || s.ESPECIALIDAD || "—",
+    TEXTO_ESPECIALIDAD: (s.ESPECIALIDAD && espById.get(s.ESPECIALIDAD)) || s.ESPECIALIDAD || "—",
   }));
 }
 
@@ -372,22 +368,14 @@ export function useSesiones(dateRange: SesionesDateRange) {
       const { data: esp, error: espError } = await espQuery;
       if (espError) throw espError;
 
-      const mapped = mapSesiones(
-        sesiones,
-        alumnos,
-        profesores ?? [],
-        aulas ?? [],
-        esp ?? [],
-      );
+      const mapped = mapSesiones(sesiones, alumnos, profesores ?? [], aulas ?? [], esp ?? []);
 
       const horarioIds = Array.from(
         new Set(mapped.map((s) => s.ID_HORARIO).filter((id): id is string => Boolean(id))),
       );
       const horarioGrupoById = new Map<string, string>();
       if (horarioIds.length > 0) {
-        let horariosQuery = supabase
-          .from("HORARIOS_MATRICULAS")
-          .select("ID_HORARIO, ID_GRUPO");
+        let horariosQuery = supabase.from("HORARIOS_MATRICULAS").select("ID_HORARIO, ID_GRUPO");
         horariosQuery = scopeTenantQuery(horariosQuery, rol, tenantId);
         horariosQuery = horariosQuery.in("ID_HORARIO", horarioIds);
         const { data: horariosRows, error: horariosError } = await horariosQuery;
@@ -421,9 +409,7 @@ export function useSesiones(dateRange: SesionesDateRange) {
               .map((s) => ({ id: s.ID_PROFESOR!, name: s.TEXTO_PROFESOR })),
           ),
           uniqueAulas: buildUniqueOptions(
-            mapped
-              .filter((s) => s.ID_AULA)
-              .map((s) => ({ id: s.ID_AULA!, name: s.TEXTO_AULA })),
+            mapped.filter((s) => s.ID_AULA).map((s) => ({ id: s.ID_AULA!, name: s.TEXTO_AULA })),
           ),
           uniqueEspecialidades: buildUniqueOptions(
             mapped

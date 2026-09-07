@@ -349,10 +349,53 @@ export interface ControlRemesa {
   LINK_RECIBOS_ZIP: string | null;
 }
 
+export type RemesaProcesoAlumnoEstado = "recibo_ok" | "pdf_fallido" | "recibo_no_generado";
+
+export interface RemesaProcesoAlumno {
+  ID: string;
+  ID_REMESA: string;
+  ID_ALUMNO: string;
+  ID_RECIBO: string | null;
+  ID_CLIENTE: string;
+  ID_CENTRO: string;
+  ID_CURSO: string;
+  MES_PERIODO: string;
+  AJUSTE_EUR: number | null;
+  MOTIVO_AJUSTE: string | null;
+  CARGOS_SNAPSHOT: unknown;
+  LINEAS_SNAPSHOT: unknown;
+  ESTADO: RemesaProcesoAlumnoEstado;
+  ERROR_PDF: string | null;
+  CREATED_AT: string;
+}
+
+export type RemesaGeneracionJobEstado = "pendiente" | "procesando" | "completado" | "error";
+
+export interface RemesaGeneracionJob {
+  ID_JOB: string;
+  ID_REMESA: string;
+  ID_CLIENTE: string;
+  ID_CENTRO: string;
+  ID_CURSO: string;
+  MES_PERIODO: string;
+  ESTADO: RemesaGeneracionJobEstado;
+  PDF_TOTAL: number;
+  PDF_OK: number;
+  PDF_FAIL: number;
+  EXCEL_OK: boolean;
+  ERROR_MENSAJE: string | null;
+  CREADO_POR: string | null;
+  CREATED_AT: string;
+  UPDATED_AT: string;
+  INICIADO_AT: string | null;
+  COMPLETADO_AT: string | null;
+}
+
 export interface AusenciaPermiso {
   ID_CLIENTE: UUID;
   ID_PROFESOR: UUID;
   ID_PERMISO: UUID;
+  ID_CENTRO?: UUID | null;
   TIPO: string;
   FECHA_INICIO: ISODate;
   FECHA_FIN: ISODate;
@@ -485,8 +528,19 @@ export interface AvisosInternos {
   ID_CURSO: UUID | null;
   ID_HORARIO: UUID | null;
   ID_PROFESOR?: string | null;
+  ID_MANDATO?: string | null;
+  ID_INCIDENCIA?: string | null;
+  ID_MATRICULA?: string | null;
+  ID_GRUPO?: string | null;
+  ID_PRESTAMO?: string | null;
+  ID_PERMISO?: string | null;
+  ID_DOCUMENTO?: string | null;
+  ID_FICHAJE?: string | null;
+  ID_REMESA?: string | null;
+  ID_RECIBO?: string | null;
   TIPO: string | null;
   MENSAJE: string | null;
+  CANTIDAD?: number | null;
   ESTADO: string | null;
   FECHA: ISODateTime | null;
   LEIDO: boolean | null;

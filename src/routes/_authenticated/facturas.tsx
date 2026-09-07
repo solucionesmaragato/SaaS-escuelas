@@ -41,7 +41,11 @@ import {
   FacturaOficialPdfButton,
   EstadoPagoSelect,
 } from "@/components/facturas/FacturaTableCells";
-import { NuevaFacturaDialog } from "@/components/facturas/NuevaFacturaDialog";
+import {
+  NuevaFacturaDialog,
+  type NuevaFacturaLineaPrefill,
+} from "@/components/facturas/NuevaFacturaDialog";
+import { fetchRemesaProcesoAlumnoPrefill } from "@/hooks/useRemesas";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useCentros, type CursoEscolarData } from "@/hooks/useCentros";
@@ -53,7 +57,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -71,7 +74,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -96,9 +98,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EntityLink } from "@/components/navigation/EntityLink";
-import { METODOS_PAGO_OPCIONES, normalizeMetodoPago, isTarjetaPaymentMethod } from "@/lib/alumnoPaymentUtils";
+import {
+  METODOS_PAGO_OPCIONES,
+  normalizeMetodoPago,
+  isTarjetaPaymentMethod,
+} from "@/lib/alumnoPaymentUtils";
 import {
   packReciboDireccionJson,
   parseReciboDireccionJson,
@@ -130,7 +135,9 @@ function direccionFieldsFromRaw(direccion: string | null | undefined) {
 function formatReciboDireccionDisplay(direccion: string | null | undefined): string {
   const parsed = parseReciboDireccionJson(direccion);
   if (parsed) {
-    const line = [parsed.calle, parsed.cp, parsed.municipio, parsed.provincia].filter(Boolean).join(", ");
+    const line = [parsed.calle, parsed.cp, parsed.municipio, parsed.provincia]
+      .filter(Boolean)
+      .join(", ");
     return line || "—";
   }
   return direccion?.trim() || "—";
@@ -138,13 +145,48 @@ function formatReciboDireccionDisplay(direccion: string | null | undefined): str
 
 type FacturasSearch = {
   invoiceId?: string;
+  newInvoice?: boolean;
+  alumnoId?: string;
+  remesaId?: string;
+  centroId?: string;
+  cursoId?: string;
+  mesPeriodo?: string;
 };
 
+function parseFacturasSearch(search: Record<string, unknown>): FacturasSearch {
+  const result: FacturasSearch = {};
+  const invoiceId = search.invoiceId;
+  if (typeof invoiceId === "string" && invoiceId.trim()) {
+    result.invoiceId = invoiceId.trim();
+  }
+  if (search.newInvoice === true || search.newInvoice === "true") {
+    result.newInvoice = true;
+  }
+  const alumnoId = search.alumnoId;
+  if (typeof alumnoId === "string" && alumnoId.trim()) {
+    result.alumnoId = alumnoId.trim();
+  }
+  const remesaId = search.remesaId;
+  if (typeof remesaId === "string" && remesaId.trim()) {
+    result.remesaId = remesaId.trim();
+  }
+  const centroId = search.centroId;
+  if (typeof centroId === "string" && centroId.trim()) {
+    result.centroId = centroId.trim();
+  }
+  const cursoId = search.cursoId;
+  if (typeof cursoId === "string" && cursoId.trim()) {
+    result.cursoId = cursoId.trim();
+  }
+  const mesPeriodo = search.mesPeriodo;
+  if (typeof mesPeriodo === "string" && mesPeriodo.trim()) {
+    result.mesPeriodo = mesPeriodo.trim();
+  }
+  return result;
+}
+
 export const Route = createFileRoute("/_authenticated/facturas")({
-  validateSearch: (search: Record<string, unknown>): FacturasSearch => {
-    const invoiceId = search.invoiceId;
-    return typeof invoiceId === "string" && invoiceId ? { invoiceId } : {};
-  },
+  validateSearch: parseFacturasSearch,
   component: FacturasPage,
 });
 
@@ -227,12 +269,7 @@ function isFacturaAnulado(row: ReciboRow): boolean {
 const RECIBO_TOTALES_READONLY_HINT =
   "Los importes se calculan desde las líneas del recibo. Para corregirlos, modifique la matrícula/horario, los cargos extra (Compras internas o ficha del alumno) o el ajuste manual en la ficha del alumno antes de generar la remesa. No parchee el total del recibo.";
 
-const RECIBO_TOTAL_PATCH_KEYS = [
-  "TOTAL_BASE",
-  "DESCUENTO",
-  "TOTAL_IVA",
-  "TOTAL_DOC",
-] as const;
+const RECIBO_TOTAL_PATCH_KEYS = ["TOTAL_BASE", "DESCUENTO", "TOTAL_IVA", "TOTAL_DOC"] as const;
 
 function stripReciboTotalsFromPatch(values: Record<string, unknown>): Record<string, unknown> {
   const patch = { ...values };
@@ -258,13 +295,7 @@ function ventaLineaToDraft(row: VentaLineaRow): VentaLineaDraft {
   };
 }
 
-function FacturaVentasLineasSection({
-  reciboId,
-  canEdit,
-}: {
-  reciboId: string;
-  canEdit: boolean;
-}) {
+function FacturaVentasLineasSection({ reciboId, canEdit }: { reciboId: string; canEdit: boolean }) {
   const { list, update } = useVentasLineas(reciboId);
   const [drafts, setDrafts] = useState<Record<string, VentaLineaDraft>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -278,7 +309,12 @@ function FacturaVentasLineasSection({
     setDrafts((prev) => ({
       ...prev,
       [lineId]: {
-        ...(prev[lineId] ?? { CONCEPTO: "", CANTIDAD: "1", PRECIO_UNITARIO: "0", IVA_PORCENTAJE: "0" }),
+        ...(prev[lineId] ?? {
+          CONCEPTO: "",
+          CANTIDAD: "1",
+          PRECIO_UNITARIO: "0",
+          IVA_PORCENTAJE: "0",
+        }),
         [field]: value,
       },
     }));
@@ -295,7 +331,11 @@ function FacturaVentasLineasSection({
     const cantidad = Number(draft.CANTIDAD);
     const precioUnitario = Number(draft.PRECIO_UNITARIO);
     const ivaPorcentaje = Number(draft.IVA_PORCENTAJE);
-    if (!Number.isFinite(cantidad) || !Number.isFinite(precioUnitario) || !Number.isFinite(ivaPorcentaje)) {
+    if (
+      !Number.isFinite(cantidad) ||
+      !Number.isFinite(precioUnitario) ||
+      !Number.isFinite(ivaPorcentaje)
+    ) {
       toast.error("Cantidad, precio e IVA deben ser numéricos.");
       return;
     }
@@ -343,19 +383,28 @@ function FacturaVentasLineasSection({
           <TableBody>
             {list.isLoading ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 6 : 5} className="py-6 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={canEdit ? 6 : 5}
+                  className="py-6 text-center text-muted-foreground"
+                >
                   Cargando líneas...
                 </TableCell>
               </TableRow>
             ) : list.isError ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 6 : 5} className="py-6 text-center text-sm text-destructive">
+                <TableCell
+                  colSpan={canEdit ? 6 : 5}
+                  className="py-6 text-center text-sm text-destructive"
+                >
                   {(list.error as Error)?.message ?? "Error al cargar las líneas del recibo."}
                 </TableCell>
               </TableRow>
             ) : (list.data ?? []).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 6 : 5} className="py-6 text-center text-muted-foreground">
+                <TableCell
+                  colSpan={canEdit ? 6 : 5}
+                  className="py-6 text-center text-muted-foreground"
+                >
                   Este recibo no tiene líneas registradas.
                 </TableCell>
               </TableRow>
@@ -377,7 +426,9 @@ function FacturaVentasLineasSection({
                       {canEdit ? (
                         <Input
                           value={draft.CONCEPTO}
-                          onChange={(e) => handleDraftChange(row.ID_LINEA, "CONCEPTO", e.target.value)}
+                          onChange={(e) =>
+                            handleDraftChange(row.ID_LINEA, "CONCEPTO", e.target.value)
+                          }
                           disabled={savingId === row.ID_LINEA}
                           className="h-8 min-w-[160px] text-xs"
                         />
@@ -391,7 +442,9 @@ function FacturaVentasLineasSection({
                           type="number"
                           step="0.01"
                           value={draft.CANTIDAD}
-                          onChange={(e) => handleDraftChange(row.ID_LINEA, "CANTIDAD", e.target.value)}
+                          onChange={(e) =>
+                            handleDraftChange(row.ID_LINEA, "CANTIDAD", e.target.value)
+                          }
                           disabled={savingId === row.ID_LINEA}
                           className="h-8 w-20 ml-auto text-right text-xs font-mono"
                         />
@@ -412,7 +465,9 @@ function FacturaVentasLineasSection({
                           className="h-8 w-24 ml-auto text-right text-xs font-mono"
                         />
                       ) : (
-                        <span className="font-mono text-xs">{formatCurrency(row.PRECIO_UNITARIO)}</span>
+                        <span className="font-mono text-xs">
+                          {formatCurrency(row.PRECIO_UNITARIO)}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -514,11 +569,13 @@ function FacturaDetailBody({
                 <div className="flex items-center gap-2">
                   <FileText className="h-5 w-5 shrink-0 text-slate-600 dark:text-slate-400" />
                   <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Borrador</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      Borrador
+                    </p>
                     <p className="text-xs text-muted-foreground">PDF borrador del recibo</p>
                   </div>
                 </div>
-                <Button size="sm" variant="outline" className="shrink-0 gap-2 bg-white" asChild>
+                <Button size="sm" variant="brand-outline" className="shrink-0 gap-2" asChild>
                   <a href={factura.LINK_PDF_BORRADOR} target="_blank" rel="noreferrer" download>
                     <Download className="h-4 w-4" />
                     Descargar PDF
@@ -578,7 +635,9 @@ function FacturaDetailBody({
 
       <div className="space-y-2 rounded-md border bg-slate-50 p-2.5 border-t pt-2">
         <h3 className="text-xs font-bold text-blue-950">Desglose Fiscal de Importes</h3>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">{RECIBO_TOTALES_READONLY_HINT}</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {RECIBO_TOTALES_READONLY_HINT}
+        </p>
         <div className="grid grid-cols-4 gap-2 text-center font-mono">
           <div className="rounded border bg-white p-1.5">
             <span className="block text-xs text-muted-foreground">Base Imp.</span>
@@ -827,7 +886,8 @@ function FacturaDetailOverlay({
 
 function FacturasPage() {
   const { rol } = useActiveTenant();
-  const { invoiceId } = Route.useSearch();
+  const { invoiceId, newInvoice, alumnoId, remesaId, centroId, cursoId, mesPeriodo } =
+    Route.useSearch();
   const navigate = Route.useNavigate();
   const canWrite = canWriteUi(rol, "recibos:write");
   const {
@@ -849,6 +909,10 @@ function FacturasPage() {
   const [query, setQuery] = useState("");
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [prefillLineas, setPrefillLineas] = useState<NuevaFacturaLineaPrefill[] | undefined>(
+    undefined,
+  );
+  const [prefillMesPeriodo, setPrefillMesPeriodo] = useState<string | undefined>(undefined);
   const [updatingEstadoId, setUpdatingEstadoId] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<FacturaConfirmAction | null>(null);
   const [ticketTpvInput, setTicketTpvInput] = useState("");
@@ -892,6 +956,21 @@ function FacturasPage() {
     setOverlay(null);
     navigate({ search: (prev) => ({ ...prev, invoiceId: undefined }), replace: true });
   }, [navigate]);
+
+  const clearNewInvoiceSearch = useCallback(() => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        newInvoice: undefined,
+        alumnoId: undefined,
+        remesaId: undefined,
+        centroId: undefined,
+        cursoId: undefined,
+        mesPeriodo: undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
   const handleEditOverlay = useCallback(() => {
     setOverlay((prev) => {
       if (!prev) return null;
@@ -909,6 +988,55 @@ function FacturasPage() {
       setOverlay({ id: invoiceId, mode: "detail" });
     }
   }, [invoiceId]);
+
+  useEffect(() => {
+    if (newInvoice) {
+      setCreating(true);
+    }
+  }, [newInvoice]);
+
+  useEffect(() => {
+    if (!newInvoice || !remesaId || !alumnoId) {
+      setPrefillLineas(undefined);
+      setPrefillMesPeriodo(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchRemesaProcesoAlumnoPrefill(remesaId, alumnoId)
+      .then((snapshot) => {
+        if (cancelled || !snapshot) return;
+        setPrefillMesPeriodo(snapshot.MES_PERIODO?.trim() || undefined);
+        const raw = snapshot.LINEAS_SNAPSHOT;
+        if (!Array.isArray(raw) || raw.length === 0) {
+          setPrefillLineas(undefined);
+          return;
+        }
+        const mapped = raw
+          .map((item) => {
+            const row = item as Record<string, unknown>;
+            const concepto = String(row.concepto ?? row.CONCEPTO ?? "").trim();
+            if (!concepto) return null;
+            return {
+              CONCEPTO: concepto,
+              CANTIDAD: Number(row.cantidad ?? row.CANTIDAD ?? 1),
+              PRECIO_UNITARIO: Number(row.precio_unitario ?? row.PRECIO_UNITARIO ?? 0),
+              IVA_PORCENTAJE: Number(row.iva_porcentaje ?? row.IVA_PORCENTAJE ?? 0),
+            } satisfies NuevaFacturaLineaPrefill;
+          })
+          .filter((linea): linea is NuevaFacturaLineaPrefill => linea !== null);
+        setPrefillLineas(mapped.length > 0 ? mapped : undefined);
+      })
+      .catch((err) => {
+        console.error("[facturas] prefill remesa proceso:", err);
+        if (!cancelled) setPrefillLineas(undefined);
+        if (!cancelled) setPrefillMesPeriodo(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [newInvoice, remesaId, alumnoId]);
 
   const filtered = useMemo(() => {
     if (!query.trim()) return rows;
@@ -965,8 +1093,9 @@ function FacturasPage() {
     delete patch.LINK_FACTURA_KOREFACTU;
     delete patch.URL_QR;
     delete patch.HUELLA_HASH;
-    const numFactura =
-      String(patch.NUM_FACTURA_KOREFACTU ?? row.NUM_FACTURA_KOREFACTU ?? "").trim();
+    const numFactura = String(
+      patch.NUM_FACTURA_KOREFACTU ?? row.NUM_FACTURA_KOREFACTU ?? "",
+    ).trim();
     if (!numFactura) {
       throw new Error("Indica el nº de ticket TPV antes de marcar como Cobrado.");
     }
@@ -986,19 +1115,14 @@ function FacturasPage() {
     row: ReciboRow,
     extraPatch?: Record<string, unknown>,
   ) => {
-    const metodo = normalizeMetodoPago(
-      String(extraPatch?.METODO_PAGO ?? row.METODO_PAGO ?? ""),
-    );
+    const metodo = normalizeMetodoPago(String(extraPatch?.METODO_PAGO ?? row.METODO_PAGO ?? ""));
     if (isTarjetaPaymentMethod(metodo)) {
       await marcarReciboTarjetaCobrado(row, extraPatch);
       return;
     }
 
     const verifactu = await resolveCobradoVerifactuEmision(row.ID_RECIBO, row.REF_RECIBO);
-    if (
-      verifactu.notification !== "success" &&
-      verifactu.notification !== "pdf_missing"
-    ) {
+    if (verifactu.notification !== "success" && verifactu.notification !== "pdf_missing") {
       throw new Error("Verifactu no emitió la factura. El recibo sigue en Borrador.");
     }
     if (!verifactu.LINK_FACTURA_KOREFACTU?.trim()) {
@@ -1049,10 +1173,7 @@ function FacturasPage() {
     toast.success("Factura anulada.");
   };
 
-  const executeGenerarFactura = async (
-    row: ReciboRow,
-    extraPatch?: Record<string, unknown>,
-  ) => {
+  const executeGenerarFactura = async (row: ReciboRow, extraPatch?: Record<string, unknown>) => {
     if (!isFacturaBorrador(row)) return;
     setUpdatingEstadoId(row.ID_RECIBO);
     try {
@@ -1321,7 +1442,7 @@ function FacturasPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {r.ID_CENTRO ? centroNameById.get(r.ID_CENTRO) ?? "—" : "—"}
+                        {r.ID_CENTRO ? (centroNameById.get(r.ID_CENTRO) ?? "—") : "—"}
                       </TableCell>
                       <TableCell className="space-y-0.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1">
@@ -1335,7 +1456,8 @@ function FacturasPage() {
                       </TableCell>
                       <TableCell className="text-xs">
                         <span className="inline-flex items-center gap-1 text-muted-foreground">
-                          <CreditCard className="h-3 w-3" /> {normalizeMetodoPago(r.METODO_PAGO) || "—"}
+                          <CreditCard className="h-3 w-3" />{" "}
+                          {normalizeMetodoPago(r.METODO_PAGO) || "—"}
                         </span>
                       </TableCell>
                       <TableCell className="font-mono text-sm font-bold text-blue-950">
@@ -1461,10 +1583,8 @@ function FacturasPage() {
           if (!overlay?.id || !overlayFactura) return;
           try {
             const patch = stripReciboTotalsFromPatch(values);
-            const goingCobrado =
-              normalizeEstadoPago(String(patch.ESTADO_PAGO ?? "")) === "Cobrado";
-            const goingAnulado =
-              normalizeEstadoPago(String(patch.ESTADO_PAGO ?? "")) === "Anulado";
+            const goingCobrado = normalizeEstadoPago(String(patch.ESTADO_PAGO ?? "")) === "Cobrado";
+            const goingAnulado = normalizeEstadoPago(String(patch.ESTADO_PAGO ?? "")) === "Anulado";
             if (isFacturaBorrador(overlayFactura) && goingCobrado) {
               delete patch.ESTADO_PAGO;
               delete patch.LINK_PDF_RECIBO;
@@ -1494,9 +1614,18 @@ function FacturasPage() {
 
       <NuevaFacturaDialog
         open={creating}
-        onClose={() => setCreating(false)}
+        onClose={() => {
+          setCreating(false);
+          setPrefillLineas(undefined);
+          setPrefillMesPeriodo(undefined);
+          if (newInvoice) clearNewInvoiceSearch();
+        }}
         submitting={create.isPending}
-        defaultCentroId={filterCenterId}
+        defaultCentroId={centroId ?? filterCenterId}
+        defaultAlumnoId={alumnoId}
+        defaultCursoId={cursoId}
+        defaultMesPeriodo={mesPeriodo ?? prefillMesPeriodo}
+        defaultLineas={prefillLineas}
         centros={centrosOrdenados}
         cursos={cursosEscolares}
         onSubmit={async (input) => {
@@ -1504,9 +1633,14 @@ function FacturasPage() {
             const result = await create.mutateAsync(input);
             toast.success(`Borrador ${result.refRecibo} guardado correctamente`);
             if (result.pdfError) {
-              toast.warning(`Recibo creado, pero no se pudo generar el PDF borrador: ${result.pdfError}`);
+              toast.warning(
+                `Recibo creado, pero no se pudo generar el PDF borrador: ${result.pdfError}`,
+              );
             }
             setCreating(false);
+            setPrefillLineas(undefined);
+            setPrefillMesPeriodo(undefined);
+            if (newInvoice) clearNewInvoiceSearch();
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Error al guardar");
           }
@@ -1543,10 +1677,7 @@ function FacturasPage() {
                 confirmCopy?.destructive &&
                   "bg-destructive text-destructive-foreground hover:bg-destructive/90",
               )}
-              disabled={
-                isConfirmingAction ||
-                (confirmShowTicketTpv && !ticketTpvInput.trim())
-              }
+              disabled={isConfirmingAction || (confirmShowTicketTpv && !ticketTpvInput.trim())}
               onClick={(e) => {
                 e.preventDefault();
                 void handleConfirmFacturaAction();
@@ -1600,11 +1731,16 @@ function FacturaFormDialog({
     () => normalizeMetodoPago(initial?.METODO_PAGO) || "SEPA",
   );
   const [estadoPago, setEstadoPago] = useState(initial?.ESTADO_PAGO ?? "Borrador");
-  const [numFacturaKorefactu, setNumFacturaKorefactu] = useState(initial?.NUM_FACTURA_KOREFACTU ?? "");
+  const [numFacturaKorefactu, setNumFacturaKorefactu] = useState(
+    initial?.NUM_FACTURA_KOREFACTU ?? "",
+  );
 
   const metodoPagoOptions = useMemo((): string[] => {
     const opts: string[] = [...METODOS_PAGO_OPCIONES];
-    if (normalizeMetodoPago(initial?.METODO_PAGO) === "Transferencia" && !opts.includes("Transferencia")) {
+    if (
+      normalizeMetodoPago(initial?.METODO_PAGO) === "Transferencia" &&
+      !opts.includes("Transferencia")
+    ) {
       opts.unshift("Transferencia");
     }
     return opts;
@@ -1769,8 +1905,12 @@ function FacturaFormDialog({
             <span className="font-semibold">{formatCurrency(initial.TOTAL_IVA ?? 0)}</span>
           </div>
           <div>
-            <span className="block font-sans text-xs font-bold text-muted-foreground">TOTAL (€)</span>
-            <span className="font-bold text-blue-950">{formatCurrency(initial.TOTAL_DOC ?? 0)}</span>
+            <span className="block font-sans text-xs font-bold text-muted-foreground">
+              TOTAL (€)
+            </span>
+            <span className="font-bold text-blue-950">
+              {formatCurrency(initial.TOTAL_DOC ?? 0)}
+            </span>
           </div>
         </div>
       ) : null}
@@ -1778,7 +1918,12 @@ function FacturaFormDialog({
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="space-y-2">
           <Label>Tipo Doc</Label>
-          <Input value={initial?.TIPO_DOC?.trim() || "Recibo"} readOnly disabled className="bg-muted" />
+          <Input
+            value={initial?.TIPO_DOC?.trim() || "Recibo"}
+            readOnly
+            disabled
+            className="bg-muted"
+          />
         </div>
         <div className="space-y-2">
           <Label>Método de Pago</Label>

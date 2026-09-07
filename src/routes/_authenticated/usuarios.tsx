@@ -208,9 +208,7 @@ function buildPerfilFormRecord(
   }
 
   const profId = perfil.ID_PROFESOR ?? "";
-  const prof = profId
-    ? profesoresRows.find((p) => p.ID_PROFESOR === profId)
-    : undefined;
+  const prof = profId ? profesoresRows.find((p) => p.ID_PROFESOR === profId) : undefined;
 
   return {
     NOMBRE: prof?.NOMBRE_PROFESOR ?? perfil.NOMBRE ?? "",
@@ -827,26 +825,26 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   const isEdit = initial != null;
   const dirtyFieldsRef = useRef<Set<PerfilEditField>>(new Set());
 
-  const [nombre, setNombre] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).NOMBRE,
+  const [nombre, setNombre] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).NOMBRE,
   );
-  const [email, setEmail] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).EMAIL,
+  const [email, setEmail] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).EMAIL,
   );
-  const [rolValue, setRolValue] = useState<Rol>(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).ROL,
+  const [rolValue, setRolValue] = useState<Rol>(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).ROL,
   );
-  const [estado, setEstado] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).ESTADO,
+  const [estado, setEstado] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).ESTADO,
   );
-  const [idCliente, setIdCliente] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CLIENTE,
+  const [idCliente, setIdCliente] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CLIENTE,
   );
-  const [idProfesor, setIdProfesor] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_PROFESOR,
+  const [idProfesor, setIdProfesor] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_PROFESOR,
   );
-  const [idCentro, setIdCentro] = useState(() =>
-    buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CENTRO,
+  const [idCentro, setIdCentro] = useState(
+    () => buildPerfilFormRecord(initial, isMaster, tenantId, []).ID_CENTRO,
   );
 
   const effectiveIdCliente = isMaster ? idCliente : tenantId;
@@ -857,7 +855,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
     [profesoresList.data?.profesores],
   );
 
-  const selectedProfesorId = idProfesor || (isEdit ? initial?.ID_PROFESOR ?? "" : "");
+  const selectedProfesorId = idProfesor || (isEdit ? (initial?.ID_PROFESOR ?? "") : "");
 
   const profesoresFiltrados = useMemo(() => {
     if (!effectiveIdCliente) return [];
@@ -885,10 +883,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
   const rolOptions = useMemo(() => {
     const base = isMaster ? ROL_OPTIONS_MASTER : ROL_OPTIONS_BASE;
     if (!rolValue || base.some((opt) => opt.value === rolValue)) return base;
-    return [
-      { value: rolValue, label: ROLE_LABEL[rolValue as Rol] ?? rolValue },
-      ...base,
-    ];
+    return [{ value: rolValue, label: ROLE_LABEL[rolValue as Rol] ?? rolValue }, ...base];
   }, [isMaster, rolValue]);
 
   const resetFormFromPerfil = useCallback(
@@ -916,11 +911,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
       trabajadorOptions.find((p) => p.ID_PROFESOR === profesorId);
     if (prof) {
       setNombre(prof.NOMBRE_PROFESOR);
-      setEmail(
-        ("EMAIL_PROFESORES" in prof ? prof.EMAIL_PROFESORES : null) ??
-          initial?.EMAIL ??
-          "",
-      );
+      setEmail(("EMAIL_PROFESORES" in prof ? prof.EMAIL_PROFESORES : null) ?? initial?.EMAIL ?? "");
     }
   };
 
@@ -943,8 +934,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
     return (centrosList.data ?? []).filter((c) => c.ID_CLIENTE === effectiveIdCliente);
   }, [centrosList.data, effectiveIdCliente]);
 
-  const showCentroSelector =
-    centrosFiltrados.length >= 1 && !perfilRolSinCentroEnPerfil(rolValue);
+  const showCentroSelector = centrosFiltrados.length >= 1 && !perfilRolSinCentroEnPerfil(rolValue);
   const staffNeedsCentro =
     perfilRolRequiresCentro(rolValue) && showCentroSelector && !idCentro.trim();
 
@@ -972,7 +962,16 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
       setIdCentro,
       setIdCliente,
     });
-  }, [open, isEdit, initial, initial?.ID_PERFIL, resetFormFromPerfil, isMaster, tenantId, profesoresRows]);
+  }, [
+    open,
+    isEdit,
+    initial,
+    initial?.ID_PERFIL,
+    resetFormFromPerfil,
+    isMaster,
+    tenantId,
+    profesoresRows,
+  ]);
 
   const clientes = useMemo(() => clientesList.data ?? [], [clientesList.data]);
 
@@ -1018,11 +1017,7 @@ function PerfilFormDialog(props: PerfilFormDialogProps) {
             ...(isMaster ? { ID_CLIENTE: idCliente } : {}),
           };
 
-          const patch = buildPerfilUpdatePatch(
-            baseline,
-            current,
-            dirtyFieldsRef.current,
-          );
+          const patch = buildPerfilUpdatePatch(baseline, current, dirtyFieldsRef.current);
 
           if (Object.keys(patch).length === 0) {
             toast.info("No hay cambios que guardar");

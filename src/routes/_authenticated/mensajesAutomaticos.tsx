@@ -128,17 +128,6 @@ function emptyToNullNumber(value: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-const EMPTY_HORARIO: HorarioCreateInput = {
-  ID_CLIENTE: "",
-  DIA_SEMANA: "",
-  ABRE_MAÑANA: null,
-  CIERRA_MAÑANA: null,
-  ABRE_TARDE: null,
-  CIERRA_TARDE: null,
-  TFNO_DESVIO: null,
-  SEG_ESPERA: null,
-};
-
 type PendingSave =
   | { kind: "create"; values: HorarioCreateInput }
   | { kind: "update"; id: string; values: HorarioUpdateInput };

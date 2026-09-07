@@ -1,11 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  canManageUsuarios,
-  scopeWorkspaceQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
+import { canManageUsuarios, scopeWorkspaceQuery, tenantListKey } from "@/lib/tenantQuery";
 import type { UUID } from "@/types/database";
 
 export type CursoEscolarData = {
@@ -41,11 +37,7 @@ function asCursoEscolarArray(raw: unknown): CursoEscolarData[] {
 
 export function getActiveCursoEscolar(cursos: CursoEscolarData[]): CursoEscolarData | null {
   if (cursos.length === 0) return null;
-  return (
-    cursos.find((c) => c.ESTADO?.trim().toLowerCase() === "activo") ??
-    cursos[0] ??
-    null
-  );
+  return cursos.find((c) => c.ESTADO?.trim().toLowerCase() === "activo") ?? cursos[0] ?? null;
 }
 
 function mapCentroRow(row: Record<string, unknown>): CentroData {
@@ -98,9 +90,7 @@ async function resolveActiveClientId(tenantId: string | null | undefined): Promi
     throw new Error("No hay sesión activa. Inicia sesión e inténtalo de nuevo.");
   }
   if (!tenantId) {
-    throw new Error(
-      "[ERROR_MULTITENANT] No se pudo identificar la escuela activa en la sesión.",
-    );
+    throw new Error("[ERROR_MULTITENANT] No se pudo identificar la escuela activa en la sesión.");
   }
   return tenantId;
 }
@@ -132,10 +122,7 @@ export function useCentros() {
   const list = useQuery({
     queryKey,
     queryFn: async (): Promise<CentroData[]> => {
-      let query = supabase
-        .from("CENTROS")
-        .select("*, CURSO_ESCOLAR(*)")
-        .eq("ESTADO", "ACTIVO");
+      let query = supabase.from("CENTROS").select("*, CURSO_ESCOLAR(*)").eq("ESTADO", "ACTIVO");
       query = scopeWorkspaceQuery(query, tenantId, null);
       const { data, error } = await query.order("NOMBRE_CENTRO", { ascending: true });
       if (error) throw error;
@@ -153,11 +140,7 @@ export function useCentros() {
         TELEFONO_CENTRO: input.TELEFONO_CENTRO?.trim() || null,
         EMAIL_CENTRO: input.EMAIL_CENTRO?.trim() || null,
       };
-      const { data, error } = await supabase
-        .from("CENTROS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("CENTROS").insert(payload).select().single();
       if (error) throw error;
       return mapCentroRow(data as Record<string, unknown>);
     },
@@ -224,10 +207,7 @@ export function useCentros() {
   const deleteCurso = useMutation({
     mutationFn: async (idCurso: UUID) => {
       assertCanManageCursoEscolar(rol);
-      const { error } = await supabase
-        .from("CURSO_ESCOLAR")
-        .delete()
-        .eq("ID_CURSO", idCurso);
+      const { error } = await supabase.from("CURSO_ESCOLAR").delete().eq("ID_CURSO", idCurso);
       if (error) throw error;
       return idCurso;
     },

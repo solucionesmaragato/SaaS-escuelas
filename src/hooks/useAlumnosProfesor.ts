@@ -43,8 +43,7 @@ function parseTutores(value: unknown): ProfesorAlumnoTutor[] {
       if (!item || typeof item !== "object") return null;
       const row = item as Record<string, unknown>;
       const id = typeof row.ID_PROFESOR === "string" ? row.ID_PROFESOR.trim() : "";
-      const nombre =
-        typeof row.NOMBRE_PROFESOR === "string" ? row.NOMBRE_PROFESOR.trim() : "";
+      const nombre = typeof row.NOMBRE_PROFESOR === "string" ? row.NOMBRE_PROFESOR.trim() : "";
       if (!id || !nombre) return null;
       return { ID_PROFESOR: id, NOMBRE_PROFESOR: nombre };
     })

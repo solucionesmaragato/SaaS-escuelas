@@ -111,14 +111,9 @@ export function useEspecialidades() {
 
       assertCanUpdate(rol, tenantId, existing.ID_CLIENTE);
 
-      const finalPatch = isMasterRole(rol)
-        ? patch
-        : { ESPECIALIDAD: patch.ESPECIALIDAD };
+      const finalPatch = isMasterRole(rol) ? patch : { ESPECIALIDAD: patch.ESPECIALIDAD };
 
-      let query = supabase
-        .from("ESPECIALIDADES")
-        .update(finalPatch)
-        .eq("ID_ESPECIALIDAD", id);
+      let query = supabase.from("ESPECIALIDADES").update(finalPatch).eq("ID_ESPECIALIDAD", id);
 
       if (!isMasterRole(rol)) {
         query = query.eq("ID_CLIENTE", tenantId);

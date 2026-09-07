@@ -69,7 +69,7 @@ export function CargoExtraDetailOverlay({
     setCantidad(String(cargo.CANTIDAD ?? ""));
     setPrecioUnitario(String(cargo.PRECIO_UNITARIO ?? ""));
     setPorcentajeIva(String(cargo.PORCENTAJE_IVA ?? ""));
-  }, [open, cargo?.ID_CARGO]);
+  }, [open, cargo]);
 
   useEffect(() => {
     if (!open) return;
@@ -179,10 +179,20 @@ export function CargoExtraDetailOverlay({
             />
 
             <div className="mt-4 flex justify-end gap-2 border-t pt-4">
-              <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={updating}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancelEdit}
+                disabled={updating}
+              >
                 Cancelar
               </Button>
-              <Button type="button" variant="brand" onClick={() => void handleSave()} disabled={updating}>
+              <Button
+                type="button"
+                variant="brand"
+                onClick={() => void handleSave()}
+                disabled={updating}
+              >
                 {updating ? "Guardando..." : "Guardar"}
               </Button>
             </div>

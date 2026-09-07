@@ -29,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
@@ -81,8 +80,7 @@ type LeadsSearch = {
 
 export const Route = createFileRoute("/_authenticated/leads")({
   validateSearch: (search: Record<string, unknown>): LeadsSearch => {
-    const leadId =
-      typeof search.leadId === "string" && search.leadId ? search.leadId : undefined;
+    const leadId = typeof search.leadId === "string" && search.leadId ? search.leadId : undefined;
     return leadId ? { leadId } : {};
   },
   component: LeadsPage,
@@ -232,10 +230,7 @@ function especialidadesParaSelector(
   const id = selectedId?.trim();
   if (!id) return especialidades;
   if (especialidades.some((e) => e.ID_ESPECIALIDAD === id)) return especialidades;
-  return [
-    { ID_ESPECIALIDAD: id, ESPECIALIDAD: selectedName?.trim() || id },
-    ...especialidades,
-  ];
+  return [{ ID_ESPECIALIDAD: id, ESPECIALIDAD: selectedName?.trim() || id }, ...especialidades];
 }
 
 function safeSelectValue(value: string, options: { id: string }[]): string {
@@ -436,13 +431,7 @@ function EstadoStatusDropdown({
   }
 
   const triggerVariant =
-    variant === "destructive"
-      ? "destructive"
-      : variant === "brand"
-        ? "brand"
-        : variant === "default"
-          ? "default"
-          : "outline";
+    variant === "destructive" ? "destructive" : variant === "brand" ? "brand" : "outline";
 
   return (
     <DropdownMenu>
@@ -676,23 +665,11 @@ function LeadDetailOverlay({
               </div>
               <div>
                 <dt className="text-muted-foreground">Teléfono</dt>
-                <dd>
-                  {lead.TELEFONO ? (
-                    <ContactPhoneRich phone={lead.TELEFONO} />
-                  ) : (
-                    "—"
-                  )}
-                </dd>
+                <dd>{lead.TELEFONO ? <ContactPhoneRich phone={lead.TELEFONO} /> : "—"}</dd>
               </div>
               <div className="col-span-2">
                 <dt className="text-muted-foreground">Email</dt>
-                <dd>
-                  {lead.EMAIL_LEAD ? (
-                    <ContactEmailRich email={lead.EMAIL_LEAD} />
-                  ) : (
-                    "—"
-                  )}
-                </dd>
+                <dd>{lead.EMAIL_LEAD ? <ContactEmailRich email={lead.EMAIL_LEAD} /> : "—"}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Especialidad de interés</dt>
@@ -714,7 +691,7 @@ function LeadDetailOverlay({
                       {lead.PROFESOR.NOMBRE_PROFESOR}
                     </button>
                   ) : (
-                    lead.PROFESOR?.NOMBRE_PROFESOR ?? "—"
+                    (lead.PROFESOR?.NOMBRE_PROFESOR ?? "—")
                   )}
                 </dd>
               </div>
@@ -998,10 +975,7 @@ function LeadsPage() {
               ) : (
                 <>
                   {activePageRows.map((lead) => renderLeadTableRow(lead))}
-                  {renderLeadCollapsibleSection(
-                    cerradoPageRows,
-                    "Cerrado (No matriculado)",
-                  )}
+                  {renderLeadCollapsibleSection(cerradoPageRows, "Cerrado (No matriculado)")}
                   {renderLeadCollapsibleSection(matriculadoPageRows, "Matriculado")}
                 </>
               )}
@@ -1188,11 +1162,11 @@ function LeadFormDialog({
   }, []);
 
   const cursosOptions = useMemo(() => {
-    if (!isCreateForm) return [];
-    return [...centros.flatMap((c) => c.CURSO_ESCOLAR ?? [])].sort((a, b) =>
+    if (!isCreateForm || !idCentro) return [];
+    return [...cursosForCentro(centros, idCentro)].sort((a, b) =>
       a.NOMBRE_CURSO.localeCompare(b.NOMBRE_CURSO, "es", sortLocale),
     );
-  }, [isCreateForm, centros]);
+  }, [isCreateForm, centros, idCentro]);
 
   const profesoresOrdenados = useMemo(
     () => profesorSelectorOptions(profesores, idProfesor),
@@ -1209,13 +1183,13 @@ function LeadFormDialog({
 
   const especialidadesOrdenadas = useMemo(
     () =>
-      [...especialidadesParaSelector(
-        especialidades,
-        especialidad,
-        initial?.ESPECIALIDADES?.ESPECIALIDAD,
-      )].sort((a, b) =>
-        a.ESPECIALIDAD.localeCompare(b.ESPECIALIDAD, "es", sortLocale),
-      ),
+      [
+        ...especialidadesParaSelector(
+          especialidades,
+          especialidad,
+          initial?.ESPECIALIDADES?.ESPECIALIDAD,
+        ),
+      ].sort((a, b) => a.ESPECIALIDAD.localeCompare(b.ESPECIALIDAD, "es", sortLocale)),
     [especialidades, especialidad, initial?.ESPECIALIDADES?.ESPECIALIDAD],
   );
 
@@ -1539,7 +1513,9 @@ function LeadFormDialog({
                   <Label>Disponibilidad del profesor ({dia})</Label>
                   <div className="rounded-md border border-input bg-muted/40 p-3 text-sm">
                     {leadProfesorSesionesQuery.isLoading ? (
-                      <p className="text-xs text-muted-foreground">Cargando agenda del profesor...</p>
+                      <p className="text-xs text-muted-foreground">
+                        Cargando agenda del profesor...
+                      </p>
                     ) : leadProfesorSesiones.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         Sin sesiones registradas para este profesor en la fecha seleccionada.

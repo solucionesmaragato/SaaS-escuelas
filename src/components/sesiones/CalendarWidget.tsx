@@ -47,17 +47,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { EntityLink } from "@/components/navigation/EntityLink";
 import { CalendarQuickIncidenciaForm } from "@/components/sesiones/CalendarQuickIncidenciaForm";
 import { cn } from "@/lib/utils";
 
-export type CalendarEventType = "matriculas" | "leads" | "faltas" | "recuperaciones" | "incidencias";
+export type CalendarEventType =
+  | "matriculas"
+  | "leads"
+  | "faltas"
+  | "recuperaciones"
+  | "incidencias";
 
 export interface CalendarWidgetProps {
   hideFilters?: boolean;
@@ -106,9 +106,7 @@ function findRefreshedGroupedSession(
   if (byGroupKey) return byGroupKey;
 
   const sesionIds = new Set(snapshot.ID_SESIONES);
-  const bySesion = blocks.find((block) =>
-    block.ID_SESIONES.some((id) => sesionIds.has(id)),
-  );
+  const bySesion = blocks.find((block) => block.ID_SESIONES.some((id) => sesionIds.has(id)));
   if (bySesion) return bySesion;
 
   const alumnoSesionIds = new Set(
@@ -118,18 +116,16 @@ function findRefreshedGroupedSession(
 
   return (
     blocks.find((block) =>
-      block.ALUMNOS_GRUPO.some((alumno) => alumno.ID_SESION && alumnoSesionIds.has(alumno.ID_SESION)),
+      block.ALUMNOS_GRUPO.some(
+        (alumno) => alumno.ID_SESION && alumnoSesionIds.has(alumno.ID_SESION),
+      ),
     ) ?? null
   );
 }
 
 function parseLocalCalendarDate(year: number, month: number, day: number): Date | null {
   const local = new Date(year, month - 1, day);
-  if (
-    local.getFullYear() !== year ||
-    local.getMonth() !== month - 1 ||
-    local.getDate() !== day
-  ) {
+  if (local.getFullYear() !== year || local.getMonth() !== month - 1 || local.getDate() !== day) {
     return null;
   }
   return local;
@@ -149,8 +145,7 @@ function parseSesionDate(value: string | null | undefined): Date | null {
     );
   }
 
-  const calendarMidnightMatch =
-    /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?$/.exec(trimmed);
+  const calendarMidnightMatch = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.\d+)?$/.exec(trimmed);
   if (calendarMidnightMatch) {
     return parseLocalCalendarDate(
       Number(calendarMidnightMatch[1]),
@@ -346,9 +341,7 @@ function deriveBlockColorFromAlumnos(
   return null;
 }
 
-function deriveBlockEstadoFromAlumnos(
-  alumnos: GroupedSession["ALUMNOS_GRUPO"],
-): string | null {
+function deriveBlockEstadoFromAlumnos(alumnos: GroupedSession["ALUMNOS_GRUPO"]): string | null {
   if (alumnos.some((a) => a.COLOR_INCIDENCIA === "rojo")) return "Incidencia";
   if (alumnos.some((a) => a.ESTADO === "Incidencia")) return "Incidencia";
   if (alumnos.some((a) => a.ESTADO === "Lead")) return "Lead";
@@ -366,10 +359,7 @@ function buildTituloBloqueFromAlumnos(
   return `${textoEspecialidad} (${alumnos.length} alumnos)`;
 }
 
-function applyTypeFiltersToBlock(
-  block: GroupedSession,
-  f: FilterState,
-): GroupedSession | null {
+function applyTypeFiltersToBlock(block: GroupedSession, f: FilterState): GroupedSession | null {
   const alumnos = block.ALUMNOS_GRUPO.filter((a) => alumnoVisibleByTypeToggle(a, f));
   if (alumnos.length === 0) return null;
   if (alumnos.length === block.ALUMNOS_GRUPO.length) return block;
@@ -418,9 +408,7 @@ function passesFilters(
   if (exclude === null || exclude !== "grupo") {
     const matchesGrupo =
       f.FILTRO_GRUPOS.length === 0 ||
-      block.ALUMNOS_GRUPO.some(
-        (a) => a.ID_GRUPO != null && f.FILTRO_GRUPOS.includes(a.ID_GRUPO),
-      );
+      block.ALUMNOS_GRUPO.some((a) => a.ID_GRUPO != null && f.FILTRO_GRUPOS.includes(a.ID_GRUPO));
     if (!matchesGrupo) return false;
   }
   if (exclude === null || exclude !== "centro") {
@@ -465,10 +453,6 @@ function isMatriculaBlock(ev: GroupedSession): boolean {
 
 function isLeadBlock(ev: GroupedSession): boolean {
   return ev.ESTADO === "Lead";
-}
-
-function isIncidenciaBlock(ev: GroupedSession): boolean {
-  return ev.ESTADO === "Incidencia" || Boolean(ev.COLOR_INCIDENCIA);
 }
 
 function applyCenterFilterToBlocks(
@@ -603,7 +587,12 @@ function getDefaultExpandedSlots(
 function resolveInitialVisibleTypes(
   defaultVisibleTypes: CalendarEventType[] | undefined,
   rol: string,
-): { verClasesNormales: boolean; verLeads: boolean; verFaltas: boolean; verRecuperaciones: boolean } {
+): {
+  verClasesNormales: boolean;
+  verLeads: boolean;
+  verFaltas: boolean;
+  verRecuperaciones: boolean;
+} {
   if (defaultVisibleTypes) {
     const legacyIncidencias = defaultVisibleTypes.includes("incidencias");
     return {
@@ -721,10 +710,7 @@ export function CalendarWidget({
     [initialSesionId, onSessionDetailClose],
   );
 
-  const {
-    centrosOrdenados,
-    showCentroFilter,
-  } = useAdminCentroFilter();
+  const { centrosOrdenados, showCentroFilter } = useAdminCentroFilter();
 
   const [selectedCenters, setSelectedCenters] = useState<string[]>([]);
   const [selectedGrupos, setSelectedGrupos] = useState<string[]>([]);
@@ -753,9 +739,7 @@ export function CalendarWidget({
     }
     return grupos
       .filter((grupo) => isGrupoEstadoActivo(grupo.ESTADO))
-      .sort((a, b) =>
-        a.NOMBRE_GRUPO.localeCompare(b.NOMBRE_GRUPO, "es", { sensitivity: "base" }),
-      )
+      .sort((a, b) => a.NOMBRE_GRUPO.localeCompare(b.NOMBRE_GRUPO, "es", { sensitivity: "base" }))
       .map((grupo) => ({ id: grupo.ID_GRUPO, name: grupo.NOMBRE_GRUPO }));
   }, [gruposList.data?.grupos, selectedCenters]);
 
@@ -924,7 +908,9 @@ export function CalendarWidget({
       .map((b) => applyTypeFiltersToBlock(b, filterState))
       .filter((b): b is GroupedSession => b !== null);
     const poolAlumno = typeFilteredBlocks.filter((b) => passesFilters(b, "alumno", filterState));
-    const poolProfesor = typeFilteredBlocks.filter((b) => passesFilters(b, "profesor", filterState));
+    const poolProfesor = typeFilteredBlocks.filter((b) =>
+      passesFilters(b, "profesor", filterState),
+    );
     const poolAula = typeFilteredBlocks.filter((b) => passesFilters(b, "aula", filterState));
     const poolEspecialidad = typeFilteredBlocks.filter((b) =>
       passesFilters(b, "especialidad", filterState),
@@ -1066,23 +1052,22 @@ export function CalendarWidget({
         ? "flex h-5 w-5 items-center justify-center self-end rounded-full text-[10px] font-semibold"
         : "flex h-6 w-6 shrink-0 items-center justify-center self-end rounded-full text-[11px] font-semibold",
       isToday ? "bg-primary text-primary-foreground" : "text-muted-foreground",
-      enableQuickIncidencia && "cursor-pointer hover:opacity-80",
+      "cursor-pointer hover:opacity-80",
     );
 
-    if (enableQuickIncidencia) {
-      return (
-        <button
-          type="button"
-          aria-label={`Ver día ${date.getDate()}`}
-          onClick={() => navigateToDay(date)}
-          className={className}
-        >
-          {date.getDate()}
-        </button>
-      );
-    }
-
-    return <span className={className}>{date.getDate()}</span>;
+    return (
+      <button
+        type="button"
+        aria-label={`Ver día ${date.getDate()}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          navigateToDay(date);
+        }}
+        className={className}
+      >
+        {date.getDate()}
+      </button>
+    );
   };
 
   const renderAgendaRow = (ev: GroupedSession, compact = false) => (
@@ -1091,17 +1076,12 @@ export function CalendarWidget({
       type="button"
       onClick={() => setSelectedEvent(ev)}
       className={cn(
-        "flex w-full max-w-full min-w-0 flex-col rounded-lg text-left transition-opacity hover:opacity-90",
+        "flex w-full max-w-full min-w-0 flex-col rounded-lg text-left",
         getEventColorClass(ev),
         compact ? "gap-0.5 px-2 py-1.5" : "gap-1 px-3 py-2.5",
       )}
     >
-      <span
-        className={cn(
-          "tabular-nums font-semibold",
-          compact ? "text-[11px]" : "text-sm",
-        )}
-      >
+      <span className={cn("tabular-nums font-semibold", compact ? "text-[11px]" : "text-sm")}>
         {formatHoraRange(ev)}
       </span>
       <span className={cn("break-words font-medium", compact ? "text-[11px]" : "text-sm")}>
@@ -1117,8 +1097,11 @@ export function CalendarWidget({
     <button
       key={ev.GROUP_KEY}
       type="button"
-      onClick={() => setSelectedEvent(ev)}
-      className={`w-full text-left rounded-md cursor-pointer hover:opacity-90 transition-opacity font-medium ${getEventColorClass(ev)} ${
+      onClick={(e) => {
+        e.stopPropagation();
+        setSelectedEvent(ev);
+      }}
+      className={`w-full text-left rounded-md cursor-pointer font-medium ${getEventColorClass(ev)} ${
         compact ? "text-[10px] px-1.5 py-1 truncate" : "text-xs px-2 py-1.5"
       }`}
       title={`${ev.HORA_INICIO ?? ""} ${ev.TITULO_BLOQUE} — ${ev.TEXTO_PROFESOR}`}
@@ -1146,7 +1129,7 @@ export function CalendarWidget({
       key={ev.GROUP_KEY}
       type="button"
       onClick={() => setSelectedEvent(ev)}
-      className={`flex items-center justify-between gap-1 w-full min-w-0 text-[10px] leading-tight px-1 py-0.5 rounded cursor-pointer hover:opacity-90 transition-opacity ${getEventColorClass(ev)}`}
+      className={`flex items-center justify-between gap-1 w-full min-w-0 text-[10px] leading-tight px-1 py-0.5 rounded cursor-pointer ${getEventColorClass(ev)}`}
       title={`${ev.TITULO_BLOQUE} — ${ev.TEXTO_PROFESOR} · ${ev.TEXTO_AULA}`}
     >
       <span className="truncate min-w-0 font-medium">{ev.TITULO_BLOQUE}</span>
@@ -1161,7 +1144,7 @@ export function CalendarWidget({
         key={ev.GROUP_KEY}
         type="button"
         onClick={() => setSelectedEvent(ev)}
-        className={`w-full text-left rounded-md cursor-pointer hover:opacity-95 transition-opacity font-medium ${getEventColorClass(ev)} ${
+        className={`w-full text-left rounded-md cursor-pointer font-medium ${getEventColorClass(ev)} ${
           dense ? "px-1.5 py-1" : "px-2 py-1.5"
         } ${ev.ESTADO === "Lead" ? "ring-1 ring-amber-300/70" : ""} ${
           ev.ESTADO === "Incidencia" || ev.COLOR_INCIDENCIA
@@ -1315,7 +1298,7 @@ export function CalendarWidget({
         )}
         onClick={() => setVerLeads((v) => !v)}
       >
-        🟨 Leads
+        🟨 Nuevos Alumnos
       </Button>
       <Button
         type="button"
@@ -1395,13 +1378,25 @@ export function CalendarWidget({
         onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
         className="w-full border rounded-md p-0.5"
       >
-        <ToggleGroupItem value="day" aria-label="Vista día" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="day"
+          aria-label="Vista día"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Día
         </ToggleGroupItem>
-        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="week"
+          aria-label="Vista semana"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Semana
         </ToggleGroupItem>
-        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="month"
+          aria-label="Vista mes"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Mes
         </ToggleGroupItem>
       </ToggleGroup>
@@ -1470,13 +1465,25 @@ export function CalendarWidget({
         onValueChange={(v) => v && setCalendarView(v as "day" | "week" | "month")}
         className="w-full border rounded-md p-0.5"
       >
-        <ToggleGroupItem value="day" aria-label="Vista día" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="day"
+          aria-label="Vista día"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Día
         </ToggleGroupItem>
-        <ToggleGroupItem value="week" aria-label="Vista semana" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="week"
+          aria-label="Vista semana"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Semana
         </ToggleGroupItem>
-        <ToggleGroupItem value="month" aria-label="Vista mes" className="h-8 min-w-0 flex-1 px-2 text-xs">
+        <ToggleGroupItem
+          value="month"
+          aria-label="Vista mes"
+          className="h-8 min-w-0 flex-1 px-2 text-xs"
+        >
           Mes
         </ToggleGroupItem>
       </ToggleGroup>
@@ -1615,38 +1622,16 @@ export function CalendarWidget({
 
   return (
     <>
-      <div
-        className={cn(
-          embedded && "flex h-full min-h-0 flex-col gap-3",
-        )}
-      >
-      {lockVisibleTypes ? (
-          <>
-            <div
-              className={cn(
-                "flex w-full shrink-0 flex-col gap-2 lg:hidden",
-                !embedded && "mb-2",
-              )}
-            >
-              {typeToggleButtons}
-              {dashboardMobileToolbarControls}
-              {toolbarRight ? (
-                <div className="flex w-full justify-end">{toolbarRight}</div>
-              ) : null}
-            </div>
-            <div
-              className={cn(
-                "hidden w-full shrink-0 lg:flex lg:items-center lg:gap-2",
-                !embedded && "mb-2",
-              )}
-            >
-              <div className="shrink-0">{typeToggleButtons}</div>
-              <div className="flex min-w-0 flex-1 justify-center">
-                {dashboardToolbarControls}
-              </div>
+      <div className={cn(embedded && "flex min-h-0 flex-1 flex-col gap-3")}>
+        {lockVisibleTypes ? (
+          <div className={cn("flex w-full shrink-0 flex-col gap-2", !embedded && "mb-2")}>
+            <div className="flex w-full items-center gap-2">
+              <div className="min-w-0 flex-1">{typeToggleButtons}</div>
               {toolbarRight ? <div className="shrink-0">{toolbarRight}</div> : null}
             </div>
-          </>
+            <div className="w-full lg:hidden">{dashboardMobileToolbarControls}</div>
+            <div className="hidden w-full lg:block">{dashboardToolbarControls}</div>
+          </div>
         ) : (
           <div className={cn("flex flex-col gap-2", embedded && "shrink-0")}>
             {pageTitle ? (
@@ -1655,7 +1640,9 @@ export function CalendarWidget({
                   <PageHeader title={pageTitle} description={pageDescription} />
                 </div>
                 <div className="flex items-center gap-2 lg:hidden">
-                  <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-brand">{pageTitle}</h1>
+                  <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-brand">
+                    {pageTitle}
+                  </h1>
                   {!hideFilters && (
                     <Button
                       type="button"
@@ -1667,11 +1654,7 @@ export function CalendarWidget({
                       Filtros
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentDate(new Date())}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
                     Hoy
                   </Button>
                 </div>
@@ -1689,310 +1672,306 @@ export function CalendarWidget({
 
         <div
           className={cn(
-            "grid gap-4",
-            embedded && "min-h-0 flex-1",
-            !hideFilters && "lg:grid-cols-4",
+            embedded && hideFilters
+              ? "flex min-h-0 flex-1 flex-col"
+              : cn("grid gap-4", embedded && "min-h-0 flex-1", !hideFilters && "lg:grid-cols-4"),
           )}
         >
-        {!hideFilters && (
-          <>
-            <Card
-              className={cn(
-                "hidden space-y-4 p-4 shadow-sm lg:col-span-1 lg:block",
-                embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
-              )}
-            >
-              <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                Filtros
-              </div>
-              {!filtersOpen ? sidebarFilterFields : null}
-            </Card>
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto lg:hidden">
-                <SheetHeader>
-                  <SheetTitle>Filtros</SheetTitle>
-                </SheetHeader>
-                <div className="mt-4 space-y-4">{mobileSheetFilterFields}</div>
-              </SheetContent>
-            </Sheet>
-          </>
-        )}
+          {!hideFilters && (
+            <>
+              <Card
+                className={cn(
+                  "hidden space-y-4 p-4 shadow-sm lg:col-span-1 lg:block",
+                  embedded ? "min-h-0 h-full overflow-y-auto" : "h-fit",
+                )}
+              >
+                <div className="flex items-center gap-2 font-semibold text-sm border-b pb-2">
+                  <Filter className="h-4 w-4 text-muted-foreground" />
+                  Filtros
+                </div>
+                {!filtersOpen ? sidebarFilterFields : null}
+              </Card>
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetContent side="bottom" className="max-h-[85svh] overflow-y-auto lg:hidden">
+                  <SheetHeader>
+                    <SheetTitle>Filtros</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-4 space-y-4">{mobileSheetFilterFields}</div>
+                </SheetContent>
+              </Sheet>
+            </>
+          )}
 
-        <div
-          className={cn(
-            !hideFilters && "lg:col-span-3",
-            embedded ? "flex h-full min-h-0 flex-col" : "space-y-3",
-          )}
-        >
-          <Card
+          <div
             className={cn(
-              "flex flex-col shadow-sm",
-              embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
+              !hideFilters && "lg:col-span-3",
+              embedded ? "flex min-h-0 flex-1 flex-col" : "space-y-3",
             )}
           >
-            {calendarView === "month" && (
-              <div className="mb-1 shrink-0 grid grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground">
-                <div>Lun</div>
-                <div>Mar</div>
-                <div>Mié</div>
-                <div>Jue</div>
-                <div>Vie</div>
-                <div>Sáb</div>
-                <div>Dom</div>
-              </div>
-            )}
-            {calendarView === "week" && (
-              <div className="mb-1 hidden shrink-0 grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground lg:grid">
-                <div>Lun</div>
-                <div>Mar</div>
-                <div>Mié</div>
-                <div>Jue</div>
-                <div>Vie</div>
-                <div>Sáb</div>
-                <div>Dom</div>
-              </div>
-            )}
+            <Card
+              className={cn(
+                "flex flex-col shadow-sm",
+                embedded ? "min-h-0 flex-1 overflow-hidden p-3" : "p-3",
+              )}
+            >
+              {calendarView === "month" && (
+                <div className="mb-1 shrink-0 grid grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground">
+                  <div>Lun</div>
+                  <div>Mar</div>
+                  <div>Mié</div>
+                  <div>Jue</div>
+                  <div>Vie</div>
+                  <div>Sáb</div>
+                  <div>Dom</div>
+                </div>
+              )}
+              {calendarView === "week" && (
+                <div className="mb-1 hidden shrink-0 grid-cols-7 border-b pb-2 text-center text-xs font-medium text-muted-foreground lg:grid">
+                  <div>Lun</div>
+                  <div>Mar</div>
+                  <div>Mié</div>
+                  <div>Jue</div>
+                  <div>Vie</div>
+                  <div>Sáb</div>
+                  <div>Dom</div>
+                </div>
+              )}
 
               {calendarView === "month" && (
-                <>
-                <div
-                  className={cn(
-                    "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:hidden",
-                    embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
-                  )}
-                  style={
-                    embedded
-                      ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
-                      : { gridTemplateRows: `repeat(${monthWeekRows}, 80px)` }
-                  }
-                >
-                  {list.isLoading
-                    ? Array.from({ length: 35 }).map((_, i) => (
-                        <Skeleton
-                          key={i}
-                          className={cn(
-                            "h-full w-full rounded-none",
-                            !embedded && "h-[80px]",
-                          )}
-                        />
-                      ))
-                    : diasDelMes.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
-                        const dots = [...new Set(eventosDelDia.map(eventDotClass))].slice(0, 4);
+                <div className={cn(embedded && "flex min-h-0 flex-1 flex-col")}>
+                  <div
+                    className={cn(
+                      "grid grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:hidden",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                    )}
+                    style={
+                      embedded
+                        ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                        : { gridTemplateRows: `repeat(${monthWeekRows}, 80px)` }
+                    }
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 35 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn("h-full w-full rounded-none", !embedded && "h-[80px]")}
+                          />
+                        ))
+                      : diasDelMes.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+                          const dots = [...new Set(eventosDelDia.map(eventDotClass))].slice(0, 4);
 
-                        return (
-                          <button
-                            key={index}
-                            type="button"
-                            onClick={() => navigateToDay(dia.date)}
-                            className={cn(
-                              "flex h-full w-full min-h-0 flex-col items-center bg-background p-1.5",
-                              !embedded && "h-[80px]",
-                              !dia.isCurrentMonth && "bg-muted/30 opacity-40",
-                            )}
-                          >
-                            <span
+                          return (
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={() => navigateToDay(dia.date)}
                               className={cn(
-                                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
-                                isToday
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground",
+                                "flex h-full w-full min-h-0 flex-col items-center bg-background p-1.5",
+                                !embedded && "h-[80px]",
+                                !dia.isCurrentMonth && "bg-muted/30 opacity-40",
                               )}
                             >
-                              {dia.date.getDate()}
-                            </span>
-                            <span className="mt-1 flex flex-wrap justify-center gap-0.5">
-                              {dots.map((dotClass) => (
-                                <span
-                                  key={dotClass}
-                                  className={cn("size-1.5 rounded-full", dotClass)}
-                                />
-                              ))}
-                            </span>
-                          </button>
-                        );
-                      })}
-                </div>
-                <div
-                  className={cn(
-                    "hidden grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:grid",
-                    embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
-                  )}
-                  style={
-                    embedded
-                      ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
-                      : { gridTemplateRows: `repeat(${monthWeekRows}, 130px)` }
-                  }
-                >
-                  {list.isLoading
-                    ? Array.from({ length: 35 }).map((_, i) => (
-                        <Skeleton
-                          key={i}
-                          className={cn(
-                            "h-full w-full rounded-none",
-                            !embedded && "h-[130px]",
-                          )}
-                        />
-                      ))
-                    : diasDelMes.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
-  
-                        return (
-                          <div
-                            key={index}
-                            className={cn(
-                              "flex h-full w-full min-h-0 flex-col bg-background p-1.5",
-                              !embedded && "h-[130px]",
-                              !dia.isCurrentMonth && "bg-muted/30 opacity-40",
-                            )}
-                          >
-                            {renderDayNumber(dia.date, isToday)}
+                              <span
+                                className={cn(
+                                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold",
+                                  isToday
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground",
+                                )}
+                              >
+                                {dia.date.getDate()}
+                              </span>
+                              <span className="mt-1 flex flex-wrap justify-center gap-0.5">
+                                {dots.map((dotClass) => (
+                                  <span
+                                    key={dotClass}
+                                    className={cn("size-1.5 rounded-full", dotClass)}
+                                  />
+                                ))}
+                              </span>
+                            </button>
+                          );
+                        })}
+                  </div>
+                  <div
+                    className={cn(
+                      "hidden grid-cols-7 gap-px overflow-hidden rounded-lg bg-border/60 lg:grid",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[560px]",
+                    )}
+                    style={
+                      embedded
+                        ? { gridTemplateRows: `repeat(${monthWeekRows}, minmax(0, 1fr))` }
+                        : { gridTemplateRows: `repeat(${monthWeekRows}, 130px)` }
+                    }
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 35 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn("h-full w-full rounded-none", !embedded && "h-[130px]")}
+                          />
+                        ))
+                      : diasDelMes.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
 
-                            <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
-                              {eventosDelDia.map((ev) => renderEventButton(ev))}
+                          return (
+                            <div
+                              key={index}
+                              onClick={() => navigateToDay(dia.date)}
+                              className={cn(
+                                "flex h-full w-full min-h-0 cursor-pointer flex-col bg-background p-1.5",
+                                !embedded && "h-[130px]",
+                                !dia.isCurrentMonth && "bg-muted/30 opacity-40",
+                              )}
+                            >
+                              {renderDayNumber(dia.date, isToday)}
+
+                              <div className="custom-scrollbar flex-1 min-h-0 space-y-1 overflow-y-auto pr-0.5">
+                                {eventosDelDia.map((ev) => renderEventButton(ev))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                  </div>
                 </div>
+              )}
+
+              {calendarView === "week" && (
+                <>
+                  <div
+                    className={cn(
+                      "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:hidden",
+                      !embedded && "min-h-[360px]",
+                    )}
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 7 }).map((_, i) => (
+                          <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                        ))
+                      : diasDeLaSemana.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+
+                          return (
+                            <div
+                              key={index}
+                              className={cn(
+                                "rounded-lg border p-2",
+                                isToday && "border-primary/40 bg-primary/5",
+                              )}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => navigateToDay(dia.date)}
+                                className="mb-1.5 flex w-full items-baseline justify-between gap-2 text-left"
+                              >
+                                <span className="text-sm font-semibold">
+                                  {weekdayShort(dia.date)} {dia.date.getDate()}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {eventosDelDia.length === 0
+                                    ? "Sin sesiones"
+                                    : `${eventosDelDia.length} ${eventosDelDia.length === 1 ? "clase" : "clases"}`}
+                                </span>
+                              </button>
+                              {eventosDelDia.length > 0 && (
+                                <div className="space-y-1">
+                                  {eventosDelDia.map((ev) => renderAgendaRow(ev, true))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                  </div>
+                  <div
+                    className={cn(
+                      "hidden gap-px overflow-hidden rounded-lg bg-border/60 lg:grid lg:grid-cols-7",
+                      embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                    )}
+                  >
+                    {list.isLoading
+                      ? Array.from({ length: 7 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className={cn(
+                              "h-full w-full rounded-none",
+                              !embedded && "min-h-[90px]",
+                            )}
+                          />
+                        ))
+                      : diasDeLaSemana.map((dia, index) => {
+                          const dateKey = formatearFechaKey(dia.date);
+                          const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
+                          const isToday = dia.date.toDateString() === new Date().toDateString();
+
+                          return (
+                            <div
+                              key={index}
+                              className={cn(
+                                "flex flex-col bg-background p-1",
+                                embedded ? "h-full min-h-0" : "min-h-[90px]",
+                              )}
+                            >
+                              {renderDayNumber(dia.date, isToday, true)}
+
+                              <div className="mt-0.5 min-h-0 flex-1 overflow-y-auto">
+                                {renderTimeBlockTimeline(
+                                  eventosDelDia,
+                                  true,
+                                  `${dateKey}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                  </div>
                 </>
               )}
 
-            {calendarView === "week" && (
-              <>
+              {calendarView === "day" && (
                 <div
                   className={cn(
-                    "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto lg:hidden",
-                    !embedded && "min-h-[360px]",
+                    "overflow-hidden rounded-lg border",
+                    embedded ? "flex min-h-0 flex-1 flex-col" : "min-h-[360px]",
                   )}
                 >
-                  {list.isLoading
-                    ? Array.from({ length: 7 }).map((_, i) => (
-                        <Skeleton key={i} className="h-16 w-full rounded-lg" />
-                      ))
-                    : diasDeLaSemana.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
-
-                        return (
-                          <div
-                            key={index}
-                            className={cn(
-                              "rounded-lg border p-2",
-                              isToday && "border-primary/40 bg-primary/5",
-                            )}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => navigateToDay(dia.date)}
-                              className="mb-1.5 flex w-full items-baseline justify-between gap-2 text-left"
-                            >
-                              <span className="text-sm font-semibold">
-                                {weekdayShort(dia.date)} {dia.date.getDate()}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {eventosDelDia.length === 0
-                                  ? "Sin sesiones"
-                                  : `${eventosDelDia.length} ${eventosDelDia.length === 1 ? "clase" : "clases"}`}
-                              </span>
-                            </button>
-                            {eventosDelDia.length > 0 && (
-                              <div className="space-y-1">
-                                {eventosDelDia.map((ev) => renderAgendaRow(ev, true))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                </div>
-                <div
-                  className={cn(
-                    "hidden gap-px overflow-hidden rounded-lg bg-border/60 lg:grid lg:grid-cols-7",
-                    embedded ? "h-full min-h-0 flex-1" : "min-h-[360px]",
+                  {list.isLoading ? (
+                    <div className="space-y-1 p-2">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Skeleton key={i} className="h-10 w-full rounded-md" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex h-full min-h-0 flex-col bg-background p-2">
+                      <div className="mb-1 flex shrink-0 items-center justify-between gap-2 border-b pb-1">
+                        <span className="truncate text-xs font-semibold capitalize">
+                          {tituloCalendario}
+                        </span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {(mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).length}{" "}
+                          bloques
+                        </span>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto">
+                        {renderTimeBlockTimeline(
+                          mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? [],
+                          false,
+                          `${formatearFechaKey(currentDate)}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
+                        )}
+                      </div>
+                    </div>
                   )}
-                >
-                  {list.isLoading
-                    ? Array.from({ length: 7 }).map((_, i) => (
-                        <Skeleton
-                          key={i}
-                          className={cn(
-                            "h-full w-full rounded-none",
-                            !embedded && "min-h-[90px]",
-                          )}
-                        />
-                      ))
-                    : diasDeLaSemana.map((dia, index) => {
-                        const dateKey = formatearFechaKey(dia.date);
-                        const eventosDelDia = mapaEventosPorFecha[dateKey] || [];
-                        const isToday = dia.date.toDateString() === new Date().toDateString();
-
-                        return (
-                          <div
-                            key={index}
-                            className={cn(
-                              "flex flex-col bg-background p-1",
-                              embedded ? "h-full min-h-0" : "min-h-[90px]",
-                            )}
-                          >
-                            {renderDayNumber(dia.date, isToday, true)}
-
-                            <div className="mt-0.5 min-h-0 flex-1 overflow-y-auto">
-                              {renderTimeBlockTimeline(
-                                eventosDelDia,
-                                true,
-                                `${dateKey}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
                 </div>
-              </>
-            )}
-
-            {calendarView === "day" && (
-              <div
-                className={cn(
-                  "overflow-hidden rounded-lg border",
-                  embedded ? "flex min-h-0 flex-1 flex-col" : "min-h-[360px]",
-                )}
-              >
-                {list.isLoading ? (
-                  <div className="space-y-1 p-2">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-10 w-full rounded-md" />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex h-full min-h-0 flex-col bg-background p-2">
-                    <div className="mb-1 flex shrink-0 items-center justify-between gap-2 border-b pb-1">
-                      <span className="truncate text-xs font-semibold capitalize">
-                        {tituloCalendario}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {(mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? []).length} bloques
-                      </span>
-                    </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                      {renderTimeBlockTimeline(
-                        mapaEventosPorFecha[formatearFechaKey(currentDate)] ?? [],
-                        false,
-                        `${formatearFechaKey(currentDate)}-${verLeads}-${verFaltas}-${verRecuperaciones}`,
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
+              )}
+            </Card>
+          </div>
         </div>
-      </div>
       </div>
 
       <Dialog open={!!selectedEvent} onOpenChange={handleEventDetailOpenChange}>
@@ -2085,9 +2064,7 @@ export function CalendarWidget({
                                 variant="outline"
                                 size="sm"
                                 className="h-7 text-xs"
-                                onClick={() =>
-                                  setQuickIncidencia({ alumnoId, kind: "falta" })
-                                }
+                                onClick={() => setQuickIncidencia({ alumnoId, kind: "falta" })}
                               >
                                 Falta
                               </Button>
@@ -2098,9 +2075,7 @@ export function CalendarWidget({
                                 variant="outline"
                                 size="sm"
                                 className="h-7 text-xs"
-                                onClick={() =>
-                                  setQuickIncidencia({ alumnoId, kind: "consulta" })
-                                }
+                                onClick={() => setQuickIncidencia({ alumnoId, kind: "consulta" })}
                               >
                                 Consulta
                               </Button>

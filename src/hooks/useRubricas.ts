@@ -1,14 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
-import {
-  scopeTenantQuery,
-  tenantListKey,
-} from "@/lib/tenantQuery";
-import {
-  buildEstructuraFromCriterionNames,
-  isRubricaActiva,
-} from "@/lib/rubricStructure";
+import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
+import { buildEstructuraFromCriterionNames, isRubricaActiva } from "@/lib/rubricStructure";
 
 const RUBRICA_SELECT_COLUMNS =
   "ID_RUBRICA, ID_CLIENTE, NOMBRE, DESCRIPCION, ESTADO, ESTRUCTURA, CREATED_AT, UPDATED_AT" as const;
@@ -56,12 +50,9 @@ export function formatSupabaseError(error: unknown): string {
   }
 
   const e = error as SupabaseErrorLike;
-  const parts = [
-    e.message,
-    e.details,
-    e.hint,
-    e.code ? `[${e.code}]` : null,
-  ].filter((part) => part && String(part).trim());
+  const parts = [e.message, e.details, e.hint, e.code ? `[${e.code}]` : null].filter(
+    (part) => part && String(part).trim(),
+  );
 
   return parts.length > 0 ? parts.join(" — ") : "Error desconocido";
 }
@@ -76,10 +67,7 @@ function normalizeEstado(value: string): RubricaEstadoValue {
   throw new Error(`ESTADO inválido: "${value}". Solo se permite Activa o Inactiva.`);
 }
 
-function buildUpsertPayload(
-  input: RubricaUpsertInput,
-  tenantId: string,
-): Record<string, unknown> {
+function buildUpsertPayload(input: RubricaUpsertInput, tenantId: string): Record<string, unknown> {
   const nombre = input.NOMBRE.trim();
   if (!nombre) throw new Error("NOMBRE es obligatorio.");
 
@@ -118,10 +106,6 @@ export function useRubricas() {
   const saveRubrica = async (input: RubricaUpsertInput) => {
     const payload = buildUpsertPayload(input, tenantId);
     const isUpdate = Boolean(input.ID_RUBRICA?.trim());
-    console.log(
-      `PAYLOAD SENT TO SUPABASE (RUBRICA ${isUpdate ? "UPDATE" : "CREATE"}):`,
-      payload,
-    );
 
     const { data, error } = await supabase
       .from("RUBRICAS")

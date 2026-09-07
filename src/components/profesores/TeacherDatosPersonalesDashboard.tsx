@@ -55,7 +55,8 @@ export function TeacherDatosPersonalesDashboard() {
       ) : (
         <div className="space-y-6">
           <p className="text-sm text-muted-foreground">
-            Actualiza tu información de contacto. Los datos de contrato y saldos son de solo lectura.
+            Actualiza tu información de contacto. Los datos de contrato y saldos son de solo
+            lectura.
           </p>
           <div>
             <h2 className="text-lg font-semibold">{miProfesor.NOMBRE_PROFESOR}</h2>

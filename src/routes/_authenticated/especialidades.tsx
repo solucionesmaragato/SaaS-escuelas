@@ -624,7 +624,11 @@ function EspecialidadFormDialog(props: EspecialidadFormDialogProps) {
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" variant="brand" disabled={submitting || (isMaster && !isEdit && !idCliente)}>
+          <Button
+            type="submit"
+            variant="brand"
+            disabled={submitting || (isMaster && !isEdit && !idCliente)}
+          >
             {submitting ? "Guardando..." : submitLabel}
           </Button>
         </DialogFooter>

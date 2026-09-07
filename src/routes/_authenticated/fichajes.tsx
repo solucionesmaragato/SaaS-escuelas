@@ -1,12 +1,5 @@
 import { Navigate, createFileRoute } from "@tanstack/react-router";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MutableRefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import jsQR from "jsqr";
@@ -29,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { CorrectionRequestDialog } from "@/components/fichajes/CorrectionRequestDialog";
+import { FichajeIncidenciasPanel } from "@/components/fichajes/FichajeIncidenciasPanel";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { EntityLink } from "@/components/navigation/EntityLink";
@@ -38,9 +32,10 @@ import { logFichajeRejection } from "@/lib/fichajeAudit";
 import {
   canRequestCorrection,
   CLOCK_MOVEMENT_TYPES,
-  CORRECCION_APROBADA,
+  CORRECCION_PENDIENTE,
   formatFichajeErrorMessage,
   isCorrectionMovement,
+  MODIFICACION_PENDIENTE,
 } from "@/lib/fichajeEidas";
 import {
   filterProfesoresActivos,
@@ -58,6 +53,7 @@ import {
   type ProfesorLookup,
 } from "@/hooks/useFichajes";
 import { useAdminCentroFilter, type CentroData } from "@/hooks/useAdminCentroFilter";
+import { useAvisosInternos } from "@/hooks/useAvisosInternos";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant, useApp } from "@/context/AppContext";
@@ -106,16 +102,22 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { fichajeHasIncidencias } from "@/lib/fichajeIncidencias";
 import { toast } from "sonner";
 
 type FichajesSearch = {
   profesorId?: string;
+  fichajeId?: string;
 };
 
 export const Route = createFileRoute("/_authenticated/fichajes")({
   validateSearch: (search: Record<string, unknown>): FichajesSearch => {
+    const result: FichajesSearch = {};
     const profesorId = search.profesorId;
-    return typeof profesorId === "string" && profesorId ? { profesorId } : {};
+    const fichajeId = search.fichajeId;
+    if (typeof profesorId === "string" && profesorId) result.profesorId = profesorId;
+    if (typeof fichajeId === "string" && fichajeId) result.fichajeId = fichajeId;
+    return result;
   },
   component: FichajesPage,
 });
@@ -163,6 +165,15 @@ function localMonthStartDateKey(): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}-01`;
+}
+
+function expandConciliacionRangeForDate(fichajeDateKey: string): { from: string; to: string } {
+  const today = localTodayDateKey();
+  const monthStart = `${fichajeDateKey.slice(0, 8)}01`;
+  return {
+    from: monthStart,
+    to: fichajeDateKey > today ? fichajeDateKey : today,
+  };
 }
 
 async function computeDatasetHashSeal(records: unknown): Promise<string> {
@@ -214,7 +225,9 @@ async function requestAuditPdfAndDownload(
   if (error) {
     const status = (error as { context?: { status?: number } })?.context?.status;
     if (status === 401) {
-      throw new Error("No autorizado por el servidor de auditoría. Cerrar sesión y volver a entrar.");
+      throw new Error(
+        "No autorizado por el servidor de auditoría. Cerrar sesión y volver a entrar.",
+      );
     }
     throw new Error(
       `La función de auditoría falló: ${error instanceof Error ? error.message : String(error)}`,
@@ -324,9 +337,7 @@ function deriveClockState(todayRecords: FichajeData[]): {
   const sortedAsc = [...clockRecords].sort((a, b) =>
     fichajeRealTimestamp(a).localeCompare(fichajeRealTimestamp(b)),
   );
-  const last = normalizeMovimiento(
-    sortedAsc[sortedAsc.length - 1].TIPO_MOVIMIENTO,
-  );
+  const last = normalizeMovimiento(sortedAsc[sortedAsc.length - 1].TIPO_MOVIMIENTO);
 
   // Ancla del cronómetro: Entrada de la jornada abierta (tras la última Salida).
   let lastSalidaIdx = -1;
@@ -339,9 +350,7 @@ function deriveClockState(todayRecords: FichajeData[]): {
   const entradaRecord = sortedAsc
     .slice(lastSalidaIdx + 1)
     .find((r) => normalizeMovimiento(r.TIPO_MOVIMIENTO) === "Entrada");
-  const entradaAt = entradaRecord
-    ? parseServerDate(fichajeRealTimestamp(entradaRecord))
-    : null;
+  const entradaAt = entradaRecord ? parseServerDate(fichajeRealTimestamp(entradaRecord)) : null;
 
   if (last === "Salida") return { state: "out", entradaAt: null };
   if (last === "Inicio Pausa") return { state: "paused", entradaAt };
@@ -638,6 +647,10 @@ function JornadaDetailOverlay({
   const entradaDetail = formatConciliacionMarkDetail(jornada.entrada);
   const salidaDetail = jornada.salida ? formatConciliacionMarkDetail(jornada.salida) : null;
   const fechaJornada = formatFechaHora(jornada.entrada.FECHA_HORA_REAL).split(" ")[0];
+  const entradaNotas = fichajes.find((f) => f.ID_FICHAJE === jornada.entrada.ID_FICHAJE)?.NOTAS;
+  const salidaNotas = jornada.salida
+    ? fichajes.find((f) => f.ID_FICHAJE === jornada.salida?.ID_FICHAJE)?.NOTAS
+    : null;
 
   return createPortal(
     <>
@@ -700,7 +713,12 @@ function JornadaDetailOverlay({
               <Button type="button" variant="outline" onClick={onCancelRectify}>
                 Cancelar
               </Button>
-              <Button type="submit" variant="brand" form="manual-fichaje-rectify-form" disabled={submitting}>
+              <Button
+                type="submit"
+                variant="brand"
+                form="manual-fichaje-rectify-form"
+                disabled={submitting}
+              >
                 {submitting ? "Guardando..." : "Registrar modificación"}
               </Button>
             </div>
@@ -830,6 +848,16 @@ function JornadaDetailOverlay({
                 </div>
               )}
             </dl>
+            {(fichajeHasIncidencias(entradaNotas) || fichajeHasIncidencias(salidaNotas)) && (
+              <div className="mt-4 space-y-2">
+                {fichajeHasIncidencias(entradaNotas) && (
+                  <FichajeIncidenciasPanel notas={entradaNotas} profesorId={jornada.idProfesor} />
+                )}
+                {fichajeHasIncidencias(salidaNotas) && (
+                  <FichajeIncidenciasPanel notas={salidaNotas} profesorId={jornada.idProfesor} />
+                )}
+              </div>
+            )}
             {jornada.anulado && (
               <div className="mt-4 space-y-2 border-t pt-3">
                 <h3 className="text-sm font-semibold text-muted-foreground">
@@ -849,7 +877,15 @@ function JornadaDetailOverlay({
                     >
                       <div className="font-medium text-amber-900 dark:text-amber-300">
                         Corrección vinculada ({mark}): {record.TIPO_MOVIMIENTO} a las{" "}
-                        {formatHora(record.FECHA_HORA)}
+                        {formatHora(record.FECHA_HORA)} —{" "}
+                        <EntityLink
+                          type="fichaje"
+                          id={record.ID_FICHAJE}
+                          profesorId={jornada.idProfesor}
+                          className="text-sm"
+                        >
+                          {record.ID_FICHAJE}
+                        </EntityLink>
                       </div>
                     </div>
                   ))
@@ -939,8 +975,24 @@ function FichajeDetailDialog({
               </div>
               {record.NOTAS && (
                 <div className="col-span-2">
-                  <dt className="text-muted-foreground">Notas</dt>
-                  <dd className="mt-0.5 rounded border bg-muted/30 p-2 italic">{record.NOTAS}</dd>
+                  {fichajeHasIncidencias(record.NOTAS) ? (
+                    <FichajeIncidenciasPanel notas={record.NOTAS} profesorId={record.ID_PROFESOR} />
+                  ) : (
+                    <>
+                      <dt className="text-muted-foreground">Notas</dt>
+                      <dd className="mt-0.5 rounded border bg-muted/30 p-2 italic">
+                        {record.NOTAS}
+                      </dd>
+                    </>
+                  )}
+                </div>
+              )}
+              {!record.NOTAS && record.ID_FICHAJE_CORREGIDO && (
+                <div className="col-span-2">
+                  <FichajeIncidenciasPanel
+                    notas={`[Vinculo:correccion:${record.ID_FICHAJE_CORREGIDO}]`}
+                    profesorId={record.ID_PROFESOR}
+                  />
                 </div>
               )}
             </dl>
@@ -959,7 +1011,7 @@ function FichajeDetailDialog({
           </div>
         )}
         <DialogFooter>
-          <Button type="button" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             Cerrar
           </Button>
         </DialogFooter>
@@ -1054,7 +1106,12 @@ function FichajeQrPosterDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cerrar
           </Button>
-          <Button type="button" disabled={!canShowQr} onClick={() => window.print()}>
+          <Button
+            type="button"
+            variant="brand"
+            disabled={!canShowQr}
+            onClick={() => window.print()}
+          >
             <Printer className="mr-2 h-4 w-4" />
             Imprimir
           </Button>
@@ -1366,6 +1423,7 @@ function FicharView({
 
             {state === "out" && (
               <Button
+                variant="brand"
                 size="lg"
                 className="h-14 px-8 text-base gap-2"
                 disabled={isPending}
@@ -1403,6 +1461,7 @@ function FicharView({
 
             {state === "paused" && (
               <Button
+                variant="brand"
                 size="lg"
                 className="h-14 px-8 text-base gap-2"
                 disabled={isPending}
@@ -1539,12 +1598,14 @@ function ControlHorarioView({
   canGenerateAuditoria,
   tenantId,
   initialProfesorId,
+  highlightFichajeId,
 }: {
   canManual: boolean;
   canGenerateQrPoster: boolean;
   canGenerateAuditoria: boolean;
   tenantId: string;
   initialProfesorId?: string | null;
+  highlightFichajeId?: string;
 }) {
   const { rol } = useActiveTenant();
   const qc = useQueryClient();
@@ -1555,10 +1616,16 @@ function ControlHorarioView({
     setSelectedCenterId,
     filterCenterId,
   } = useAdminCentroFilter();
-  const { list, create } = useFichajes(filterCenterId);
+  const { list, create, respondCorrection } = useFichajes(filterCenterId);
+  const { list: avisosList } = useAvisosInternos();
   const [fromDate, setFromDate] = useState(localMonthStartDateKey);
   const [toDate, setToDate] = useState(localTodayDateKey);
   const conciliacion = useFichajesConciliacionAdmin(fromDate, toDate);
+  const [correctionRejectDialog, setCorrectionRejectDialog] = useState<{
+    idFichaje: string;
+    mensaje: string;
+  } | null>(null);
+  const [correctionRejectMotivo, setCorrectionRejectMotivo] = useState("");
 
   const handleManualSubmit = async (input: FichajeCreateInput, successMessage: string) => {
     try {
@@ -1575,9 +1642,25 @@ function ControlHorarioView({
 
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
   const fichajesHistorial = useMemo(() => list.data?.fichajes ?? [], [list.data?.fichajes]);
+  const fichajeJornadaLookupId = useMemo(() => {
+    if (!highlightFichajeId) return null;
+    const row = fichajesHistorial.find((f) => f.ID_FICHAJE === highlightFichajeId);
+    if (row?.TIPO_MOVIMIENTO?.trim() === CORRECCION_PENDIENTE && row.ID_FICHAJE_CORREGIDO?.trim()) {
+      return row.ID_FICHAJE_CORREGIDO.trim();
+    }
+    return highlightFichajeId;
+  }, [highlightFichajeId, fichajesHistorial]);
+  const pendingCorreccionesAvisos = useMemo(() => {
+    return (avisosList.data ?? []).filter((aviso) => {
+      if (aviso.LEIDO !== false) return false;
+      if ((aviso.TIPO?.trim() ?? "") !== "Corrección de fichaje pendiente") return false;
+      if (filterCenterId && aviso.ID_CENTRO !== filterCenterId) return false;
+      return true;
+    });
+  }, [avisosList.data, filterCenterId]);
   const conciliacionRows = useMemo(() => conciliacion.data ?? [], [conciliacion.data]);
   const isLoading = conciliacion.isLoading;
-  const isPending = create.isPending;
+  const isPending = create.isPending || respondCorrection.isPending;
   const [query, setQuery] = useState("");
   const [filtroProfesor, setFiltroProfesor] = useState(initialProfesorId ?? "");
   const [manualOpen, setManualOpen] = useState(false);
@@ -1586,11 +1669,39 @@ function ControlHorarioView({
   useEffect(() => {
     if (initialProfesorId) setFiltroProfesor(initialProfesorId);
   }, [initialProfesorId]);
+
+  useEffect(() => {
+    deepLinkHandledRef.current = null;
+  }, [highlightFichajeId]);
+
+  useEffect(() => {
+    if (!highlightFichajeId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("V_HISTORIAL_FICHAJES_LEGAL")
+        .select("FECHA_HORA_REAL, ID_PROFESOR")
+        .eq("ID_FICHAJE", highlightFichajeId)
+        .maybeSingle();
+      if (cancelled || error || !data?.FECHA_HORA_REAL) return;
+      const fichajeDate = data.FECHA_HORA_REAL.slice(0, 10);
+      const range = expandConciliacionRangeForDate(fichajeDate);
+      setFromDate(range.from);
+      setToDate(range.to);
+      if (data.ID_PROFESOR) setFiltroProfesor(data.ID_PROFESOR);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [highlightFichajeId]);
+
   const [overlay, setOverlay] = useState<{
     id: string;
     mode: "detail" | "rectify";
     linkedCorrections?: LinkedConciliacionCorrection[];
   } | null>(null);
+  const deepLinkHandledRef = useRef<string | null>(null);
+  const highlightRowRef = useRef<HTMLTableRowElement | null>(null);
 
   const handleCloseOverlay = useCallback(() => setOverlay(null), []);
   const handleRectifyOverlay = useCallback(() => {
@@ -1601,11 +1712,43 @@ function ControlHorarioView({
   }, []);
 
   const handleJornadaRowClick = useCallback(async (jornada: ConciliacionJornadaRow) => {
-    console.log("Clicked Row:", jornada);
     setOverlay({ id: jornada.id, mode: "detail", linkedCorrections: undefined });
     const linkedCorrections = await resolveLinkedCorrectionsForJornada(jornada);
     setOverlay((prev) => (prev && prev.id === jornada.id ? { ...prev, linkedCorrections } : prev));
   }, []);
+
+  const handleAcceptCorrection = useCallback(
+    async (idFichaje: string) => {
+      try {
+        await respondCorrection.mutateAsync({ idFichaje, acepta: true });
+        toast.success("Corrección autorizada.");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "No se pudo autorizar la corrección.");
+      }
+    },
+    [respondCorrection],
+  );
+
+  const handleRejectCorrection = useCallback(async () => {
+    if (!correctionRejectDialog) return;
+    const motivo = correctionRejectMotivo.trim();
+    if (!motivo) {
+      toast.error("Indica el motivo del rechazo.");
+      return;
+    }
+    try {
+      await respondCorrection.mutateAsync({
+        idFichaje: correctionRejectDialog.idFichaje,
+        acepta: false,
+        motivo,
+      });
+      toast.success("Corrección rechazada.");
+      setCorrectionRejectDialog(null);
+      setCorrectionRejectMotivo("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo rechazar la corrección.");
+    }
+  }, [correctionRejectDialog, correctionRejectMotivo, respondCorrection]);
 
   const profById = useMemo(
     () => new Map(profesores.map((p) => [p.ID_PROFESOR, p.NOMBRE_PROFESOR])),
@@ -1628,28 +1771,32 @@ function ControlHorarioView({
         filterCenterId,
       });
 
-      const buildSealedPayload = async (idProfesor: string, records: FichajeConciliacionAdminRow[]) => {
+      const buildSealedPayload = async (
+        idProfesor: string,
+        records: FichajeConciliacionAdminRow[],
+      ) => {
         // 2. Ordenar cronológicamente en el cliente
         const registrosCronologicos = [...records].sort((a, b) =>
-          a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL)
+          a.FECHA_HORA_REAL.localeCompare(b.FECHA_HORA_REAL),
         );
 
         // 3. ENRIQUECIMIENTO CRIMINALÍSTICO: Cruzar con el historial máster para recuperar Hashes y Métodos reales
         const registrosEnriquecidos = registrosCronologicos.map((row) => {
           // Buscamos correspondencia exacta por ID_FICHAJE en la caché máster del componente
           const dbMatch = fichajesHistorial.find((f) => f.ID_FICHAJE === row.ID_FICHAJE);
-          
+
           return {
             ...row,
             HASH_INMUTABILIDAD: dbMatch?.HASH_INMUTABILIDAD || null,
             METODO: dbMatch?.METODO || row.METODO || "App",
-            TOTAL_HORAS_JORNADA: row.TOTAL_HORAS_INTERVALO ? 
-              parseFloat(String(row.TOTAL_HORAS_INTERVALO)) : null
+            TOTAL_HORAS_JORNADA: row.TOTAL_HORAS_INTERVALO
+              ? parseFloat(String(row.TOTAL_HORAS_INTERVALO))
+              : null,
           };
         });
 
         const hashSello = await computeDatasetHashSeal(registrosEnriquecidos);
-        
+
         return {
           idProfesor,
           nombreProfesor: conciliacionProfesorNombre(registrosEnriquecidos[0], profById),
@@ -1664,7 +1811,9 @@ function ControlHorarioView({
       // Flujo de generación para un único profesor seleccionado en el filtro
       if (filtroProfesor) {
         if (auditRows.length === 0) {
-          toast.error(`No hay fichajes del ${fromDate} al ${toDate} para este profesor con los filtros aplicados.`);
+          toast.error(
+            `No hay fichajes del ${fromDate} al ${toDate} para este profesor con los filtros aplicados.`,
+          );
           return;
         }
         const payload = await buildSealedPayload(filtroProfesor, auditRows);
@@ -1807,10 +1956,80 @@ function ControlHorarioView({
     [jornadas, overlay?.id],
   );
 
+  useEffect(() => {
+    if (!highlightFichajeId || !fichajeJornadaLookupId || conciliacion.isLoading) return;
+    if (deepLinkHandledRef.current === highlightFichajeId) return;
+
+    const match = jornadas.find(
+      (j) =>
+        j.entrada.ID_FICHAJE === fichajeJornadaLookupId ||
+        j.salida?.ID_FICHAJE === fichajeJornadaLookupId,
+    );
+    if (!match) return;
+
+    deepLinkHandledRef.current = highlightFichajeId;
+    setOverlay({ id: match.id, mode: "detail", linkedCorrections: undefined });
+    void resolveLinkedCorrectionsForJornada(match).then((linkedCorrections) => {
+      setOverlay((prev) => (prev && prev.id === match.id ? { ...prev, linkedCorrections } : prev));
+    });
+  }, [highlightFichajeId, fichajeJornadaLookupId, jornadas, conciliacion.isLoading]);
+
+  useEffect(() => {
+    if (!highlightFichajeId || !highlightRowRef.current) return;
+    highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightFichajeId, jornadas]);
+
   const tableColCount = canManual ? 7 : 6;
 
   return (
     <div className="space-y-4">
+      {pendingCorreccionesAvisos.length > 0 && (
+        <Card className="p-4 space-y-3">
+          <h2 className="text-sm font-semibold">Correcciones pendientes de revisión</h2>
+          {pendingCorreccionesAvisos.map((aviso) => {
+            const idFichaje = aviso.ID_FICHAJE?.trim() ?? "";
+            const highlighted = Boolean(highlightFichajeId && idFichaje === highlightFichajeId);
+            return (
+              <div
+                key={aviso.ID_AVISO}
+                className={cn(
+                  "rounded-md border p-3 space-y-2",
+                  highlighted && "border-primary ring-2 ring-primary/30",
+                )}
+              >
+                <p className="text-sm">{aviso.MENSAJE}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="brand"
+                    disabled={isPending || !idFichaje}
+                    onClick={() => void handleAcceptCorrection(idFichaje)}
+                  >
+                    Autorizar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isPending || !idFichaje}
+                    onClick={() => {
+                      setCorrectionRejectMotivo("");
+                      setCorrectionRejectDialog({
+                        idFichaje,
+                        mensaje: aviso.MENSAJE ?? "",
+                      });
+                    }}
+                  >
+                    Rechazar
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           {jornadas.length} jornada{jornadas.length === 1 ? "" : "s"} del {fromDate} al {toDate}
@@ -1818,7 +2037,7 @@ function ControlHorarioView({
         {(canGenerateQrPoster || canGenerateAuditoria || canManual) && (
           <div className="flex flex-wrap gap-2">
             {canGenerateQrPoster && (
-              <Button type="button" variant="outline" onClick={() => setQrPosterOpen(true)}>
+              <Button type="button" variant="brand-outline" onClick={() => setQrPosterOpen(true)}>
                 <QrCode className="mr-2 h-4 w-4" />
                 Generar Cartel QR
               </Button>
@@ -1826,7 +2045,7 @@ function ControlHorarioView({
             {canGenerateAuditoria && (
               <Button
                 type="button"
-                variant="outline"
+                variant="brand-outline"
                 disabled={auditGenerating}
                 onClick={() => void handleGenerarAuditoria()}
               >
@@ -1835,7 +2054,7 @@ function ControlHorarioView({
               </Button>
             )}
             {canManual && (
-              <Button type="button" onClick={() => setManualOpen(true)}>
+              <Button type="button" variant="brand" onClick={() => setManualOpen(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Fichaje Manual
               </Button>
@@ -1950,71 +2169,104 @@ function ControlHorarioView({
                   </TableCell>
                 </TableRow>
               ) : (
-                jornadas.map((jornada) => (
-                  <TableRow
-                    key={jornada.id}
-                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${anuladoRowClass(jornada.anulado)}`}
-                    onClick={() => void handleJornadaRowClick(jornada)}
-                  >
-                    <TableCell className="py-2 text-sm font-semibold">
-                      <EntityLink type="profesor" id={jornada.idProfesor}>
-                        {jornada.nombreProfesor}
-                      </EntityLink>
-                      {jornada.anulado && (
-                        <Badge variant="outline" className="ml-2 text-[10px]">
-                          Anulado
-                        </Badge>
+                jornadas.map((jornada) => {
+                  const isHighlighted =
+                    Boolean(highlightFichajeId) &&
+                    (jornada.entrada.ID_FICHAJE === highlightFichajeId ||
+                      jornada.salida?.ID_FICHAJE === highlightFichajeId ||
+                      jornada.entrada.ID_FICHAJE === fichajeJornadaLookupId ||
+                      jornada.salida?.ID_FICHAJE === fichajeJornadaLookupId);
+                  const entradaNotas = fichajesHistorial.find(
+                    (f) => f.ID_FICHAJE === jornada.entrada.ID_FICHAJE,
+                  )?.NOTAS;
+                  const salidaNotas = jornada.salida
+                    ? fichajesHistorial.find((f) => f.ID_FICHAJE === jornada.salida?.ID_FICHAJE)
+                        ?.NOTAS
+                    : null;
+                  const rowHasIncidencias =
+                    fichajeHasIncidencias(entradaNotas) || fichajeHasIncidencias(salidaNotas);
+
+                  return (
+                    <TableRow
+                      key={jornada.id}
+                      ref={isHighlighted ? highlightRowRef : undefined}
+                      className={cn(
+                        "cursor-pointer transition-colors hover:bg-muted/50",
+                        anuladoRowClass(jornada.anulado),
+                        isHighlighted && "bg-primary/5 ring-2 ring-primary/40",
                       )}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-medium">
-                      {formatFechaCorta(jornada.entrada.FECHA_HORA_REAL)}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-medium">
-                      {formatConciliacionHoraReal(jornada.entrada.FECHA_HORA_REAL)}
-                    </TableCell>
-                    <TableCell className="py-2 text-sm font-medium">
-                      {jornada.salida ? (
-                        formatConciliacionHoraReal(jornada.salida.FECHA_HORA_REAL)
-                      ) : (
-                        <span className="text-muted-foreground italic">En curso</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="py-2 text-right font-mono text-sm">
-                      {formatHorasBlock(jornada.totalHoras)}
-                    </TableCell>
-                    <TableCell className="py-2">
-                      <ToleranciaBadge estado={jornada.estadoTolerancia} />
-                    </TableCell>
-                    {canManual && (
-                      <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                console.log("Clicked Row:", jornada);
-                                setOverlay({ id: jornada.id, mode: "rectify", linkedCorrections: undefined });
-                                void resolveLinkedCorrectionsForJornada(jornada).then(
-                                  (linkedCorrections) => {
-                                    setOverlay((prev) =>
-                                      prev && prev.id === jornada.id ? { ...prev, linkedCorrections } : prev,
-                                    );
-                                  },
-                                );
-                              }}
-                            >
-                              Rectificar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                      onClick={() => void handleJornadaRowClick(jornada)}
+                    >
+                      <TableCell className="py-2 text-sm font-semibold">
+                        <EntityLink type="profesor" id={jornada.idProfesor}>
+                          {jornada.nombreProfesor}
+                        </EntityLink>
+                        {jornada.anulado && (
+                          <Badge variant="outline" className="ml-2 text-[10px]">
+                            Anulado
+                          </Badge>
+                        )}
+                        {rowHasIncidencias && (
+                          <Badge variant="destructive" className="ml-2 text-[10px]">
+                            Incidencia
+                          </Badge>
+                        )}
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))
+                      <TableCell className="py-2 text-sm font-medium">
+                        {formatFechaCorta(jornada.entrada.FECHA_HORA_REAL)}
+                      </TableCell>
+                      <TableCell className="py-2 text-sm font-medium">
+                        {formatConciliacionHoraReal(jornada.entrada.FECHA_HORA_REAL)}
+                      </TableCell>
+                      <TableCell className="py-2 text-sm font-medium">
+                        {jornada.salida ? (
+                          formatConciliacionHoraReal(jornada.salida.FECHA_HORA_REAL)
+                        ) : (
+                          <span className="text-muted-foreground italic">En curso</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2 text-right font-mono text-sm">
+                        {formatHorasBlock(jornada.totalHoras)}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <ToleranciaBadge estado={jornada.estadoTolerancia} />
+                      </TableCell>
+                      {canManual && (
+                        <TableCell className="py-2" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setOverlay({
+                                    id: jornada.id,
+                                    mode: "rectify",
+                                    linkedCorrections: undefined,
+                                  });
+                                  void resolveLinkedCorrectionsForJornada(jornada).then(
+                                    (linkedCorrections) => {
+                                      setOverlay((prev) =>
+                                        prev && prev.id === jornada.id
+                                          ? { ...prev, linkedCorrections }
+                                          : prev,
+                                      );
+                                    },
+                                  );
+                                }}
+                              >
+                                Rectificar
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -2064,6 +2316,41 @@ function ControlHorarioView({
           onClose={() => setQrPosterOpen(false)}
         />
       )}
+
+      <Dialog
+        open={!!correctionRejectDialog}
+        onOpenChange={(open) => !open && setCorrectionRejectDialog(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rechazar corrección</DialogTitle>
+            <DialogDescription>{correctionRejectDialog?.mensaje}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="motivo-rechazo-correccion">Motivo del rechazo *</Label>
+            <Textarea
+              id="motivo-rechazo-correccion"
+              value={correctionRejectMotivo}
+              onChange={(e) => setCorrectionRejectMotivo(e.target.value)}
+              rows={4}
+              placeholder="Explica por qué rechazas esta corrección..."
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setCorrectionRejectDialog(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isPending || !correctionRejectMotivo.trim()}
+              onClick={() => void handleRejectCorrection()}
+            >
+              {isPending ? "Guardando..." : "Confirmar rechazo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2116,11 +2403,21 @@ function ManualFichajeDialog({
 
   const fichajesCorregibles = useMemo(() => {
     if (!idProfesor) return [];
-    return fichajes.filter(
+    const delProfesor = fichajes.filter((f) => f.ID_PROFESOR === idProfesor);
+    const solicitudRows = delProfesor.map((row) => ({
+      ID_FICHAJE: row.ID_FICHAJE,
+      ID_FICHAJE_CORREGIDO: row.ID_FICHAJE_CORREGIDO,
+      TIPO_MOVIMIENTO: row.TIPO_MOVIMIENTO,
+      ESTADO: row.ESTADO ?? null,
+    }));
+    return delProfesor.filter(
       (f) =>
-        f.ID_PROFESOR === idProfesor &&
         !isFichajeAnulado(f.ESTADO_LEGAL) &&
-        !isCorrectionMovement(f.TIPO_MOVIMIENTO),
+        !isCorrectionMovement(f.TIPO_MOVIMIENTO) &&
+        canRequestCorrection(
+          { ID_FICHAJE: f.ID_FICHAJE, TIPO_MOVIMIENTO: f.TIPO_MOVIMIENTO },
+          solicitudRows,
+        ),
     );
   }, [fichajes, idProfesor]);
 
@@ -2215,7 +2512,7 @@ function ManualFichajeDialog({
         const motivo = motivoModificacion.trim();
         await onSubmitModificacion({
           ID_PROFESOR: idProfesor,
-          TIPO_MOVIMIENTO: CORRECCION_APROBADA,
+          TIPO_MOVIMIENTO: MODIFICACION_PENDIENTE,
           ID_FICHAJE_CORREGIDO: idFichajeCorregido,
           FECHA_HORA_MANUAL: fechaHora ? localDatetimeToServerTimestamp(fechaHora) : undefined,
           MOTIVO_MODIFICACION: motivo,
@@ -2302,7 +2599,7 @@ function ManualFichajeDialog({
             Volver
           </Button>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={handleClose}>
+            <Button type="button" variant="outline" onClick={handleClose}>
               Cancelar
             </Button>
             <Button type="submit" variant="brand" disabled={submitting || !canSubmitModificacion}>
@@ -2436,7 +2733,7 @@ function ManualFichajeDialog({
                 Volver
               </Button>
               <div className="flex gap-2">
-                <Button type="button" variant="ghost" onClick={handleClose}>
+                <Button type="button" variant="outline" onClick={handleClose}>
                   Cancelar
                 </Button>
                 <Button type="submit" variant="brand" disabled={submitting || !canSubmitNuevo}>
@@ -2451,7 +2748,7 @@ function ManualFichajeDialog({
 
         {stage === "action_type" && (
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={handleClose}>
+            <Button type="button" variant="outline" onClick={handleClose}>
               Cancelar
             </Button>
           </DialogFooter>
@@ -2468,16 +2765,25 @@ function ManualFichajeDialog({
 function FichajesAdminPage() {
   const { rol, perfil, tenantId } = useActiveTenant();
   const { session } = useApp();
-  const { profesorId: deepLinkProfesorId } = Route.useSearch();
-  const { list, create, createSealed, requestCorrection } = useFichajes();
+  const { profesorId: deepLinkProfesorId, fichajeId: deepLinkFichajeId } = Route.useSearch();
+  const { list, createSealed, requestCorrection } = useFichajes();
 
   const fichajes = useMemo(() => list.data?.fichajes ?? [], [list.data?.fichajes]);
-  const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
 
   const showControlTab = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
   const canManualFichaje = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
   const canGenerateQrPoster = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
   const canGenerateAuditoria = isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol);
+
+  const [activeTab, setActiveTab] = useState<"fichar" | "control">(
+    showControlTab && (deepLinkProfesorId || deepLinkFichajeId) ? "control" : "fichar",
+  );
+
+  useEffect(() => {
+    if (deepLinkProfesorId || deepLinkFichajeId) {
+      setActiveTab("control");
+    }
+  }, [deepLinkProfesorId, deepLinkFichajeId]);
 
   const auditRejectedFichaje = (input: FichajeSealedCreateInput, err: unknown) => {
     void logFichajeRejection({
@@ -2546,7 +2852,8 @@ function FichajesAdminPage() {
       )}
 
       <Tabs
-        defaultValue={showControlTab && deepLinkProfesorId ? "control" : "fichar"}
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "fichar" | "control")}
         className="w-full"
       >
         <TabsList
@@ -2579,6 +2886,7 @@ function FichajesAdminPage() {
               canGenerateAuditoria={canGenerateAuditoria}
               tenantId={tenantId}
               initialProfesorId={deepLinkProfesorId}
+              highlightFichajeId={deepLinkFichajeId}
             />
           </TabsContent>
         )}

@@ -5,34 +5,12 @@ import { useApp } from "@/context/AppContext";
 import { homePathForRole } from "@/lib/homePath";
 import { WorkspaceOptionCard } from "@/components/workspace/WorkspaceOptionCard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/select-tenant")({
   component: SelectTenantPage,
 });
-
-function UnauthorizedScreen() {
-  const { signOut } = useApp();
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12">
-      <Card className="w-full max-w-lg">
-        <CardContent className="space-y-4 pt-8 text-center">
-          <h1 className="text-xl font-semibold">Acceso no autorizado</h1>
-          <p className="text-sm text-muted-foreground">
-            Tu cuenta no tiene ningún perfil de workspace asignado. Contacta con el administrador
-            de tu escuela para que vincule tu usuario.
-          </p>
-          <Button variant="outline" className="w-full" onClick={() => signOut()}>
-            <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
 function SelectTenantPage() {
   const navigate = useNavigate();
@@ -110,9 +88,7 @@ function SelectTenantPage() {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/40 px-4 py-10 sm:py-14">
       <div className="mx-auto w-full max-w-6xl space-y-10">
         <div className="text-center">
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Selecciona tu workspace
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Selecciona tu workspace</h1>
           <p className="mx-auto mt-3 max-w-2xl text-base text-muted-foreground">
             Tu cuenta tiene acceso a varios centros. Elige la escuela y el centro con los que
             quieres trabajar en esta sesión.

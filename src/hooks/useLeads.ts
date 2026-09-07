@@ -252,12 +252,7 @@ export function useLeads(filterCenterId?: string | null) {
       const especialidadesRows = (especialidades ?? []) as EspecialidadLookup[];
 
       return {
-        leads: mapLeads(
-          (leads ?? []) as LeadRow[],
-          profesoresRows,
-          aulasRows,
-          especialidadesRows,
-        ),
+        leads: mapLeads((leads ?? []) as LeadRow[], profesoresRows, aulasRows, especialidadesRows),
         profesores: profesoresRows,
         aulas: aulasRows,
         especialidades: especialidadesRows,
@@ -289,11 +284,7 @@ export function useLeads(filterCenterId?: string | null) {
         CLASE_REALIZADA: input.CLASE_REALIZADA ?? false,
       };
 
-      const { data, error } = await supabase
-        .from("LEADS")
-        .insert(payload)
-        .select()
-        .single();
+      const { data, error } = await supabase.from("LEADS").insert(payload).select().single();
       if (error) throw error;
       return data;
     },

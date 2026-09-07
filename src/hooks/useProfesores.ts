@@ -177,10 +177,7 @@ function rethrowProfesorEmailSyncError(error: unknown, profesorId: string): neve
     );
   }
   if (message.includes("profesor_email_sync_failed")) {
-    throw new ProfesorEmailSyncError(
-      profesorId,
-      "No se pudo sincronizar el email con Usuarios.",
-    );
+    throw new ProfesorEmailSyncError(profesorId, "No se pudo sincronizar el email con Usuarios.");
   }
   throw error instanceof Error ? error : new Error(message);
 }
@@ -204,10 +201,7 @@ async function assertProfesorEmailSynced(
   if (!perfil) return;
 
   if (normalizeProfesorEmail(perfil.EMAIL) !== normalizedExpected) {
-    throw new ProfesorEmailSyncError(
-      profesorId,
-      "No se pudo sincronizar el email con Usuarios.",
-    );
+    throw new ProfesorEmailSyncError(profesorId, "No se pudo sincronizar el email con Usuarios.");
   }
 }
 
@@ -394,11 +388,7 @@ export function useProfesores() {
         { data: profs, error },
         { data: esp, error: espError },
         { data: aul, error: aulaError },
-      ] = await Promise.all([
-        profQueryPromise,
-        espQuery,
-        aulaQuery,
-      ]);
+      ] = await Promise.all([profQueryPromise, espQuery, aulaQuery]);
 
       if (error) throw error;
       if (espError) throw espError;
@@ -458,11 +448,7 @@ export function useProfesores() {
       }
 
       if ("EMAIL_PROFESORES" in input) {
-        await assertProfesorEmailSynced(
-          profesor.ID_PROFESOR,
-          tenantId,
-          input.EMAIL_PROFESORES,
-        );
+        await assertProfesorEmailSynced(profesor.ID_PROFESOR, tenantId, input.EMAIL_PROFESORES);
       }
 
       return profesor;
@@ -507,11 +493,7 @@ export function useProfesores() {
       if (error) rethrowProfesorEmailSyncError(error, id);
 
       if ("EMAIL_PROFESORES" in payload) {
-        await assertProfesorEmailSynced(
-          id,
-          tenantId,
-          payload.EMAIL_PROFESORES as string | null,
-        );
+        await assertProfesorEmailSynced(id, tenantId, payload.EMAIL_PROFESORES as string | null);
       }
 
       if (selectedRol !== undefined && !selfProfile) {
@@ -601,7 +583,7 @@ export function useProfesores() {
 }
 
 export function useProfesorRol(profesorId: string | null | undefined) {
-  const { tenantId, rol } = useActiveTenant();
+  const { tenantId } = useActiveTenant();
 
   return useQuery({
     queryKey: ["profesor-rol", tenantId, profesorId],

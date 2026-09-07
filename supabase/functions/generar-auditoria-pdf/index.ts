@@ -81,8 +81,10 @@ async function generateProfessorAuditPdf(payload: AuditPayload): Promise<Uint8Ar
     (a.FECHA_HORA_REAL || "").localeCompare(b.FECHA_HORA_REAL || ""),
   );
 
-  const jornadas: Record<string, { ordinarias: number; extraordinarias: number; ultimaSalidaY: number }> =
-    {};
+  const jornadas: Record<
+    string,
+    { ordinarias: number; extraordinarias: number; ultimaSalidaY: number }
+  > = {};
   let totalHorasPeriodo = 0;
   let openEntradaTime: number | null = null;
 
@@ -100,7 +102,8 @@ async function generateProfessorAuditPdf(payload: AuditPayload): Promise<Uint8Ar
     ) {
       const diffHoras = (timeMs - openEntradaTime) / 3600000;
       if (diffHoras > 0) {
-        if (!jornadas[fecha]) jornadas[fecha] = { ordinarias: 0, extraordinarias: 0, ultimaSalidaY: 0 };
+        if (!jornadas[fecha])
+          jornadas[fecha] = { ordinarias: 0, extraordinarias: 0, ultimaSalidaY: 0 };
 
         const acumuladoPrevio = jornadas[fecha].ordinarias + jornadas[fecha].extraordinarias;
         if (acumuladoPrevio + diffHoras <= 8) {
@@ -161,7 +164,12 @@ async function generateProfessorAuditPdf(payload: AuditPayload): Promise<Uint8Ar
     p.drawText("Estado", { x: 480, y: headerY, size: 9, font: fontBold });
     p.drawText("H. Ordinarias", { x: 540, y: headerY, size: 9, font: fontBold });
     p.drawText("H. Extraord.", { x: 615, y: headerY, size: 9, font: fontBold });
-    p.drawText("Sello Hash Inmutabilidad (SHA-256)", { x: 690, y: headerY, size: 9, font: fontBold });
+    p.drawText("Sello Hash Inmutabilidad (SHA-256)", {
+      x: 690,
+      y: headerY,
+      size: 9,
+      font: fontBold,
+    });
 
     p.drawLine({
       start: { x: 40, y: headerY - 6 },
@@ -196,14 +204,24 @@ async function generateProfessorAuditPdf(payload: AuditPayload): Promise<Uint8Ar
     }
 
     page.drawText(reg.ID_FICHAJE || "—", { x: 40, y: currentY, size: 8, font: fontMono });
-    page.drawText(formatCleanTimestamp(reg.FECHA_HORA_REAL), { x: 110, y: currentY, size: 8, font });
+    page.drawText(formatCleanTimestamp(reg.FECHA_HORA_REAL), {
+      x: 110,
+      y: currentY,
+      size: 8,
+      font,
+    });
     page.drawText(reg.TIPO_MOVIMIENTO || "—", { x: 210, y: currentY, size: 8, font: fontBold });
     page.drawText(reg.METODO || "App", { x: 320, y: currentY, size: 8, font });
     page.drawText(reg.HORA_TEORICA_IDEAL || "—", { x: 375, y: currentY, size: 8, font });
 
     const mins = reg.DIFERENCIA_MINUTOS ?? 0;
     const sign = mins > 0 ? "+" : "";
-    page.drawText(mins !== 0 ? `${sign}${mins} min` : "0 min", { x: 425, y: currentY, size: 8, font });
+    page.drawText(mins !== 0 ? `${sign}${mins} min` : "0 min", {
+      x: 425,
+      y: currentY,
+      size: 8,
+      font,
+    });
     page.drawText(reg.ESTADO_LEGAL || reg.ESTADO_TOLERANCIA || "Válido", {
       x: 480,
       y: currentY,
@@ -359,10 +377,13 @@ export default {
         status: 200,
       });
     } catch (error) {
-      return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 400,
-      });
+      return new Response(
+        JSON.stringify({ error: error instanceof Error ? error.message : "Error fatal" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 400,
+        },
+      );
     }
   }),
 };

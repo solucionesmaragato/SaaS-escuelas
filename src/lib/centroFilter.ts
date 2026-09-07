@@ -12,9 +12,7 @@ export const TABLES_WITH_DIRECT_ID_CENTRO = new Set([
   "CENTROS",
 ]);
 
-export function resolveCenterFilterId(
-  filterCenterId: string | null | undefined,
-): string | null {
+export function resolveCenterFilterId(filterCenterId: string | null | undefined): string | null {
   const trimmed = typeof filterCenterId === "string" ? filterCenterId.trim() : "";
   return trimmed || null;
 }
@@ -74,13 +72,9 @@ export async function fetchProfesorIdsForCenter(
     .not("ID_PROFESOR", "is", null);
 
   if (error) throw error;
-  return (data ?? [])
-    .map((row) => row.ID_PROFESOR as string)
-    .filter((id) => Boolean(id));
+  return (data ?? []).map((row) => row.ID_PROFESOR as string).filter((id) => Boolean(id));
 }
 
-export function centerFilterQueryKey(
-  filterCenterId: string | null | undefined,
-): string {
+export function centerFilterQueryKey(filterCenterId: string | null | undefined): string {
   return resolveCenterFilterId(filterCenterId) ?? "all";
 }

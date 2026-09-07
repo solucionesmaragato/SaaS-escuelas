@@ -16,6 +16,7 @@ import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RegistroCallbackRouteImport } from './routes/registro_.callback'
+import { Route as AuthenticatedVideosRouteImport } from './routes/_authenticated/videos'
 import { Route as AuthenticatedUsuariosRouteImport } from './routes/_authenticated/usuarios'
 import { Route as AuthenticatedTurnosRouteImport } from './routes/_authenticated/turnos'
 import { Route as AuthenticatedTarifasRouteImport } from './routes/_authenticated/tarifas'
@@ -91,6 +92,11 @@ const RegistroCallbackRoute = RegistroCallbackRouteImport.update({
   id: '/registro_/callback',
   path: '/registro/callback',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedVideosRoute = AuthenticatedVideosRouteImport.update({
+  id: '/videos',
+  path: '/videos',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedUsuariosRoute = AuthenticatedUsuariosRouteImport.update({
   id: '/usuarios',
@@ -348,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
+  '/videos': typeof AuthenticatedVideosRoute
   '/registro/callback': typeof RegistroCallbackRoute
   '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/app/archivos': typeof AuthenticatedAppArchivosRoute
@@ -396,6 +403,7 @@ export interface FileRoutesByTo {
   '/tarifas': typeof AuthenticatedTarifasRoute
   '/turnos': typeof AuthenticatedTurnosRoute
   '/usuarios': typeof AuthenticatedUsuariosRoute
+  '/videos': typeof AuthenticatedVideosRoute
   '/registro/callback': typeof RegistroCallbackRoute
   '/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/app/archivos': typeof AuthenticatedAppArchivosRoute
@@ -447,6 +455,7 @@ export interface FileRoutesById {
   '/_authenticated/tarifas': typeof AuthenticatedTarifasRoute
   '/_authenticated/turnos': typeof AuthenticatedTurnosRoute
   '/_authenticated/usuarios': typeof AuthenticatedUsuariosRoute
+  '/_authenticated/videos': typeof AuthenticatedVideosRoute
   '/registro_/callback': typeof RegistroCallbackRoute
   '/_authenticated/app/alumnos': typeof AuthenticatedAppAlumnosRoute
   '/_authenticated/app/archivos': typeof AuthenticatedAppArchivosRoute
@@ -498,6 +507,7 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
+    | '/videos'
     | '/registro/callback'
     | '/app/alumnos'
     | '/app/archivos'
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | '/tarifas'
     | '/turnos'
     | '/usuarios'
+    | '/videos'
     | '/registro/callback'
     | '/app/alumnos'
     | '/app/archivos'
@@ -596,6 +607,7 @@ export interface FileRouteTypes {
     | '/_authenticated/tarifas'
     | '/_authenticated/turnos'
     | '/_authenticated/usuarios'
+    | '/_authenticated/videos'
     | '/registro_/callback'
     | '/_authenticated/app/alumnos'
     | '/_authenticated/app/archivos'
@@ -673,6 +685,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/registro/callback'
       preLoaderRoute: typeof RegistroCallbackRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/videos': {
+      id: '/_authenticated/videos'
+      path: '/videos'
+      fullPath: '/videos'
+      preLoaderRoute: typeof AuthenticatedVideosRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/usuarios': {
       id: '/_authenticated/usuarios'
@@ -1041,6 +1060,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTarifasRoute: typeof AuthenticatedTarifasRoute
   AuthenticatedTurnosRoute: typeof AuthenticatedTurnosRoute
   AuthenticatedUsuariosRoute: typeof AuthenticatedUsuariosRoute
+  AuthenticatedVideosRoute: typeof AuthenticatedVideosRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1071,6 +1091,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedTarifasRoute: AuthenticatedTarifasRoute,
   AuthenticatedTurnosRoute: AuthenticatedTurnosRoute,
   AuthenticatedUsuariosRoute: AuthenticatedUsuariosRoute,
+  AuthenticatedVideosRoute: AuthenticatedVideosRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

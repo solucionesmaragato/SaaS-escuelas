@@ -67,9 +67,7 @@ export function calcCargoExtraRowTotal(
   row: Pick<CargoExtraRow, "CANTIDAD" | "PRECIO_UNITARIO" | "PORCENTAJE_IVA">,
 ): number {
   return (
-    Number(row.CANTIDAD) *
-    Number(row.PRECIO_UNITARIO) *
-    (1 + Number(row.PORCENTAJE_IVA) / 100)
+    Number(row.CANTIDAD) * Number(row.PRECIO_UNITARIO) * (1 + Number(row.PORCENTAJE_IVA) / 100)
   );
 }
 
@@ -174,9 +172,7 @@ async function attachAlumnosToCargos(
 
   return rows.map((row) => ({
     ...row,
-    ALUMNOS: row.ID_ALUMNO
-      ? { NOMBRE_ALUMNO: alumnoById.get(row.ID_ALUMNO) ?? null }
-      : null,
+    ALUMNOS: row.ID_ALUMNO ? { NOMBRE_ALUMNO: alumnoById.get(row.ID_ALUMNO) ?? null } : null,
   }));
 }
 

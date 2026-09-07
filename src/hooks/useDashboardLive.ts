@@ -96,9 +96,7 @@ export function useDashboardLive(filterCenterId?: string | null) {
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR" && !channelErrorLogged) {
           channelErrorLogged = true;
-          console.warn(
-            "[dashboard-live] Realtime channel error; using 60s refetch fallback.",
-          );
+          console.warn("[dashboard-live] Realtime channel error; using 60s refetch fallback.");
         }
       });
 

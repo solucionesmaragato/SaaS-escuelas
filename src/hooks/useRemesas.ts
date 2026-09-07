@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
+import type { ControlRemesa, RemesaGeneracionJob, RemesaProcesoAlumno } from "@/types/database";
 import {
   appendIdInFilter,
   centerFilterQueryKey,
@@ -14,6 +15,18 @@ import {
 } from "@/hooks/useRecibos";
 import { scopeTenantQuery, tenantListKey } from "@/lib/tenantQuery";
 import { sanitizeUserFacingError } from "@/lib/sanitizeUserFacingError";
+
+export type ControlRemesaRow = ControlRemesa & {
+  ID_CENTRO?: string | null;
+  ID_CURSO?: string | null;
+};
+
+export type ControlRemesaUpdatePatch = Partial<
+  Pick<
+    ControlRemesa,
+    "MES_PERIODO" | "ESTADO" | "LINK_XML_SEPA" | "LINK_EXCEL_CONTABILIDAD" | "LINK_RECIBOS_ZIP"
+  >
+>;
 
 export type GenerarRemesaMensualInput = {
   p_id_cliente: string;
@@ -33,7 +46,10 @@ export type EnviarSepaReciboRow = {
 };
 
 export type GenerarRemesaMensualResult = {
+  status?: string;
+  id_remesa?: string;
   recibos_generados?: number;
+  mensaje?: string;
   [key: string]: unknown;
 };
 
@@ -157,10 +173,7 @@ type ReciboLoteValidationRow = {
   REF_RECIBO?: string | null;
   TOTAL_DOC?: number | null;
   ID_ALUMNO?: string | null;
-  ALUMNOS?:
-    | { NOMBRE_ALUMNO?: string | null }
-    | { NOMBRE_ALUMNO?: string | null }[]
-    | null;
+  ALUMNOS?: { NOMBRE_ALUMNO?: string | null } | { NOMBRE_ALUMNO?: string | null }[] | null;
 };
 
 function resolveReciboAlumnoDisplayName(recibo: ReciboLoteValidationRow): string {
@@ -206,19 +219,17 @@ async function invokeKorefactuEmitirFacturaRemesa(
     body: { id_recibo: idRecibo },
   });
 
-  const payload = data as
-    | {
-        error?: string;
-        link?: string | null;
-        pdfDownloaded?: boolean;
-        notification?: "success" | "pdf_missing";
-        NUM_FACTURA_KOREFACTU?: string | null;
-        LINK_FACTURA_KOREFACTU?: string | null;
-        URL_QR?: string | null;
-        HUELLA_HASH?: string | null;
-        excel_error?: string | null;
-      }
-    | null;
+  const payload = data as {
+    error?: string;
+    link?: string | null;
+    pdfDownloaded?: boolean;
+    notification?: "success" | "pdf_missing";
+    NUM_FACTURA_KOREFACTU?: string | null;
+    LINK_FACTURA_KOREFACTU?: string | null;
+    URL_QR?: string | null;
+    HUELLA_HASH?: string | null;
+    excel_error?: string | null;
+  } | null;
 
   if (payload?.error?.trim()) {
     throw new Error(sanitizeUserFacingError(payload.error.trim()));
@@ -461,7 +472,9 @@ export async function fetchIncompleteRemesaBankingNames(
 
   let query = supabase
     .from("RECIBOS_MENSUALES")
-    .select("RECEPTOR_NOMBRE, CIF_DNI, ID_ALUMNO, METODO_PAGO, ESTADO_PAGO, ALUMNOS(NOMBRE_ALUMNO, IBAN)")
+    .select(
+      "RECEPTOR_NOMBRE, CIF_DNI, ID_ALUMNO, METODO_PAGO, ESTADO_PAGO, ALUMNOS(NOMBRE_ALUMNO, IBAN)",
+    )
     .eq("MES_PERIODO", mesPeriodo);
   query = scopeTenantQuery(query, rol, tenantId);
 
@@ -493,15 +506,10 @@ export async function fetchIncompleteRemesaBankingNames(
   return [...names].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
 
-function resolveReciboAlumnoNombre(
-  recibo: {
-    RECEPTOR_NOMBRE?: string | null;
-    ALUMNOS?:
-      | { NOMBRE_ALUMNO?: string | null }
-      | { NOMBRE_ALUMNO?: string | null }[]
-      | null;
-  },
-): string {
+function resolveReciboAlumnoNombre(recibo: {
+  RECEPTOR_NOMBRE?: string | null;
+  ALUMNOS?: { NOMBRE_ALUMNO?: string | null } | { NOMBRE_ALUMNO?: string | null }[] | null;
+}): string {
   const alumnos = recibo.ALUMNOS;
   const alumnoNombre = Array.isArray(alumnos)
     ? alumnos[0]?.NOMBRE_ALUMNO?.trim()
@@ -521,7 +529,9 @@ export async function fetchSepaBorradorRecibosForEnviar(
 
   let query = supabase
     .from("RECIBOS_MENSUALES")
-    .select("ID_RECIBO, ID_ALUMNO, METODO_PAGO, ESTADO_PAGO, RECEPTOR_NOMBRE, ALUMNOS(NOMBRE_ALUMNO)")
+    .select(
+      "ID_RECIBO, ID_ALUMNO, METODO_PAGO, ESTADO_PAGO, RECEPTOR_NOMBRE, ALUMNOS(NOMBRE_ALUMNO)",
+    )
     .eq("MES_PERIODO", mesPeriodo)
     .eq("ID_CURSO", idCurso)
     .eq("ID_CENTRO", idCentro);
@@ -541,7 +551,9 @@ export async function fetchSepaBorradorRecibosForEnviar(
       ID_ALUMNO: recibo.ID_ALUMNO,
       alumnoNombre: resolveReciboAlumnoNombre(recibo),
     }))
-    .filter((recibo): recibo is EnviarSepaReciboRow => Boolean(recibo.ID_RECIBO && recibo.ID_ALUMNO));
+    .filter((recibo): recibo is EnviarSepaReciboRow =>
+      Boolean(recibo.ID_RECIBO && recibo.ID_ALUMNO),
+    );
 }
 
 export async function fetchDuplicatePaymentConflicts(
@@ -641,7 +653,9 @@ export async function invokeGenerarXmlSepaRemesa(
       throw new Error("No autorizado para generar el XML SEPA.");
     }
     const fromBody = await readFunctionsInvokeError(error);
-    throw new Error(fromBody || (error instanceof Error ? error.message : "Error al generar el XML SEPA."));
+    throw new Error(
+      fromBody || (error instanceof Error ? error.message : "Error al generar el XML SEPA."),
+    );
   }
 
   const link = response?.link?.trim();
@@ -690,7 +704,9 @@ export async function invokeGenerarZipRecibosRemesa(
     if (status === 401) {
       throw new Error("No autorizado para generar el ZIP de facturas.");
     }
-    throw new Error(error instanceof Error ? error.message : "Error al generar el ZIP de facturas.");
+    throw new Error(
+      error instanceof Error ? error.message : "Error al generar el ZIP de facturas.",
+    );
   }
 
   const response = data as {
@@ -721,6 +737,137 @@ export async function invokeGenerarZipRecibosRemesa(
   return { link, skipped: false, pdfCount, missingAlumnos };
 }
 
+export async function encolarRemesaPostProceso(idRemesa: string): Promise<string> {
+  const scopedId = idRemesa.trim();
+  if (!scopedId) {
+    throw new Error("Falta el identificador de la remesa.");
+  }
+
+  const { data, error } = await supabase.rpc("encolar_remesa_post_proceso", {
+    p_id_remesa: scopedId,
+  });
+  if (error) throw error;
+  if (!data) {
+    throw new Error("No se pudo encolar el post-proceso de la remesa.");
+  }
+  return String(data);
+}
+
+export async function invokeProcesarRemesaJob(idJob: string): Promise<void> {
+  const scopedId = idJob.trim();
+  if (!scopedId) {
+    throw new Error("Job de remesa no válido.");
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error("Tu sesión ha caducado. Cierra sesión y vuelve a entrar.");
+  }
+
+  const { data, error } = await supabase.functions.invoke("procesar-remesa-job", {
+    body: {
+      id_job: scopedId,
+      access_token: session.access_token,
+    },
+  });
+
+  const payload = data as { ok?: boolean; accepted?: boolean; error?: string } | null;
+  if (payload?.error?.trim()) {
+    throw new Error(sanitizeUserFacingError(payload.error.trim()));
+  }
+
+  if (error) {
+    const fromBody = await readFunctionsInvokeError(error);
+    if (fromBody) throw new Error(sanitizeUserFacingError(fromBody));
+    const status = (error as { context?: { status?: number } })?.context?.status;
+    if (status === 401) {
+      throw new Error("No autorizado para procesar la remesa en segundo plano.");
+    }
+    throw new Error(
+      sanitizeUserFacingError(
+        error instanceof Error ? error.message : "Error al iniciar el post-proceso de la remesa.",
+      ),
+    );
+  }
+}
+
+export async function fetchActiveRemesaGeneracionJobs(
+  tenantId: string,
+  rol: string | null | undefined,
+): Promise<RemesaGeneracionJob[]> {
+  let query = supabase
+    .from("REMESA_GENERACION_JOBS")
+    .select("*")
+    .in("ESTADO", ["pendiente", "procesando"])
+    .order("CREATED_AT", { ascending: false });
+  query = scopeTenantQuery(query, rol, tenantId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as RemesaGeneracionJob[];
+}
+
+export async function resumePendingRemesaJobs(
+  tenantId: string,
+  rol: string | null | undefined,
+): Promise<void> {
+  const jobs = (await fetchActiveRemesaGeneracionJobs(tenantId, rol)).filter(
+    (job) => job.ESTADO === "pendiente",
+  );
+  for (const job of jobs) {
+    try {
+      await invokeProcesarRemesaJob(job.ID_JOB);
+    } catch (err) {
+      console.error("[resumePendingRemesaJobs]", job.ID_JOB, err);
+    }
+  }
+}
+
+export async function fetchRemesaProcesoAlumnoPrefill(
+  remesaId: string,
+  alumnoId: string,
+): Promise<RemesaProcesoAlumno | null> {
+  const scopedRemesaId = remesaId.trim();
+  const scopedAlumnoId = alumnoId.trim();
+  if (!scopedRemesaId || !scopedAlumnoId) return null;
+
+  const { data, error } = await supabase
+    .from("REMESA_PROCESO_ALUMNO")
+    .select("*")
+    .eq("ID_REMESA", scopedRemesaId)
+    .eq("ID_ALUMNO", scopedAlumnoId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as RemesaProcesoAlumno | null) ?? null;
+}
+
+export async function registrarAvisoRemesaXmlFallido(
+  input: GenerarRemesaMensualInput,
+  errorMessage?: string | null,
+): Promise<void> {
+  const payload = assertGenerarRemesaRpcPayload({
+    p_id_cliente: input.p_id_cliente,
+    p_id_centro: input.p_id_centro,
+    p_id_curso: input.p_id_curso,
+    p_mes_periodo: input.p_mes_periodo,
+  });
+
+  const { error } = await supabase.rpc("fn_aviso_remesa_xml_fallido", {
+    p_id_cliente: payload.p_id_cliente,
+    p_id_centro: payload.p_id_centro,
+    p_id_curso: payload.p_id_curso,
+    p_mes_periodo: payload.p_mes_periodo,
+    p_error: errorMessage?.trim() || null,
+  });
+  if (error) throw error;
+}
+
+export function remesaGeneracionJobsQueryKey(tenantId: string, rol: string | null | undefined) {
+  return [...tenantListKey("remesa-jobs", rol, tenantId)] as const;
+}
+
 export function useRemesas(filterCenterId?: string | null) {
   const { tenantId, rol } = useActiveTenant();
   const qc = useQueryClient();
@@ -738,16 +885,20 @@ export function useRemesas(filterCenterId?: string | null) {
       let query = supabase.from("CONTROL_REMESAS").select("*");
       query = scopeTenantQuery(query, rol, tenantId);
       const { data, error } = await query.order("MES_PERIODO", { ascending: false });
-        
+
       if (error) throw error;
       return data;
     },
   });
 
   const create = useMutation({
-    mutationFn: async (input: any) => {
+    mutationFn: async (input: Partial<ControlRemesa>) => {
       const payload = { ...input, ID_CLIENTE: tenantId };
-      const { data, error } = await supabase.from("CONTROL_REMESAS").insert(payload).select().single();
+      const { data, error } = await supabase
+        .from("CONTROL_REMESAS")
+        .insert(payload)
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
@@ -755,8 +906,14 @@ export function useRemesas(filterCenterId?: string | null) {
   });
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: any }) => {
-      const { data, error } = await supabase.from("CONTROL_REMESAS").update(patch).eq("ID_REMESA", id).eq("ID_CLIENTE", tenantId).select().single();
+    mutationFn: async ({ id, patch }: { id: string; patch: ControlRemesaUpdatePatch }) => {
+      const { data, error } = await supabase
+        .from("CONTROL_REMESAS")
+        .update(patch)
+        .eq("ID_REMESA", id)
+        .eq("ID_CLIENTE", tenantId)
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
@@ -765,7 +922,11 @@ export function useRemesas(filterCenterId?: string | null) {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("CONTROL_REMESAS").delete().eq("ID_REMESA", id).eq("ID_CLIENTE", tenantId);
+      const { error } = await supabase
+        .from("CONTROL_REMESAS")
+        .delete()
+        .eq("ID_REMESA", id)
+        .eq("ID_CLIENTE", tenantId);
       if (error) throw error;
       return id;
     },
@@ -780,8 +941,6 @@ export function useRemesas(filterCenterId?: string | null) {
         p_id_curso: input.p_id_curso,
         p_mes_periodo: input.p_mes_periodo,
       });
-
-      console.log("PAYLOAD BEING SENT TO RPC:", payload);
 
       const { data, error } = await supabase.rpc("generar_remesa_mensual", payload);
       if (error) throw error;

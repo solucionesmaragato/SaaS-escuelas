@@ -24,7 +24,7 @@ import {
   type AusenciaUpdateInput,
   type ProfesorLookup,
 } from "@/hooks/useAusencias";
-import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
+import { useAdminCentroFilter, type CentroData } from "@/hooks/useAdminCentroFilter";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
 import { useActiveTenant } from "@/context/AppContext";
 import {
@@ -39,7 +39,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -88,6 +87,10 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/ausencias")({
+  validateSearch: (search: Record<string, unknown>) => {
+    const permisoId = search.permisoId;
+    return typeof permisoId === "string" && permisoId ? { permisoId } : {};
+  },
   component: PermisosPage,
 });
 
@@ -170,6 +173,15 @@ function EstadoBadge({ estado }: { estado: string | null | undefined }) {
       {label}
     </StatusBadge>
   );
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    const message = String((error as { message: unknown }).message);
+    if (message) return message;
+  }
+  return "Error al actualizar el estado";
 }
 
 function estadoSelectTriggerClass(estado: string | null | undefined): string {
@@ -562,16 +574,13 @@ function canAccessPermisosPage(rol: string | null | undefined): boolean {
 }
 
 function isManagementRoleGate(rol: string | null | undefined): boolean {
-  return (
-    isAdminRole(rol) ||
-    isSecretariaRole(rol) ||
-    isMasterRole(rol) ||
-    isDireccionRole(rol)
-  );
+  return isAdminRole(rol) || isSecretariaRole(rol) || isMasterRole(rol) || isDireccionRole(rol);
 }
 
 function PermisosPage() {
   const { rol, perfil } = useActiveTenant();
+  const { permisoId } = Route.useSearch();
+  const navigate = Route.useNavigate();
 
   if (isProfesorRole(rol)) {
     return <Navigate to="/app/permisos" replace />;
@@ -601,6 +610,17 @@ function PermisosPage() {
   const [overlay, setOverlay] = useState<{ id: string; mode: "detail" | "edit" } | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<AusenciaData | null>(null);
+
+  useEffect(() => {
+    if (!permisoId || list.isLoading) return;
+    const target = ausencias.find((row) => row.ID_PERMISO === permisoId);
+    if (!target) return;
+    setOverlay({ id: target.ID_PERMISO, mode: "detail" });
+    navigate({
+      search: (prev) => ({ ...prev, permisoId: undefined }),
+      replace: true,
+    });
+  }, [permisoId, list.isLoading, ausencias, navigate]);
 
   const overlayPermiso = useMemo(
     () => ausencias.find((a) => a.ID_PERMISO === overlay?.id) ?? null,
@@ -642,7 +662,7 @@ function PermisosPage() {
       });
       toast.success(`Estado actualizado a «${estado}»`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al actualizar el estado");
+      toast.error(extractErrorMessage(err));
     }
   };
 
@@ -654,11 +674,7 @@ function PermisosPage() {
     );
   }
 
-  const colSpan =
-    5 +
-    (isManagementRole ? 1 : 0) +
-    (isMaster ? 2 : 0) +
-    (canMutate ? 1 : 0);
+  const colSpan = 5 + (isManagementRole ? 1 : 0) + (isMaster ? 2 : 0) + (canMutate ? 1 : 0);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4">
@@ -836,15 +852,27 @@ function PermisosPage() {
         submitting={create.isPending}
         profesores={profesores}
         permisos={ausencias}
+        fixedCenterId={filterCenterId}
+        centros={centrosOrdenados}
+        showCentroPickerOnCreate={(isAdmin || isMaster) && !filterCenterId}
         onSubmit={async (values: AusenciaCreateInput) => {
           try {
             const payload = { ...values };
+            if (filterCenterId) {
+              payload.ID_CENTRO = filterCenterId;
+            }
+            if (!payload.ID_CENTRO) {
+              toast.error("Selecciona un centro en el filtro o en el formulario.");
+              return;
+            }
             if (!isManagementRole && perfil.ID_PROFESOR) {
               payload.ID_PROFESOR = perfil.ID_PROFESOR;
             }
             await create.mutateAsync(payload);
             toast.success(
-              isManagementRole ? "Permiso registrado correctamente" : "Solicitud enviada correctamente",
+              isManagementRole
+                ? "Permiso registrado correctamente"
+                : "Solicitud enviada correctamente",
             );
             setCreating(false);
           } catch (err) {
@@ -925,6 +953,9 @@ type PermisoFormDialogBaseProps = {
   profesores: ProfesorLookup[];
   permisos: AusenciaData[];
   embedded?: boolean;
+  fixedCenterId?: string | null;
+  centros?: CentroData[];
+  showCentroPickerOnCreate?: boolean;
 };
 
 type PermisoFormDialogCreateProps = PermisoFormDialogBaseProps & {
@@ -949,6 +980,9 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
     profesores,
     permisos,
     embedded,
+    fixedCenterId,
+    centros = [],
+    showCentroPickerOnCreate = false,
   } = props;
   const { rol, perfil } = useActiveTenant();
   const isMaster = isMasterRole(rol);
@@ -963,6 +997,7 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
   const [fechaFin, setFechaFin] = useState("");
   const [estado, setEstado] = useState<string>("Pendiente");
   const [justificante, setJustificante] = useState("");
+  const [idCentro, setIdCentro] = useState("");
 
   const selfProfesorDisplayName = useMemo(() => {
     if (!perfil?.ID_PROFESOR) return perfil?.NOMBRE ?? "";
@@ -982,7 +1017,8 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
     setFechaFin(initial?.FECHA_FIN ?? "");
     setEstado(normalizeEstado(initial?.ESTADO));
     setJustificante(initial?.JUSTIFICANTE ?? "");
-  }, [open, initial, isManagementRole, perfil?.ID_PROFESOR]);
+    setIdCentro(fixedCenterId ?? "");
+  }, [open, initial, isManagementRole, perfil?.ID_PROFESOR, fixedCenterId]);
 
   const profesoresSelector = useMemo(
     () => profesorSelectorOptions(profesores, idProfesor),
@@ -1009,6 +1045,10 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
         if (!idProfesor || !fechaInicio || !fechaFin) return;
         if (requiresJustificante && !justificante.trim()) {
           toast.error("El justificante es obligatorio para permisos retribuidos");
+          return;
+        }
+        if (showCentroPickerOnCreate && !fixedCenterId && !idCentro) {
+          toast.error("Selecciona un centro.");
           return;
         }
 
@@ -1045,6 +1085,7 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
           FECHA_FIN: fechaFin,
           JUSTIFICANTE: justificante.trim() || null,
           ESTADO: canMutate ? estado : "Pendiente",
+          ID_CENTRO: fixedCenterId ?? (idCentro || null),
         };
         if (!isManagementRole && perfil?.ID_PROFESOR) {
           payload.ID_PROFESOR = perfil.ID_PROFESOR;
@@ -1077,6 +1118,24 @@ function PermisoFormDialog(props: PermisoFormDialogProps) {
 
       {!adminEditOnly && (
         <>
+          {showCentroPickerOnCreate && !fixedCenterId ? (
+            <div className="space-y-2">
+              <Label>Centro *</Label>
+              <Select value={idCentro} onValueChange={setIdCentro}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar centro" />
+                </SelectTrigger>
+                <SelectContent>
+                  {centros.map((centro) => (
+                    <SelectItem key={centro.ID_CENTRO} value={centro.ID_CENTRO}>
+                      {centro.NOMBRE_CENTRO}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label>Trabajador *</Label>
             {isProfesorRole(rol) ? (

@@ -8,12 +8,20 @@ import {
   type MutableRefObject,
 } from "react";
 import jsQR from "jsqr";
-import { MapPin, Pause, Play, QrCode, Square } from "lucide-react";
+import { MapPin, Pause, Play, QrCode, Square, FilePenLine } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { collectFichajeComplianceMetadata } from "@/lib/fichajeCompliance";
 import { logFichajeRejection } from "@/lib/fichajeAudit";
-import { CLOCK_MOVEMENT_TYPES, formatFichajeErrorMessage } from "@/lib/fichajeEidas";
+import { CorrectionRequestDialog } from "@/components/fichajes/CorrectionRequestDialog";
+import { useAvisosInternos } from "@/hooks/useAvisosInternos";
+import type { FichajeData } from "@/hooks/useFichajes";
+import {
+  CLOCK_MOVEMENT_TYPES,
+  canRequestCorrection,
+  formatFichajeErrorMessage,
+  isCorrectionMovement,
+} from "@/lib/fichajeEidas";
 import {
   useProfesorFichajes,
   type ProfesorFichajeCreateInput,
@@ -33,6 +41,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { syncWorkspaceMetadata } from "@/lib/workspace";
 
 type ClockState = "out" | "active" | "paused";
@@ -211,9 +226,11 @@ function formatFechaHora(value: string | null | undefined): string {
 function isInAppBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
-  return /FBAN|FBAV|Instagram|Line\/|WhatsApp|TikTok|musical_ly|Twitter|LinkedInApp|Snapchat|Pinterest|GSA\//i.test(
-    ua,
-  ) || /; wv\)/.test(ua);
+  return (
+    /FBAN|FBAV|Instagram|Line\/|WhatsApp|TikTok|musical_ly|Twitter|LinkedInApp|Snapchat|Pinterest|GSA\//i.test(
+      ua,
+    ) || /; wv\)/.test(ua)
+  );
 }
 
 function formatCameraError(err: unknown): string {
@@ -267,9 +284,11 @@ type BarcodeDetectorLike = {
 };
 
 function createQrBarcodeDetector(): BarcodeDetectorLike | null {
-  const Ctor = (window as unknown as {
-    BarcodeDetector?: new (options: { formats: string[] }) => BarcodeDetectorLike;
-  }).BarcodeDetector;
+  const Ctor = (
+    window as unknown as {
+      BarcodeDetector?: new (options: { formats: string[] }) => BarcodeDetectorLike;
+    }
+  ).BarcodeDetector;
   if (!Ctor) return null;
   try {
     return new Ctor({ formats: ["qr_code"] });
@@ -387,19 +406,22 @@ function ProfesorQrScanner({
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
 
-  const validateAndSuccess = useCallback((value: string) => {
-    const parsed = parseFichajeQrPayload(value);
-    if (parsed && parsed.tenantId === tenantId) {
-      onSuccessRef.current(parsed.centerId);
-      return true;
-    }
-    if (matchesTenantQrPayload(value, tenantId)) {
-      onSuccessRef.current(null);
-      return true;
-    }
-    setError("El código no corresponde a esta escuela.");
-    return false;
-  }, [tenantId]);
+  const validateAndSuccess = useCallback(
+    (value: string) => {
+      const parsed = parseFichajeQrPayload(value);
+      if (parsed && parsed.tenantId === tenantId) {
+        onSuccessRef.current(parsed.centerId);
+        return true;
+      }
+      if (matchesTenantQrPayload(value, tenantId)) {
+        onSuccessRef.current(null);
+        return true;
+      }
+      setError("El código no corresponde a esta escuela.");
+      return false;
+    },
+    [tenantId],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -421,9 +443,14 @@ function ProfesorQrScanner({
         await waitForVideoMetadata(mediaEl);
         await mediaEl.play();
         if (cancelled) return;
-        stopScan = startVideoQrScan(mediaEl, scanningRef, () => cancelled, (rawValue) => {
-          validateAndSuccess(rawValue);
-        });
+        stopScan = startVideoQrScan(
+          mediaEl,
+          scanningRef,
+          () => cancelled,
+          (rawValue) => {
+            validateAndSuccess(rawValue);
+          },
+        );
       } catch {
         if (!cancelled) setError("No se pudo iniciar la vista de la cámara.");
       }
@@ -442,13 +469,7 @@ function ProfesorQrScanner({
   return (
     <div className="w-full space-y-2">
       <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-black">
-        <video
-          ref={videoRef}
-          className="h-full w-full object-cover"
-          autoPlay
-          muted
-          playsInline
-        />
+        <video ref={videoRef} className="h-full w-full object-cover" autoPlay muted playsInline />
       </div>
       {error && <p className="text-center text-sm text-destructive">{error}</p>}
     </div>
@@ -838,12 +859,69 @@ function ProfesorFichajesView({
   );
 }
 
-export function TeacherFichajesDashboard() {
+export function TeacherFichajesDashboard({ highlightFichajeId }: { highlightFichajeId?: string }) {
   const { perfil, tenantId } = useActiveTenant();
   const { session } = useApp();
-  const { list, insert } = useProfesorFichajes();
+  const { list, insert, requestCorrection, respondManualAcceptance, respondAdminModification } =
+    useProfesorFichajes();
+  const { list: avisosList } = useAvisosInternos();
 
   const fichajes = useMemo(() => list.data ?? [], [list.data]);
+
+  const pendingSolicitudes = useMemo(() => {
+    return (avisosList.data ?? []).filter((aviso) => {
+      if (aviso.LEIDO !== false) return false;
+      const tipo = aviso.TIPO?.trim() ?? "";
+      return (
+        tipo === "Fichaje pendiente de aceptación" || tipo === "Modificación de fichaje pendiente"
+      );
+    });
+  }, [avisosList.data]);
+
+  const correctionRespuestas = useMemo(() => {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return (avisosList.data ?? []).filter((aviso) => {
+      const tipo = aviso.TIPO?.trim() ?? "";
+      if (
+        tipo !== "Corrección de fichaje autorizada" &&
+        tipo !== "Corrección de fichaje rechazada"
+      ) {
+        return false;
+      }
+      if (!aviso.FECHA) return true;
+      const fecha = new Date(aviso.FECHA);
+      return !Number.isNaN(fecha.getTime()) && fecha.getTime() >= cutoff;
+    });
+  }, [avisosList.data]);
+
+  const corregibles = useMemo(() => {
+    const solicitudRows = fichajes.map((row) => ({
+      ID_FICHAJE: row.ID_FICHAJE,
+      ID_FICHAJE_CORREGIDO: row.ID_FICHAJE_CORREGIDO ?? null,
+      TIPO_MOVIMIENTO: row.TIPO_MOVIMIENTO,
+      ESTADO: row.ESTADO ?? null,
+    }));
+    return fichajes.filter((f) => {
+      if (isFichajeAnulado(f.ESTADO_LEGAL)) return false;
+      const mov = normalizeMovimiento(f.TIPO_MOVIMIENTO);
+      if (isCorrectionMovement(mov)) return false;
+      if (!CLOCK_MOVEMENT_TYPES.has(mov)) return false;
+      return canRequestCorrection(
+        { ID_FICHAJE: f.ID_FICHAJE, TIPO_MOVIMIENTO: f.TIPO_MOVIMIENTO },
+        solicitudRows,
+      );
+    });
+  }, [fichajes]);
+
+  const [correctionRecord, setCorrectionRecord] = useState<FichajeData | null>(null);
+  const [correctionPickerId, setCorrectionPickerId] = useState("");
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [rejectDialog, setRejectDialog] = useState<{
+    idFichaje: string;
+    tipo: "manual" | "modificacion";
+    mensaje: string;
+  } | null>(null);
+  const [rejectMotivo, setRejectMotivo] = useState("");
 
   const auditRejectedFichaje = (input: ProfesorFichajeCreateInput, err: unknown) => {
     void logFichajeRejection({
@@ -866,6 +944,72 @@ export function TeacherFichajesDashboard() {
     }
   };
 
+  const handleAcceptSolicitud = async (idFichaje: string, tipo: "manual" | "modificacion") => {
+    try {
+      if (tipo === "manual") {
+        await respondManualAcceptance.mutateAsync({ idFichaje, acepta: true });
+      } else {
+        await respondAdminModification.mutateAsync({ idFichaje, acepta: true });
+      }
+      toast.success("Solicitud aceptada.");
+    } catch (err) {
+      toast.error(formatFichajeErrorMessage(err));
+    }
+  };
+
+  const handleRejectSolicitud = async () => {
+    if (!rejectDialog) return;
+    const motivo = rejectMotivo.trim();
+    if (!motivo) {
+      toast.error("Indica el motivo del rechazo.");
+      return;
+    }
+    try {
+      if (rejectDialog.tipo === "manual") {
+        await respondManualAcceptance.mutateAsync({
+          idFichaje: rejectDialog.idFichaje,
+          acepta: false,
+          motivo,
+        });
+      } else {
+        await respondAdminModification.mutateAsync({
+          idFichaje: rejectDialog.idFichaje,
+          acepta: false,
+          motivo,
+        });
+      }
+      toast.success("Solicitud rechazada.");
+      setRejectDialog(null);
+      setRejectMotivo("");
+    } catch (err) {
+      toast.error(formatFichajeErrorMessage(err));
+    }
+  };
+
+  const handleRequestCorrection = async (values: { fechaHoraManual: string; motivo: string }) => {
+    if (!perfil.ID_PROFESOR || !correctionRecord) return;
+    const compliance = await collectFichajeComplianceMetadata();
+    try {
+      await requestCorrection.mutateAsync({
+        idFichajeCorregido: correctionRecord.ID_FICHAJE,
+        fechaHoraManual: values.fechaHoraManual,
+        motivo: values.motivo,
+        compliance,
+      });
+      toast.success("Solicitud de corrección enviada.");
+      setCorrectionOpen(false);
+      setCorrectionRecord(null);
+      setCorrectionPickerId("");
+    } catch (err) {
+      toast.error(formatFichajeErrorMessage(err));
+    }
+  };
+
+  const solicitudBusy =
+    respondManualAcceptance.isPending ||
+    respondAdminModification.isPending ||
+    requestCorrection.isPending;
+
   return (
     <div className="space-y-4">
       {list.isError && (
@@ -873,6 +1017,146 @@ export function TeacherFichajesDashboard() {
           Error al cargar fichajes: {(list.error as Error)?.message}
         </div>
       )}
+
+      {pendingSolicitudes.length > 0 && (
+        <Card className="w-full space-y-3 p-4">
+          <h2 className="text-sm font-semibold">Solicitudes pendientes</h2>
+          {pendingSolicitudes.map((aviso) => {
+            const idFichaje = aviso.ID_FICHAJE?.trim() ?? "";
+            const tipo =
+              aviso.TIPO?.trim() === "Modificación de fichaje pendiente"
+                ? "modificacion"
+                : "manual";
+            const highlighted = highlightFichajeId && idFichaje === highlightFichajeId;
+            return (
+              <div
+                key={aviso.ID_AVISO}
+                className={`rounded-md border p-3 space-y-2${
+                  highlighted ? " border-primary ring-2 ring-primary/30" : ""
+                }`}
+              >
+                <p className="text-sm">{aviso.MENSAJE}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="brand"
+                    disabled={solicitudBusy || !idFichaje}
+                    onClick={() => void handleAcceptSolicitud(idFichaje, tipo)}
+                  >
+                    Aceptar
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={solicitudBusy || !idFichaje}
+                    onClick={() => {
+                      setRejectMotivo("");
+                      setRejectDialog({
+                        idFichaje,
+                        tipo,
+                        mensaje: aviso.MENSAJE ?? "",
+                      });
+                    }}
+                  >
+                    Rechazar
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {correctionRespuestas.length > 0 && (
+        <Card className="w-full space-y-3 p-4">
+          <h2 className="text-sm font-semibold">Respuestas a correcciones</h2>
+          {correctionRespuestas.map((aviso) => {
+            const idFichaje = aviso.ID_FICHAJE?.trim() ?? "";
+            const highlighted = highlightFichajeId && idFichaje === highlightFichajeId;
+            return (
+              <div
+                key={aviso.ID_AVISO}
+                className={`rounded-md border p-3 space-y-1${
+                  highlighted ? " border-primary ring-2 ring-primary/30" : ""
+                }`}
+              >
+                <p className="text-xs font-medium text-muted-foreground">{aviso.TIPO}</p>
+                <p className="text-sm">{aviso.MENSAJE}</p>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      <Card className="w-full space-y-3 p-4">
+        <h2 className="text-sm font-semibold">Solicitar corrección</h2>
+        {corregibles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay fichajes disponibles para corregir.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Select
+              value={correctionPickerId}
+              onValueChange={(value) => {
+                setCorrectionPickerId(value);
+                const row = corregibles.find((f) => f.ID_FICHAJE === value);
+                if (!row) {
+                  setCorrectionRecord(null);
+                  return;
+                }
+                setCorrectionRecord({
+                  ID_FICHAJE: row.ID_FICHAJE,
+                  ID_CLIENTE: row.ID_CLIENTE,
+                  ID_PROFESOR: row.ID_PROFESOR,
+                  TIPO_MOVIMIENTO: row.TIPO_MOVIMIENTO,
+                  MODALIDAD: row.MODALIDAD,
+                  FECHA_HORA: row.FECHA_HORA_REAL,
+                  FECHA_HORA_REAL: row.FECHA_HORA_REAL,
+                  ESTADO_LEGAL: row.ESTADO_LEGAL,
+                  IP_FICHAJE: null,
+                  USER_AGENT: null,
+                  LATITUD_LONGITUD: null,
+                  UBICACION: null,
+                  METODO: null,
+                  NOTAS: row.NOTAS,
+                  TOTAL_HORAS_INTERVALO: row.TOTAL_HORAS_INTERVALO,
+                  TOTAL_HORAS_ACUMULADAS_DIA: row.TOTAL_HORAS_ACUMULADAS_DIA,
+                  ID_FICHAJE_CORREGIDO: null,
+                  MODIFICADO_POR: null,
+                  FECHA_HORA_MODIFICACION: null,
+                  MOTIVO_MODIFICACION: null,
+                  FECHA_HORA_MANUAL: null,
+                  PROFESOR: null,
+                });
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar fichaje" />
+              </SelectTrigger>
+              <SelectContent>
+                {corregibles.map((f) => (
+                  <SelectItem key={f.ID_FICHAJE} value={f.ID_FICHAJE}>
+                    {formatFechaHora(f.FECHA_HORA_REAL)} · {f.TIPO_MOVIMIENTO}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2"
+              disabled={!correctionRecord || solicitudBusy}
+              onClick={() => setCorrectionOpen(true)}
+            >
+              <FilePenLine className="h-4 w-4" />
+              Solicitar corrección
+            </Button>
+          </div>
+        )}
+      </Card>
 
       <ProfesorFichajesView
         fichajes={fichajes}
@@ -883,6 +1167,46 @@ export function TeacherFichajesDashboard() {
         isPending={insert.isPending}
         onClockAction={handleClockAction}
       />
+
+      <CorrectionRequestDialog
+        open={correctionOpen}
+        record={correctionRecord}
+        submitting={requestCorrection.isPending}
+        onClose={() => setCorrectionOpen(false)}
+        onSubmit={handleRequestCorrection}
+      />
+
+      <Dialog open={!!rejectDialog} onOpenChange={(open) => !open && setRejectDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rechazar solicitud</DialogTitle>
+            <DialogDescription>{rejectDialog?.mensaje}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="motivo-rechazo-fichaje">Motivo del rechazo *</Label>
+            <Textarea
+              id="motivo-rechazo-fichaje"
+              value={rejectMotivo}
+              onChange={(e) => setRejectMotivo(e.target.value)}
+              rows={4}
+              placeholder="Explica por qué rechazas esta solicitud..."
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setRejectDialog(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={solicitudBusy || !rejectMotivo.trim()}
+              onClick={() => void handleRejectSolicitud()}
+            >
+              {solicitudBusy ? "Guardando..." : "Confirmar rechazo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

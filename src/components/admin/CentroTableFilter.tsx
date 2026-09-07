@@ -36,9 +36,7 @@ export function CentroTableFilter({
       {!hideLabel ? <Label htmlFor={id}>Centro</Label> : null}
       <Select
         value={value ?? ALL_CENTROS_FILTER_VALUE}
-        onValueChange={(next) =>
-          onChange(next === ALL_CENTROS_FILTER_VALUE ? null : next)
-        }
+        onValueChange={(next) => onChange(next === ALL_CENTROS_FILTER_VALUE ? null : next)}
       >
         <SelectTrigger id={id} className={cn(hideLabel && "h-8 min-w-0 [&>span]:truncate")}>
           <SelectValue placeholder="Todos los centros" />

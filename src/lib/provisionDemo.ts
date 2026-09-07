@@ -70,8 +70,7 @@ export async function invokePreProvisionDemo(body: {
   if (error) {
     const fromBody = await readFunctionsInvokeError(error);
     throw new Error(
-      fromBody ||
-        (error instanceof Error ? error.message : "No se pudo preparar el entorno demo."),
+      fromBody || (error instanceof Error ? error.message : "No se pudo preparar el entorno demo."),
     );
   }
   if (!data?.ok) {

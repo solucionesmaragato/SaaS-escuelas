@@ -21,15 +21,9 @@ export function SchoolBrandAvatar({
 
   return (
     <Avatar className={cn("h-14 w-14 rounded-full ring-2 ring-background shadow-sm", className)}>
-      {hasLogo ? (
-        <AvatarImage src={logoUrl!} alt={schoolName} className="object-cover" />
-      ) : null}
+      {hasLogo ? <AvatarImage src={logoUrl!} alt={schoolName} className="object-cover" /> : null}
       <AvatarFallback
-        className={cn(
-          "rounded-full text-base font-bold tracking-wide",
-          palette,
-          fallbackClassName,
-        )}
+        className={cn("rounded-full text-base font-bold tracking-wide", palette, fallbackClassName)}
       >
         {initials}
       </AvatarFallback>

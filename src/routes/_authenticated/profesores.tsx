@@ -190,7 +190,12 @@ function ProfesorPersonalDataView({
             />
 
             <div className="flex justify-end border-t pt-4">
-              <Button type="submit" variant="brand" form="profesor-form" disabled={update.isPending}>
+              <Button
+                type="submit"
+                variant="brand"
+                form="profesor-form"
+                disabled={update.isPending}
+              >
                 {update.isPending ? "Guardando..." : "Guardar cambios"}
               </Button>
             </div>
@@ -389,12 +394,8 @@ function ProfesoresPage() {
   const { tab: searchTab, profesorId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { list, create, update } = useProfesores();
-  const {
-    centrosOrdenados,
-    showCentroFilter,
-    selectedCenterId,
-    setSelectedCenterId,
-  } = useAdminCentroFilter();
+  const { centrosOrdenados, showCentroFilter, selectedCenterId, setSelectedCenterId } =
+    useAdminCentroFilter();
 
   const profesores = useMemo(() => list.data?.profesores ?? [], [list.data?.profesores]);
   const aulas = useMemo(() => list.data?.aulas ?? [], [list.data?.aulas]);

@@ -48,6 +48,8 @@ const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 const STORAGE_KEY = "activePerfilId";
 
+export const ACTIVE_PERFIL_STORAGE_KEY = STORAGE_KEY;
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
@@ -114,10 +116,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const stored =
           typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
         const storedValid = stored ? rows.find((p) => p.ID_PERFIL === stored) : null;
+        const jwtPerfilId = String(session.user.user_metadata?.current_perfil_id ?? "").trim();
+        const jwtValid = jwtPerfilId ? rows.find((p) => p.ID_PERFIL === jwtPerfilId) : null;
 
         let chosenPerfilId: string | null = null;
         if (storedValid) {
           chosenPerfilId = storedValid.ID_PERFIL;
+        } else if (jwtValid) {
+          chosenPerfilId = jwtValid.ID_PERFIL;
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(STORAGE_KEY, jwtPerfilId);
+          }
         } else if (rows.length === 1) {
           chosenPerfilId = rows[0].ID_PERFIL;
           if (typeof window !== "undefined") {
@@ -128,18 +137,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (chosenPerfilId) {
           const perfil = rows.find((p) => p.ID_PERFIL === chosenPerfilId);
           if (perfil) {
-            const jwtPerfilIdEmpty = !String(
-              session.user.user_metadata?.current_perfil_id ?? "",
-            ).trim();
+            const jwtMatches = jwtPerfilId === chosenPerfilId;
             try {
-              await syncWorkspaceMetadataWithRetry(perfil, jwtPerfilIdEmpty ? 2 : 1);
-              if (cancelled) return;
-              const { data: refreshed } = await supabase.auth.getSession();
-              if (refreshed.session) setSession(refreshed.session);
+              if (!jwtMatches) {
+                const jwtPerfilIdEmpty = jwtPerfilId.length === 0;
+                await syncWorkspaceMetadataWithRetry(perfil, jwtPerfilIdEmpty ? 2 : 1);
+                if (cancelled) return;
+                const { data: refreshed } = await supabase.auth.getSession();
+                if (refreshed.session) setSession(refreshed.session);
+              }
             } catch (syncError) {
               console.error("Failed to sync workspace metadata (JWT refresh)", syncError);
               if (cancelled) return;
-              setActivePerfilIdState(null);
+              const fallbackPerfilId = storedValid?.ID_PERFIL ?? jwtValid?.ID_PERFIL ?? null;
+              if (fallbackPerfilId) {
+                setActivePerfilIdState(fallbackPerfilId);
+              } else {
+                setActivePerfilIdState(null);
+              }
               setWorkspaceSyncError(
                 syncError instanceof Error
                   ? syncError.message
@@ -199,7 +214,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setDemoTrialError(null);
       return !result.expired;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "No se pudo comprobar la prueba demo";
+      const message =
+        error instanceof Error ? error.message : "No se pudo comprobar la prueba demo";
       setDemoTrialError(message);
       throw error;
     }
