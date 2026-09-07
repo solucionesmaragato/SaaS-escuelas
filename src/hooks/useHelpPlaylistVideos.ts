@@ -16,10 +16,9 @@ export function useHelpPlaylistVideos() {
   return useQuery({
     queryKey: ["help-playlist-videos", HELP_VIDEOS_PLAYLIST_ID],
     queryFn: async (): Promise<HelpPlaylistVideo[]> => {
-      const { data, error } = await supabase.functions.invoke<PlaylistResponse>(
-        `youtube-playlist-items?playlistId=${encodeURIComponent(HELP_VIDEOS_PLAYLIST_ID)}`,
-        { method: "GET" },
-      );
+      const { data, error } = await supabase.functions.invoke<PlaylistResponse>("youtube-playlist-items", {
+        method: "GET",
+      });
 
       if (error) {
         throw new Error(error.message || "No se pudo cargar la playlist de vídeos.");
