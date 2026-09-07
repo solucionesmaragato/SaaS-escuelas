@@ -1,9 +1,10 @@
 /* eslint-disable react-refresh/only-export-components -- shared navigation helpers for avisos */
 import { useMemo, useState } from "react";
-import { Bell, CheckCircle2 } from "lucide-react";
+import { Bell, CheckCircle2, UserCheck } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAvisosInternos, type AvisoInterno } from "@/hooks/useAvisosInternos";
 import { useActiveTenant } from "@/context/AppContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   isAdminRole,
   isDireccionRole,
@@ -27,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { MatriculaFirmadaPdfButton } from "@/components/matricula/MatriculaFirmadaPdfButton";
 import { toast } from "sonner";
 
 function formatAvisoFecha(value: string | null | undefined): string {
@@ -87,7 +89,12 @@ function isIncidenciaAviso(aviso: AvisoInterno): boolean {
   );
 }
 
+function isMatriculaOnlinePendienteAviso(aviso: AvisoInterno): boolean {
+  return (aviso.TIPO?.trim() ?? "") === "Matrícula online pendiente";
+}
+
 function isMatriculaIncompletaAviso(aviso: AvisoInterno): boolean {
+  if (isMatriculaOnlinePendienteAviso(aviso)) return false;
   const tipo = aviso.TIPO?.trim() ?? "";
   if (tipo === "Matrícula incompleta" || tipo === "Matrícula pendiente grupo") return true;
   if (aviso.ID_MATRICULA?.trim()) return true;
@@ -271,6 +278,15 @@ export function navigateFromAviso(
     return;
   }
 
+  if (isMatriculaOnlinePendienteAviso(aviso)) {
+    const alumnoId = aviso.ID_ALUMNO?.trim();
+    navigate({
+      to: "/alumnos",
+      search: alumnoId ? { alumnoId } : {},
+    });
+    return;
+  }
+
   if (isMatriculaIncompletaAviso(aviso)) {
     const matriculaId = aviso.ID_MATRICULA?.trim();
     navigate({
@@ -350,6 +366,18 @@ export function navigateFromAviso(
   }
 }
 
+function canActivarAlumnoPreinscripcion(
+  aviso: AvisoInterno,
+  rol: string | null | undefined,
+): boolean {
+  if (!isMatriculaOnlinePendienteAviso(aviso)) return false;
+  if (!aviso.ID_ALUMNO?.trim()) return false;
+  if (isProfesorRole(rol)) return false;
+  return (
+    isMasterRole(rol) || isAdminRole(rol) || isSecretariaRole(rol) || isDireccionRole(rol)
+  );
+}
+
 function avisoRequiresFichajeRpc(aviso: AvisoInterno): boolean {
   const tipo = aviso.TIPO?.trim() ?? "";
   return (
@@ -360,6 +388,7 @@ function avisoRequiresFichajeRpc(aviso: AvisoInterno): boolean {
 }
 
 function canMarkAvisoAsResolved(aviso: AvisoInterno, rol: string | null | undefined): boolean {
+  if (isMatriculaOnlinePendienteAviso(aviso)) return false;
   if (isProfesorRole(rol) || isDireccionRole(rol)) return false;
   if (avisoRequiresFichajeRpc(aviso)) return false;
   if (isFichajeUrgenteAviso(aviso) && !isMasterRole(rol) && !isAdminRole(rol)) return false;
@@ -372,6 +401,7 @@ function isStaffPanelOnlyFichajeAviso(aviso: AvisoInterno): boolean {
 
 function isAvisoNavigable(aviso: AvisoInterno): boolean {
   if (isIncidenciaAviso(aviso)) return true;
+  if (isMatriculaOnlinePendienteAviso(aviso)) return Boolean(aviso.ID_ALUMNO?.trim());
   if (isMatriculaIncompletaAviso(aviso)) return true;
   if (isEvaluacionesNuevasAviso(aviso)) return Boolean(aviso.ID_PROFESOR?.trim());
   if (isPrestamoMaterialAviso(aviso)) return true;
@@ -441,6 +471,8 @@ export function AvisosPendientesDialog({
   const { pending, isLoading, isError, error } = usePendingAvisosInternos(filterCenterId);
   const { markAsRead } = useAvisosInternos();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [activatingAviso, setActivatingAviso] = useState<AvisoInterno | null>(null);
+  const [isActivating, setIsActivating] = useState(false);
 
   const handleResolveClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -455,6 +487,38 @@ export function AvisosPendientesDialog({
       setConfirmingId(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "No se pudo marcar el aviso.");
+    }
+  };
+
+  const handleActivarClick = (e: React.MouseEvent, aviso: AvisoInterno) => {
+    e.stopPropagation();
+    setActivatingAviso(aviso);
+  };
+
+  const handleConfirmActivar = async () => {
+    const alumnoId = activatingAviso?.ID_ALUMNO?.trim();
+    const avisoId = activatingAviso?.ID_AVISO;
+    if (!alumnoId || !avisoId) return;
+
+    setIsActivating(true);
+    try {
+      const { data, error } = await supabase.rpc("activar_alumno_preinscripcion", {
+        p_id_alumno: alumnoId,
+      });
+      if (error) throw error;
+
+      const result = data as { ok?: boolean; error?: string };
+      if (!result?.ok) {
+        throw new Error(result?.error ?? "No se pudo activar el alumno.");
+      }
+
+      await markAsRead.mutateAsync(avisoId);
+      toast.success("Alumno activado correctamente.");
+      setActivatingAviso(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo activar el alumno.");
+    } finally {
+      setIsActivating(false);
     }
   };
 
@@ -507,18 +571,38 @@ export function AvisosPendientesDialog({
                     <p className="text-sm leading-relaxed">{aviso.MENSAJE ?? "—"}</p>
                   </div>
 
-                  {canMarkAvisoAsResolved(aviso, rol) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0 gap-2"
-                      disabled={markAsRead.isPending}
-                      onClick={(e) => handleResolveClick(e, aviso.ID_AVISO)}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      Marcar como resuelto
-                    </Button>
-                  )}
+                  <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                    {canActivarAlumnoPreinscripcion(aviso, rol) && (
+                      <>
+                        <MatriculaFirmadaPdfButton
+                          idAlumno={aviso.ID_ALUMNO!.trim()}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                        <Button
+                          size="sm"
+                          variant="brand"
+                          className="gap-2"
+                          disabled={isActivating}
+                          onClick={(e) => handleActivarClick(e, aviso)}
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          Activar alumno
+                        </Button>
+                      </>
+                    )}
+                    {canMarkAvisoAsResolved(aviso, rol) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-2"
+                        disabled={markAsRead.isPending}
+                        onClick={(e) => handleResolveClick(e, aviso.ID_AVISO)}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        Marcar como resuelto
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -544,6 +628,38 @@ export function AvisosPendientesDialog({
               }}
             >
               {markAsRead.isPending ? "Guardando…" : "Confirmar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!activatingAviso}
+        onOpenChange={(open) => !open && !isActivating && setActivatingAviso(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Activar alumno</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se activará el alumno{" "}
+              <strong>
+                {activatingAviso?.NOMBRE_ALUMNO?.trim() ||
+                  activatingAviso?.NOMBRE_LEAD?.trim() ||
+                  "seleccionado"}
+              </strong>{" "}
+              (estado Preinscripción → Activo) y se marcará este aviso como leído.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isActivating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isActivating}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmActivar();
+              }}
+            >
+              {isActivating ? "Activando…" : "Confirmar activación"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

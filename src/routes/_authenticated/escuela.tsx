@@ -25,9 +25,9 @@ import {
   type CursoEscolarUpdateInput,
 } from "@/hooks/useCentros";
 import {
-  EMPTY_EMPRESA_FORM,
   empresaToFormInput,
   useEmpresaCliente,
+  type EmpresaClienteData,
   type EmpresaClienteFormInput,
 } from "@/hooks/useEmpresaCliente";
 import { useActiveTenant, useApp } from "@/context/AppContext";
@@ -39,6 +39,12 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import {
+  MATRICULA_TEXTOS_FIELDS,
+  MATRICULA_TEXTOS_SECTION_SUBTITLE,
+  MATRICULA_TEXTOS_SECTION_TITLE,
+  type MatriculaTextoFieldKey,
+} from "@/lib/matriculaTextosLabels";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Table,
@@ -63,6 +69,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import {
   deleteCursoEscolar,
@@ -736,26 +743,18 @@ function CursoEscolarHistoryTable({
   );
 }
 
-function EmpresaDatosDialog({
-  open,
-  loading,
+function EmpresaDatosForm({
+  empresaData,
   submitting,
-  initialValues,
   onClose,
   onSubmit,
 }: {
-  open: boolean;
-  loading: boolean;
+  empresaData: EmpresaClienteData;
   submitting: boolean;
-  initialValues: EmpresaClienteFormInput;
   onClose: () => void;
   onSubmit: (values: EmpresaClienteFormInput) => Promise<void>;
 }) {
-  const [form, setForm] = useState<EmpresaClienteFormInput>(initialValues);
-
-  useEffect(() => {
-    if (open) setForm(initialValues);
-  }, [open, initialValues]);
+  const [form, setForm] = useState<EmpresaClienteFormInput>(() => empresaToFormInput(empresaData));
 
   const canSave = useMemo(
     () =>
@@ -772,33 +771,22 @@ function EmpresaDatosDialog({
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Datos de la Empresa</DialogTitle>
-          <DialogDescription>
-            Información principal de la escuela vinculada a tu workspace activo.
-          </DialogDescription>
-        </DialogHeader>
+  const setTextareaField =
+    (field: MatriculaTextoFieldKey) => (e: ChangeEvent<HTMLTextAreaElement>) => {
+      setForm((prev) => ({ ...prev, [field]: e.target.value }));
+    };
 
-        {loading ? (
-          <div className="space-y-3 py-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : (
-          <form
-            id="empresa-datos-form"
-            name="empresaDatosForm"
-            className="space-y-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!canSave) return;
-              await onSubmit(form);
-            }}
-          >
+  return (
+    <form
+      id="empresa-datos-form"
+      name="empresaDatosForm"
+      className="space-y-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        if (!canSave) return;
+        await onSubmit(form);
+      }}
+    >
             <div className="space-y-2">
               <Label htmlFor="NOMBRE_ESCUELA">Nombre de la escuela *</Label>
               <Input
@@ -865,6 +853,26 @@ function EmpresaDatosDialog({
               </div>
             </div>
 
+            <div className="space-y-4 border-t pt-4">
+              <div>
+                <h3 className="text-sm font-semibold">{MATRICULA_TEXTOS_SECTION_TITLE}</h3>
+                <p className="text-xs text-muted-foreground">{MATRICULA_TEXTOS_SECTION_SUBTITLE}</p>
+              </div>
+              {MATRICULA_TEXTOS_FIELDS.map((field) => (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={field.key}>{field.label}</Label>
+                  <Textarea
+                    id={field.key}
+                    name={field.key}
+                    rows={field.key === "TEXTO_REGIMEN_INTERNO" ? 5 : 4}
+                    value={form[field.key]}
+                    onChange={setTextareaField(field.key)}
+                    placeholder={field.placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
                 Cancelar
@@ -874,6 +882,60 @@ function EmpresaDatosDialog({
               </Button>
             </DialogFooter>
           </form>
+  );
+}
+
+function EmpresaDatosDialog({
+  open,
+  loading,
+  errorMessage,
+  empresaData,
+  formKey,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  loading: boolean;
+  errorMessage?: string | null;
+  empresaData?: EmpresaClienteData;
+  formKey?: string;
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (values: EmpresaClienteFormInput) => Promise<void>;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Datos de la Empresa</DialogTitle>
+          <DialogDescription>
+            Información principal de la escuela vinculada a tu workspace activo.
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="space-y-3 py-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : errorMessage ? (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {errorMessage}
+          </div>
+        ) : !empresaData ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            No se encontraron datos de la empresa para el workspace activo.
+          </div>
+        ) : (
+          <EmpresaDatosForm
+            key={formKey}
+            empresaData={empresaData}
+            submitting={submitting}
+            onClose={onClose}
+            onSubmit={onSubmit}
+          />
         )}
       </DialogContent>
     </Dialog>
@@ -1233,10 +1295,12 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
     [centroOverlay, list.data],
   );
 
-  const empresaFormInitial = useMemo(
-    () => (empresa.data ? empresaToFormInput(empresa.data) : EMPTY_EMPRESA_FORM),
-    [empresa.data],
-  );
+  const empresaDialogLoading =
+    empresa.isPending || (empresaOpen && (empresa.isFetching || !empresa.data));
+
+  const empresaFormKey = empresa.data
+    ? `${empresa.data.ID_CLIENTE}-${empresa.dataUpdatedAt}`
+    : undefined;
 
   const escuelaNombre =
     empresa.data?.NOMBRE_ESCUELA?.trim() || cliente?.NOMBRE_ESCUELA?.trim() || "tu escuela";
@@ -1365,7 +1429,10 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
               type="button"
               variant="brand-outline"
               className="shrink-0 gap-2 shadow-sm"
-              onClick={() => setEmpresaOpen(true)}
+              onClick={() => {
+                void empresa.refetch();
+                setEmpresaOpen(true);
+              }}
             >
               <Building2 className="h-4 w-4 text-brand" />
               Modificar/Ver datos empresa
@@ -1562,9 +1629,17 @@ function EscuelaPageContent({ canAccess }: { canAccess: boolean }) {
       {canAccess && (
         <EmpresaDatosDialog
           open={empresaOpen}
-          loading={empresa.isLoading}
+          loading={empresaDialogLoading}
+          errorMessage={
+            empresa.isError
+              ? empresa.error instanceof Error
+                ? empresa.error.message
+                : "No se pudieron cargar los datos de la empresa."
+              : null
+          }
+          empresaData={empresa.data}
+          formKey={empresaFormKey}
           submitting={updateEmpresa.isPending}
-          initialValues={empresaFormInitial}
           onClose={() => setEmpresaOpen(false)}
           onSubmit={handleSaveEmpresa}
         />

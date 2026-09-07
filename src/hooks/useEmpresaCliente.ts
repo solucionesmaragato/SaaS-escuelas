@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useActiveTenant } from "@/context/AppContext";
 import { hasPermission } from "@/lib/rbac";
-import { tenantListKey } from "@/lib/tenantQuery";
 import type { UUID } from "@/types/database";
 
+const EMPRESA_TABLE = "VISTA_EMPRESA_CLIENTE" as const;
+
 const EMPRESA_SELECT =
-  "ID_CLIENTE, NOMBRE_ESCUELA, TLF_REAL, URL_WEB, EMAIL_CLIENTE, APP_LOGO, CIF, DIRECCION" as const;
+  "ID_CLIENTE, NOMBRE_ESCUELA, TLF_REAL, URL_WEB, EMAIL_CLIENTE, APP_LOGO, CIF, DIRECCION, TEXTO_REGIMEN_INTERNO, TEXTO_AUT_MEDIOS, TEXTO_AUT_INSTALACIONES, TEXTO_AUT_WEB, TEXTO_AUT_RRSS, TEXTO_AUT_COMUNICACION" as const;
 
 export type EmpresaClienteData = {
   ID_CLIENTE: UUID;
@@ -17,6 +18,12 @@ export type EmpresaClienteData = {
   APP_LOGO: string | null;
   CIF: string | null;
   DIRECCION: string | null;
+  TEXTO_REGIMEN_INTERNO: string | null;
+  TEXTO_AUT_MEDIOS: string | null;
+  TEXTO_AUT_INSTALACIONES: string | null;
+  TEXTO_AUT_WEB: string | null;
+  TEXTO_AUT_RRSS: string | null;
+  TEXTO_AUT_COMUNICACION: string | null;
 };
 
 export type EmpresaClienteFormInput = {
@@ -27,6 +34,12 @@ export type EmpresaClienteFormInput = {
   APP_LOGO: string;
   CIF: string;
   DIRECCION: string;
+  TEXTO_REGIMEN_INTERNO: string;
+  TEXTO_AUT_MEDIOS: string;
+  TEXTO_AUT_INSTALACIONES: string;
+  TEXTO_AUT_WEB: string;
+  TEXTO_AUT_RRSS: string;
+  TEXTO_AUT_COMUNICACION: string;
 };
 
 export const EMPTY_EMPRESA_FORM: EmpresaClienteFormInput = {
@@ -37,6 +50,12 @@ export const EMPTY_EMPRESA_FORM: EmpresaClienteFormInput = {
   APP_LOGO: "",
   CIF: "",
   DIRECCION: "",
+  TEXTO_REGIMEN_INTERNO: "",
+  TEXTO_AUT_MEDIOS: "",
+  TEXTO_AUT_INSTALACIONES: "",
+  TEXTO_AUT_WEB: "",
+  TEXTO_AUT_RRSS: "",
+  TEXTO_AUT_COMUNICACION: "",
 };
 
 export function empresaToFormInput(data: EmpresaClienteData): EmpresaClienteFormInput {
@@ -48,6 +67,12 @@ export function empresaToFormInput(data: EmpresaClienteData): EmpresaClienteForm
     APP_LOGO: data.APP_LOGO?.trim() ?? "",
     CIF: data.CIF?.trim() ?? "",
     DIRECCION: data.DIRECCION?.trim() ?? "",
+    TEXTO_REGIMEN_INTERNO: data.TEXTO_REGIMEN_INTERNO?.trim() ?? "",
+    TEXTO_AUT_MEDIOS: data.TEXTO_AUT_MEDIOS?.trim() ?? "",
+    TEXTO_AUT_INSTALACIONES: data.TEXTO_AUT_INSTALACIONES?.trim() ?? "",
+    TEXTO_AUT_WEB: data.TEXTO_AUT_WEB?.trim() ?? "",
+    TEXTO_AUT_RRSS: data.TEXTO_AUT_RRSS?.trim() ?? "",
+    TEXTO_AUT_COMUNICACION: data.TEXTO_AUT_COMUNICACION?.trim() ?? "",
   };
 }
 
@@ -70,6 +95,12 @@ export type EmpresaClientePatch = {
   APP_LOGO: string;
   CIF: string;
   DIRECCION: string;
+  TEXTO_REGIMEN_INTERNO: string | null;
+  TEXTO_AUT_MEDIOS: string | null;
+  TEXTO_AUT_INSTALACIONES: string | null;
+  TEXTO_AUT_WEB: string | null;
+  TEXTO_AUT_RRSS: string | null;
+  TEXTO_AUT_COMUNICACION: string | null;
 };
 
 export function normalizeUrlWeb(raw: string): string {
@@ -80,6 +111,11 @@ export function normalizeUrlWeb(raw: string): string {
 }
 
 function buildEmpresaPatch(form: EmpresaClienteFormInput): EmpresaClientePatch {
+  const nullable = (value: string) => {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+
   return {
     NOMBRE_ESCUELA: form.NOMBRE_ESCUELA.trim(),
     TLF_REAL: form.TLF_REAL.trim(),
@@ -88,6 +124,12 @@ function buildEmpresaPatch(form: EmpresaClienteFormInput): EmpresaClientePatch {
     APP_LOGO: form.APP_LOGO.trim(),
     CIF: form.CIF.trim(),
     DIRECCION: form.DIRECCION.trim(),
+    TEXTO_REGIMEN_INTERNO: nullable(form.TEXTO_REGIMEN_INTERNO),
+    TEXTO_AUT_MEDIOS: nullable(form.TEXTO_AUT_MEDIOS),
+    TEXTO_AUT_INSTALACIONES: nullable(form.TEXTO_AUT_INSTALACIONES),
+    TEXTO_AUT_WEB: nullable(form.TEXTO_AUT_WEB),
+    TEXTO_AUT_RRSS: nullable(form.TEXTO_AUT_RRSS),
+    TEXTO_AUT_COMUNICACION: nullable(form.TEXTO_AUT_COMUNICACION),
   };
 }
 
@@ -104,7 +146,7 @@ function firstUpdatedRow<T>(rows: T[] | null, entityLabel: string): T {
 export function useEmpresaCliente() {
   const { tenantId, rol } = useActiveTenant();
   const qc = useQueryClient();
-  const queryKey = tenantListKey("empresa-cliente", rol, tenantId);
+  const queryKey = ["empresa-cliente", tenantId] as const;
 
   const detail = useQuery({
     queryKey,
@@ -116,7 +158,7 @@ export function useEmpresaCliente() {
         );
       }
       const { data, error } = await supabase
-        .from("CLIENTES")
+        .from(EMPRESA_TABLE)
         .select(EMPRESA_SELECT)
         .eq("ID_CLIENTE", tenantId)
         .maybeSingle();
@@ -147,7 +189,7 @@ export function useEmpresaCliente() {
 
       const patch = buildEmpresaPatch(form);
       const { data, error } = await supabase
-        .from("CLIENTES")
+        .from(EMPRESA_TABLE)
         .update(patch)
         .eq("ID_CLIENTE", tenantId)
         .select(EMPRESA_SELECT);
@@ -159,7 +201,7 @@ export function useEmpresaCliente() {
         console.error("Supabase Error Details:", {
           code: "PGRST116",
           message:
-            "CLIENTES update returned 0 rows. Possible RLS policy block or missing ID_CLIENTE.",
+            "VISTA_EMPRESA_CLIENTE update returned 0 rows. Possible RLS policy block or missing ID_CLIENTE.",
           tenantId,
         });
       }

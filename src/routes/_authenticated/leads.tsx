@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ChevronDown, Clock, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Clock, Copy, Link2, MoreVertical, Pencil, Plus, Search, X } from "lucide-react";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
 import { getActiveCursoEscolar, type CentroData, type CursoEscolarData } from "@/hooks/useCentros";
 import { CentroTableFilter } from "@/components/admin/CentroTableFilter";
@@ -14,7 +14,8 @@ import {
 } from "@/hooks/useLeads";
 import { useActiveTenant } from "@/context/AppContext";
 import { formatProfesorOptionLabel, profesorSelectorOptions } from "@/lib/profesorSelector";
-import { isAdminRole, isMasterRole, isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
+import { hasPermission } from "@/lib/rbac";
+import { isProfesorRole, scopeTenantQuery } from "@/lib/tenantQuery";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { ALUMNO_OVERLAY_PANEL_CLASS } from "@/components/alumnos/AlumnoDetailOverlay";
@@ -72,6 +73,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import {
+  crearSolicitudMatriculaDesdeLead,
+  fetchLeadSolicitudMatriculaStatus,
+  sendMatriculaOnlineForLead,
+} from "@/lib/matriculaWhatsApp";
+import { buildMatriculaSignLink } from "@/lib/solicitudMatricula";
 import { toast } from "sonner";
 
 type LeadsSearch = {
@@ -413,6 +420,175 @@ function EstadoBadge({ estado }: { estado: string | null | undefined }) {
   return <StatusBadge status={estadoBadgeStatus(estado)}>{label}</StatusBadge>;
 }
 
+function LeadMatriculaOnlineActions({
+  lead,
+  canWrite,
+}: {
+  lead: LeadData;
+  canWrite: boolean;
+}) {
+  const [isSending, setIsSending] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [hasPendingSolicitud, setHasPendingSolicitud] = useState(false);
+  const [hasFirmadaSolicitud, setHasFirmadaSolicitud] = useState(false);
+  const [cachedToken, setCachedToken] = useState<string | null>(null);
+
+  const phone = lead.TELEFONO?.trim() ?? "";
+  const isCompleted = lead.ESTADO === "Matriculado" || hasFirmadaSolicitud;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStatus() {
+      setStatusLoading(true);
+      try {
+        const status = await fetchLeadSolicitudMatriculaStatus(lead.ID_LEAD);
+        if (cancelled) return;
+        setHasPendingSolicitud(status.hasPending);
+        setHasFirmadaSolicitud(status.hasFirmada);
+        setCachedToken(status.tokenPublico);
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err instanceof Error ? err.message : "No se pudo cargar la solicitud.");
+        }
+      } finally {
+        if (!cancelled) setStatusLoading(false);
+      }
+    }
+
+    void loadStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lead.ID_LEAD]);
+
+  const resolveSignUrl = useCallback(async (): Promise<string | null> => {
+    if (cachedToken?.trim()) {
+      return buildMatriculaSignLink(cachedToken);
+    }
+
+    const result = await crearSolicitudMatriculaDesdeLead(lead.ID_LEAD);
+    if (!result.ok) {
+      if (result.error?.toLowerCase().includes("firmada")) {
+        setHasFirmadaSolicitud(true);
+      }
+      toast.error(result.error ?? "No se pudo generar el enlace de matrícula.");
+      return null;
+    }
+
+    const token = result.token_publico?.trim();
+    if (!token) {
+      toast.error("No se recibió el token de matrícula.");
+      return null;
+    }
+
+    setCachedToken(token);
+    setHasPendingSolicitud(true);
+    return buildMatriculaSignLink(token);
+  }, [cachedToken, lead.ID_LEAD]);
+
+  const handleSend = async () => {
+    if (!phone) return;
+    setIsSending(true);
+    try {
+      const sent = await sendMatriculaOnlineForLead(lead);
+      const status = await fetchLeadSolicitudMatriculaStatus(lead.ID_LEAD);
+      setHasPendingSolicitud(status.hasPending);
+      setHasFirmadaSolicitud(status.hasFirmada);
+      setCachedToken(status.tokenPublico);
+      toast.success(
+        sent.reused ? "Enlace de matrícula reenviado" : "Enlace de matrícula generado",
+      );
+    } catch (err) {
+      if (err instanceof Error && err.message.toLowerCase().includes("firmada")) {
+        setHasFirmadaSolicitud(true);
+      }
+      toast.error(err instanceof Error ? err.message : "No se pudo enviar la matrícula.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    setIsCopying(true);
+    try {
+      const url = await resolveSignUrl();
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
+      toast.success("Enlace copiado al portapapeles.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo copiar el enlace.");
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  if (!canWrite) return null;
+
+  if (statusLoading) {
+    return (
+      <div className="col-span-2 mt-4 border-t pt-4">
+        <Skeleton className="h-9 w-56" />
+      </div>
+    );
+  }
+
+  if (isCompleted) {
+    return (
+      <div className="col-span-2 mt-4 border-t pt-4">
+        <p className="text-sm text-muted-foreground">Matrícula ya completada</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="col-span-2 mt-4 space-y-2 border-t pt-4">
+      <p className="text-sm font-medium">Matrícula online</p>
+      <div className="flex flex-wrap gap-2">
+        {phone ? (
+          <Button
+            type="button"
+            variant="brand-outline"
+            size="sm"
+            disabled={isSending || isCopying}
+            onClick={() => void handleSend()}
+          >
+            {isSending
+              ? "Generando enlace…"
+              : hasPendingSolicitud
+                ? "Reenviar por WhatsApp"
+                : "Enviar matrícula online"}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={isSending || isCopying}
+          onClick={() => void handleCopyLink()}
+        >
+          {isCopying ? (
+            "Copiando…"
+          ) : (
+            <>
+              <Copy className="h-4 w-4" />
+              Copiar enlace
+            </>
+          )}
+        </Button>
+      </div>
+      {!phone ? (
+        <p className="text-xs text-muted-foreground">
+          Sin teléfono en el lead: use «Copiar enlace» para compartir la matrícula por otro canal.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function EstadoStatusDropdown({
   lead,
   canWrite,
@@ -721,6 +897,7 @@ function LeadDetailOverlay({
                     : "❌ No / Pendiente"}
                 </dd>
               </div>
+              <LeadMatriculaOnlineActions lead={lead} canWrite={canWrite} />
             </dl>
           </>
         )}
@@ -734,7 +911,7 @@ function LeadsPage() {
   const navigate = useNavigate();
   const { leadId } = Route.useSearch();
   const { rol, centerId } = useActiveTenant();
-  const canWrite = isMasterRole(rol) || isAdminRole(rol);
+  const canWrite = hasPermission(rol, "leads:write");
   const {
     centrosOrdenados,
     showCentroFilter,
@@ -819,6 +996,29 @@ function LeadsPage() {
     }
   };
 
+  const handleSendMatriculaOnline = async (lead: LeadData) => {
+    try {
+      const sent = await sendMatriculaOnlineForLead(lead);
+      toast.success(
+        sent.reused ? "Enlace de matrícula reenviado" : "Enlace de matrícula generado",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo enviar la matrícula.");
+    }
+  };
+
+  const canSendMatriculaOnline = (lead: LeadData) => {
+    const estado = lead.ESTADO?.trim().toLowerCase() ?? "";
+    if (
+      estado === "matriculado" ||
+      estado === "cerrado" ||
+      estado === "cerrado (no matriculado)"
+    ) {
+      return false;
+    }
+    return Boolean(lead.TELEFONO?.trim());
+  };
+
   const renderLeadTableRow = (lead: LeadData) => (
     <TableRow
       key={lead.ID_LEAD}
@@ -860,6 +1060,17 @@ function LeadsPage() {
               <DropdownMenuItem onClick={() => setOverlay({ id: lead.ID_LEAD, mode: "edit" })}>
                 Editar
               </DropdownMenuItem>
+              {canSendMatriculaOnline(lead) ? (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleSendMatriculaOnline(lead);
+                  }}
+                >
+                  <Link2 className="mr-2 h-4 w-4" />
+                  Enviar matrícula online
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}

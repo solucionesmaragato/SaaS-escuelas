@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SelectTenantRouteImport } from './routes/select-tenant'
 import { Route as RegistroRouteImport } from './routes/registro'
+import { Route as MatricularRouteImport } from './routes/matricular'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as FirmarSepaRouteImport } from './routes/firmar-sepa'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
@@ -67,6 +68,11 @@ const SelectTenantRoute = SelectTenantRouteImport.update({
 const RegistroRoute = RegistroRouteImport.update({
   id: '/registro',
   path: '/registro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatricularRoute = MatricularRouteImport.update({
+  id: '/matricular',
+  path: '/matricular',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/matricular': typeof MatricularRoute
   '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
@@ -375,6 +382,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/matricular': typeof MatricularRoute
   '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/alumnos': typeof AuthenticatedAlumnosRoute
@@ -426,6 +434,7 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/firmar-sepa': typeof FirmarSepaRoute
   '/login': typeof LoginRoute
+  '/matricular': typeof MatricularRoute
   '/registro': typeof RegistroRoute
   '/select-tenant': typeof SelectTenantRoute
   '/_authenticated/alumnos': typeof AuthenticatedAlumnosRoute
@@ -478,6 +487,7 @@ export interface FileRouteTypes {
     | '/'
     | '/firmar-sepa'
     | '/login'
+    | '/matricular'
     | '/registro'
     | '/select-tenant'
     | '/alumnos'
@@ -528,6 +538,7 @@ export interface FileRouteTypes {
     | '/'
     | '/firmar-sepa'
     | '/login'
+    | '/matricular'
     | '/registro'
     | '/select-tenant'
     | '/alumnos'
@@ -578,6 +589,7 @@ export interface FileRouteTypes {
     | '/_authenticated'
     | '/firmar-sepa'
     | '/login'
+    | '/matricular'
     | '/registro'
     | '/select-tenant'
     | '/_authenticated/alumnos'
@@ -630,6 +642,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   FirmarSepaRoute: typeof FirmarSepaRoute
   LoginRoute: typeof LoginRoute
+  MatricularRoute: typeof MatricularRoute
   RegistroRoute: typeof RegistroRoute
   SelectTenantRoute: typeof SelectTenantRoute
   RegistroCallbackRoute: typeof RegistroCallbackRoute
@@ -649,6 +662,13 @@ declare module '@tanstack/react-router' {
       path: '/registro'
       fullPath: '/registro'
       preLoaderRoute: typeof RegistroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/matricular': {
+      id: '/matricular'
+      path: '/matricular'
+      fullPath: '/matricular'
+      preLoaderRoute: typeof MatricularRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1103,6 +1123,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   FirmarSepaRoute: FirmarSepaRoute,
   LoginRoute: LoginRoute,
+  MatricularRoute: MatricularRoute,
   RegistroRoute: RegistroRoute,
   SelectTenantRoute: SelectTenantRoute,
   RegistroCallbackRoute: RegistroCallbackRoute,

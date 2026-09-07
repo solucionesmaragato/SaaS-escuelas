@@ -35,6 +35,12 @@ export interface ClienteData {
   DOCUMENTO_SEPA: string | null;
   HOLDED_CONTACT_ID: string | null;
   HOLDED_API_KEY: string | null;
+  TEXTO_REGIMEN_INTERNO: string | null;
+  TEXTO_AUT_MEDIOS: string | null;
+  TEXTO_AUT_INSTALACIONES: string | null;
+  TEXTO_AUT_WEB: string | null;
+  TEXTO_AUT_RRSS: string | null;
+  TEXTO_AUT_COMUNICACION: string | null;
 }
 
 function assertMaster(rol: string | null | undefined) {
@@ -81,7 +87,10 @@ export function useClientes() {
       if (error) throw error;
       return data as ClienteData;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey });
+      qc.invalidateQueries({ queryKey: ["empresa-cliente", variables.id] });
+    },
   });
 
   const remove = useMutation({

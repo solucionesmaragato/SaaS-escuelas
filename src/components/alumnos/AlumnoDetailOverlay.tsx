@@ -38,6 +38,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MatriculaFirmadaPdfButton } from "@/components/matricula/MatriculaFirmadaPdfButton";
+import { EnviarMatriculaOnlineButton } from "@/components/matricula/EnviarMatriculaOnlineButton";
+import {
+  isAdminRole,
+  isDireccionRole,
+  isMasterRole,
+  isSecretariaRole,
+} from "@/lib/tenantQuery";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -222,6 +230,11 @@ export function AlumnoDetailOverlay({
   const [selectedCargoExtra, setSelectedCargoExtra] = useState<CargoExtraRow | null>(null);
   const [cargoExtraDetailOpen, setCargoExtraDetailOpen] = useState(false);
   const canEditCargoExtra = canEditCargoExtraRole(rol);
+  const canMatriculaOnlineStaff =
+    isMasterRole(rol) ||
+    isAdminRole(rol) ||
+    isSecretariaRole(rol) ||
+    isDireccionRole(rol);
 
   const centroNombreById = useMemo(
     () => new Map(centros.map((c) => [c.ID_CENTRO, c.NOMBRE_CENTRO])),
@@ -359,7 +372,21 @@ export function AlumnoDetailOverlay({
                   {alumno.NOMBRE_ALUMNO}
                 </h2>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {canMatriculaOnlineStaff && (
+                  <EnviarMatriculaOnlineButton
+                    idAlumno={alumno.ID_ALUMNO}
+                    telefono={alumno.TLF_COMUNICACION}
+                    nombreAlumno={alumno.NOMBRE_ALUMNO}
+                    nombreMadre={alumno.NOMBRE_MADRE}
+                    nombrePadre={alumno.NOMBRE_PADRE}
+                    estadoAlumno={alumno.ESTADO_ALUMNO}
+                    canWrite={canMatriculaOnlineStaff}
+                  />
+                )}
+                {canMatriculaOnlineStaff && (
+                  <MatriculaFirmadaPdfButton idAlumno={alumno.ID_ALUMNO} />
+                )}
                 <Button type="button" variant="brand" size="sm" className="gap-2" onClick={onEdit}>
                   <Pencil className="h-4 w-4" />
                   Editar Alumno
@@ -385,7 +412,10 @@ export function AlumnoDetailOverlay({
               </TabsList>
 
               <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <ReadOnlyField label="Nombre alumno" value={alumno.NOMBRE_ALUMNO} />
+                <ReadOnlyField
+                  label="Nombre y apellidos del alumno"
+                  value={alumno.NOMBRE_ALUMNO}
+                />
                 <ReadOnlyField
                   label="Centro"
                   value={formatCentroNombre(alumno.ID_CENTRO, centroNombreById)}

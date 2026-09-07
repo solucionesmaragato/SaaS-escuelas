@@ -43,6 +43,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  MATRICULA_TEXTOS_FIELDS,
+  MATRICULA_TEXTOS_SECTION_SUBTITLE,
+  MATRICULA_TEXTOS_SECTION_TITLE,
+  type MatriculaTextoFieldKey,
+} from "@/lib/matriculaTextosLabels";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/clientes")({
@@ -80,6 +87,12 @@ const EMPTY_CLIENTE: ClienteData = {
   DOCUMENTO_SEPA: null,
   HOLDED_CONTACT_ID: null,
   HOLDED_API_KEY: null,
+  TEXTO_REGIMEN_INTERNO: null,
+  TEXTO_AUT_MEDIOS: null,
+  TEXTO_AUT_INSTALACIONES: null,
+  TEXTO_AUT_WEB: null,
+  TEXTO_AUT_RRSS: null,
+  TEXTO_AUT_COMUNICACION: null,
 };
 
 function ClientesPage() {
@@ -331,6 +344,11 @@ function ClienteFormDialog({
     }
   };
 
+  const setTextarea = (key: MatriculaTextoFieldKey) => (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const raw = e.target.value;
+    setForm((prev) => ({ ...prev, [key]: raw || null }));
+  };
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
@@ -350,11 +368,12 @@ function ClienteFormDialog({
           }}
         >
           <Tabs defaultValue="general" className="w-full">
-            <TabsList className="mb-4 grid w-full grid-cols-4">
+            <TabsList className="mb-4 grid w-full grid-cols-5">
               <TabsTrigger value="general">Datos Generales</TabsTrigger>
               <TabsTrigger value="facturacion">Facturación y Planes</TabsTrigger>
               <TabsTrigger value="modulos">Módulos Internos</TabsTrigger>
               <TabsTrigger value="integraciones">Integraciones API</TabsTrigger>
+              <TabsTrigger value="textos-matricula">Textos matrícula</TabsTrigger>
             </TabsList>
 
             <TabsContent value="general" className="grid gap-4 sm:grid-cols-2">
@@ -499,6 +518,25 @@ function ClienteFormDialog({
               <FormField label="HOLDED_API_KEY">
                 <Input value={form.HOLDED_API_KEY ?? ""} onChange={setStr("HOLDED_API_KEY")} />
               </FormField>
+            </TabsContent>
+
+            <TabsContent value="textos-matricula" className="space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">{MATRICULA_TEXTOS_SECTION_TITLE}</h3>
+                <p className="text-sm text-muted-foreground">{MATRICULA_TEXTOS_SECTION_SUBTITLE}</p>
+              </div>
+              {MATRICULA_TEXTOS_FIELDS.map((field) => (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={`cliente-${field.key}`}>{field.label}</Label>
+                  <Textarea
+                    id={`cliente-${field.key}`}
+                    rows={field.key === "TEXTO_REGIMEN_INTERNO" ? 6 : 4}
+                    value={form[field.key] ?? ""}
+                    onChange={setTextarea(field.key)}
+                    placeholder={field.placeholder}
+                  />
+                </div>
+              ))}
             </TabsContent>
           </Tabs>
 
