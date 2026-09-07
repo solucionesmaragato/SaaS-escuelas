@@ -2233,8 +2233,8 @@ function ControlHorarioView({
       )}
 
       <Card className="p-4 space-y-4">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div className="flex-1 min-w-[200px] space-y-1.5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
+          <div className="min-w-0 w-full space-y-1.5 lg:min-w-[200px] lg:flex-1">
             <Label htmlFor="fichajes-search">Buscar</Label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2243,12 +2243,12 @@ function ControlHorarioView({
                 placeholder="Profesor, movimiento..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="pl-9"
+                className="w-full pl-9"
               />
             </div>
           </div>
           {showCentroFilter && (
-            <div className="flex-1 min-w-[200px]">
+            <div className="min-w-0 w-full lg:min-w-[200px] lg:flex-1">
               <CentroTableFilter
                 id="fichajes-centro-filter"
                 centros={centrosOrdenados}
@@ -2257,7 +2257,7 @@ function ControlHorarioView({
               />
             </div>
           )}
-          <div className="flex-1 min-w-[200px] space-y-1.5">
+          <div className="min-w-0 w-full space-y-1.5 lg:min-w-[200px] lg:flex-1">
             <Label htmlFor="fichajes-profesor-filter">Profesor</Label>
             <Select
               value={filtroProfesor || ALL_VALUE}
@@ -2276,7 +2276,7 @@ function ControlHorarioView({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex-1 min-w-[200px] space-y-1.5">
+          <div className="min-w-0 w-full space-y-1.5 lg:min-w-[200px] lg:flex-1">
             <Label htmlFor="fichajes-from-date">Desde</Label>
             <Input
               id="fichajes-from-date"
@@ -2284,10 +2284,11 @@ function ControlHorarioView({
               value={fromDate}
               max={toDate || undefined}
               onChange={(e) => setFromDate(e.target.value)}
+              className="w-full"
               aria-label="Fecha inicial de conciliación"
             />
           </div>
-          <div className="flex-1 min-w-[200px] space-y-1.5">
+          <div className="min-w-0 w-full space-y-1.5 lg:min-w-[200px] lg:flex-1">
             <Label htmlFor="fichajes-to-date">Hasta</Label>
             <Input
               id="fichajes-to-date"
@@ -2295,6 +2296,7 @@ function ControlHorarioView({
               value={toDate}
               min={fromDate || undefined}
               onChange={(e) => setToDate(e.target.value)}
+              className="w-full"
               aria-label="Fecha final de conciliación"
             />
           </div>

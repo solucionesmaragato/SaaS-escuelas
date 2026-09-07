@@ -291,12 +291,12 @@ function CentroDetailOverlay({
                 </Button>
               </div>
             </header>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div className="col-span-2">
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div className="sm:col-span-2">
                 <dt className="text-muted-foreground">Nombre</dt>
                 <dd className="font-semibold">{centro.NOMBRE_CENTRO}</dd>
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <dt className="text-muted-foreground">Dirección</dt>
                 <dd>{centro.DIRECCION || "—"}</dd>
               </div>

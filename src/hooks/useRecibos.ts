@@ -332,7 +332,11 @@ export function useRecibos(filters: RecibosListFilters = {}) {
         ),
       ];
 
-      return unique.sort((a, b) => b.localeCompare(a, "es", { sensitivity: "base" }));
+      return unique.sort((a, b) => {
+        const periodDiff = mesPeriodoSortKey(b) - mesPeriodoSortKey(a);
+        if (periodDiff !== 0) return periodDiff;
+        return compareAlphabetic(a, b);
+      });
     },
   });
 

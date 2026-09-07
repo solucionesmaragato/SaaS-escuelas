@@ -1502,7 +1502,7 @@ function MatriculasPage() {
             type="button"
             variant="brand"
             size="sm"
-            className="h-8 shrink-0 px-3 text-xs"
+            className="h-8 shrink-0 max-md:px-2 px-3 text-xs"
             disabled={
               !bulkCursoId ||
               bulkAffectedCount === 0 ||
@@ -1517,7 +1517,10 @@ function MatriculasPage() {
                 Modificando...
               </>
             ) : (
-              "Modificar matrículas"
+              <>
+                <span className="md:hidden">Modificar</span>
+                <span className="hidden md:inline">Modificar matrículas</span>
+              </>
             )}
           </Button>
         </div>
@@ -1525,7 +1528,7 @@ function MatriculasPage() {
 
       <Card className="p-4">
         <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-nowrap lg:items-center lg:overflow-x-auto">
-          <div className="relative min-w-0 lg:min-w-[12rem] lg:flex-1">
+          <div className="relative min-w-0 w-full lg:min-w-[12rem] lg:flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="matriculas-search"
@@ -1536,7 +1539,7 @@ function MatriculasPage() {
             />
           </div>
           {showCentroFilter && (
-            <div className="min-w-0 lg:w-[140px] lg:shrink-0">
+            <div className="min-w-0 w-full lg:w-[140px] lg:shrink-0">
               <CentroTableFilter
                 id="matriculas-centro-filter"
                 centros={centrosOrdenados}
@@ -1546,7 +1549,7 @@ function MatriculasPage() {
               />
             </div>
           )}
-          <div className="min-w-0 lg:w-[9.5rem] lg:shrink-0">
+          <div className="min-w-0 w-full lg:w-[9.5rem] lg:shrink-0">
             <Select
               value={filtroCurso || "__all__"}
               onValueChange={(v) => setFiltroCurso(v === "__all__" ? "" : v)}
@@ -1567,7 +1570,7 @@ function MatriculasPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-0 lg:w-[10rem] lg:shrink-0">
+          <div className="min-w-0 w-full lg:w-[10rem] lg:shrink-0">
             <Select
               value={filtroEspecialidad || "__all__"}
               onValueChange={(v) => setFiltroEspecialidad(v === "__all__" ? "" : v)}
@@ -1588,7 +1591,7 @@ function MatriculasPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="min-w-0 lg:w-[8.5rem] lg:shrink-0">
+          <div className="min-w-0 w-full lg:w-[8.5rem] lg:shrink-0">
             <Select
               value={filtroEstado || "__all__"}
               onValueChange={(v) => setFiltroEstado(v === "__all__" ? "" : v)}
@@ -1609,7 +1612,7 @@ function MatriculasPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex min-w-0 items-center gap-2 sm:col-span-2 lg:w-auto lg:shrink-0 lg:whitespace-nowrap">
+          <div className="flex min-w-0 w-full items-center gap-2 sm:col-span-2 lg:w-auto lg:shrink-0 lg:whitespace-nowrap">
             <Switch
               id="matriculas-filter-incomplete"
               checked={filterIncomplete}

@@ -518,10 +518,17 @@ function IncidenciasPage() {
             setPage(1);
           }}
         >
-          <TabsList className="mb-4 grid w-full max-w-lg grid-cols-3">
-            <TabsTrigger value="faltas">Faltas</TabsTrigger>
-            <TabsTrigger value="recuperaciones">Recuperaciones</TabsTrigger>
-            <TabsTrigger value="consultas">Consultas</TabsTrigger>
+          <TabsList className="mb-4 grid w-full max-w-lg grid-cols-3 text-xs sm:text-sm">
+            <TabsTrigger value="faltas" className="whitespace-nowrap px-1.5 sm:px-3">
+              Faltas
+            </TabsTrigger>
+            <TabsTrigger value="recuperaciones" className="whitespace-nowrap px-1.5 sm:px-3">
+              <span className="sm:hidden">Recup.</span>
+              <span className="hidden sm:inline">Recuperaciones</span>
+            </TabsTrigger>
+            <TabsTrigger value="consultas" className="whitespace-nowrap px-1.5 sm:px-3">
+              Consultas
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="faltas" className="mt-0">

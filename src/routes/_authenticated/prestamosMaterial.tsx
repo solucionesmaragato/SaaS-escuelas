@@ -1219,12 +1219,12 @@ function PrestamosMaterialPage() {
       />
 
       <Card className="p-4">
-        <div className="mb-4 flex flex-wrap items-center gap-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <Select
             value={filtroEstado || ALL_VALUE}
             onValueChange={(v) => setFiltroEstado(v === ALL_VALUE ? "" : v)}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Estado" />
             </SelectTrigger>
             <SelectContent>
@@ -1243,7 +1243,7 @@ function PrestamosMaterialPage() {
                 setSelectedCenterId(next === ALL_CENTROS_FILTER_VALUE ? null : next)
               }
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Centro" />
               </SelectTrigger>
               <SelectContent>
@@ -1260,7 +1260,7 @@ function PrestamosMaterialPage() {
             value={filtroCategoria || ALL_VALUE}
             onValueChange={(v) => setFiltroCategoria(v === ALL_VALUE ? "" : v)}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Categoría" />
             </SelectTrigger>
             <SelectContent>
@@ -1272,13 +1272,13 @@ function PrestamosMaterialPage() {
               ))}
             </SelectContent>
           </Select>
-          <div className="relative min-w-[240px] flex-1">
+          <div className="relative min-w-0 w-full flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar préstamo..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="pl-9"
+              className="w-full pl-9"
             />
           </div>
         </div>

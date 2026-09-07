@@ -15,7 +15,6 @@ import { useQuery } from "@tanstack/react-query";
 import { getSesionesDateRange, useSesiones, type GroupedSession } from "@/hooks/useSesiones";
 import { supabase } from "@/integrations/supabase/client";
 import { useAdminCentroFilter } from "@/hooks/useAdminCentroFilter";
-import { useIsAdminCompactDashboard } from "@/hooks/use-mobile";
 import { FilterMultiSelect } from "@/components/ui/FilterMultiSelect";
 import { isGrupoEstadoActivo, useGrupos } from "@/hooks/useGrupos";
 import { useActiveTenant } from "@/context/AppContext";
@@ -672,7 +671,6 @@ export function CalendarWidget({
 }: CalendarWidgetProps) {
   const { rol, perfil, tenantId } = useActiveTenant();
   const lockVisibleTypes = hideFilters && defaultVisibleTypes !== undefined;
-  const isCompactDashboard = useIsAdminCompactDashboard();
 
   const initialTypes = resolveInitialVisibleTypes(defaultVisibleTypes, rol);
 
@@ -1268,9 +1266,7 @@ export function CalendarWidget({
       className={cn(
         "flex items-center",
         lockVisibleTypes
-          ? isCompactDashboard
-            ? "grid w-full grid-cols-4 gap-1"
-            : "max-lg:grid max-lg:w-full max-lg:grid-cols-2 max-lg:gap-1 lg:flex lg:flex-nowrap lg:gap-1"
+          ? "max-md:grid max-md:w-full max-md:grid-cols-4 max-md:gap-1 md:flex md:flex-nowrap md:gap-1"
           : "flex-wrap gap-2",
       )}
     >
@@ -1282,14 +1278,21 @@ export function CalendarWidget({
         aria-label="Matriculadas"
         className={cn(
           lockVisibleTypes &&
-            (isCompactDashboard ? "h-6 px-1 text-[10px] w-full" : "h-7 px-2 text-xs max-lg:w-full"),
+            "max-md:h-6 max-md:w-full max-md:px-1 max-md:text-[10px] md:h-7 md:px-2 md:text-xs",
           verClasesNormales
             ? "bg-blue-100 text-blue-900 border-blue-300 hover:bg-blue-200 shadow-sm ring-1 ring-blue-300/60 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800 dark:ring-blue-800/60 dark:hover:bg-blue-900/40"
             : "border-blue-200 text-blue-800 hover:bg-blue-50 opacity-60 dark:border-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/20",
         )}
         onClick={() => setVerClasesNormales((v) => !v)}
       >
-        {isCompactDashboard && lockVisibleTypes ? "Matric." : "🟦 Matriculadas"}
+        {lockVisibleTypes ? (
+          <>
+            <span className="md:hidden">Matric.</span>
+            <span className="hidden md:inline">🟦 Matriculadas</span>
+          </>
+        ) : (
+          "🟦 Matriculadas"
+        )}
       </Button>
       <Button
         type="button"
@@ -1299,14 +1302,21 @@ export function CalendarWidget({
         aria-label="Nuevos alumnos"
         className={cn(
           lockVisibleTypes &&
-            (isCompactDashboard ? "h-6 px-1 text-[10px] w-full" : "h-7 px-2 text-xs max-lg:w-full"),
+            "max-md:h-6 max-md:w-full max-md:px-1 max-md:text-[10px] md:h-7 md:px-2 md:text-xs",
           verLeads
             ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 shadow-sm ring-1 ring-amber-300/60 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800 dark:ring-amber-800/60 dark:hover:bg-amber-900/40"
             : "border-amber-200 text-amber-800 hover:bg-amber-50 opacity-60 dark:border-amber-900/50 dark:text-amber-400 dark:hover:bg-amber-900/20",
         )}
         onClick={() => setVerLeads((v) => !v)}
       >
-        {isCompactDashboard && lockVisibleTypes ? "Nuevos" : "🟨 Nuevos Alumnos"}
+        {lockVisibleTypes ? (
+          <>
+            <span className="md:hidden">Nuevos</span>
+            <span className="hidden md:inline">🟨 Nuevos Alumnos</span>
+          </>
+        ) : (
+          "🟨 Nuevos Alumnos"
+        )}
       </Button>
       <Button
         type="button"
@@ -1316,14 +1326,21 @@ export function CalendarWidget({
         aria-label="Faltas"
         className={cn(
           lockVisibleTypes &&
-            (isCompactDashboard ? "h-6 px-1 text-[10px] w-full" : "h-7 px-2 text-xs max-lg:w-full"),
+            "max-md:h-6 max-md:w-full max-md:px-1 max-md:text-[10px] md:h-7 md:px-2 md:text-xs",
           verFaltas
             ? "bg-red-100 text-red-900 border-red-300 hover:bg-red-200 shadow-sm ring-1 ring-red-300/60 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800 dark:ring-red-800/60 dark:hover:bg-red-900/40"
             : "border-red-200 text-red-800 hover:bg-red-50 opacity-60 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20",
         )}
         onClick={() => setVerFaltas((v) => !v)}
       >
-        {isCompactDashboard && lockVisibleTypes ? "Faltas" : "🟥 Faltas"}
+        {lockVisibleTypes ? (
+          <>
+            <span className="md:hidden">Faltas</span>
+            <span className="hidden md:inline">🟥 Faltas</span>
+          </>
+        ) : (
+          "🟥 Faltas"
+        )}
       </Button>
       <Button
         type="button"
@@ -1333,14 +1350,21 @@ export function CalendarWidget({
         aria-label="Recuperaciones"
         className={cn(
           lockVisibleTypes &&
-            (isCompactDashboard ? "h-6 px-1 text-[10px] w-full" : "h-7 px-2 text-xs max-lg:w-full"),
+            "max-md:h-6 max-md:w-full max-md:px-1 max-md:text-[10px] md:h-7 md:px-2 md:text-xs",
           verRecuperaciones
             ? "bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200 shadow-sm ring-1 ring-emerald-300/60 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800 dark:ring-emerald-800/60 dark:hover:bg-emerald-900/40"
             : "border-emerald-200 text-emerald-800 hover:bg-emerald-50 opacity-60 dark:border-emerald-900/50 dark:text-emerald-400 dark:hover:bg-emerald-900/20",
         )}
         onClick={() => setVerRecuperaciones((v) => !v)}
       >
-        {isCompactDashboard && lockVisibleTypes ? "Recup." : "🟩 Recuperaciones"}
+        {lockVisibleTypes ? (
+          <>
+            <span className="md:hidden">Recup.</span>
+            <span className="hidden md:inline">🟩 Recuperaciones</span>
+          </>
+        ) : (
+          "🟩 Recuperaciones"
+        )}
       </Button>
     </div>
   );
@@ -1637,21 +1661,14 @@ export function CalendarWidget({
       <div className={cn(embedded && "flex min-h-0 flex-1 flex-col gap-3")}>
         {lockVisibleTypes ? (
           <div className={cn("flex w-full shrink-0 flex-col gap-2", !embedded && "mb-2")}>
-            <div
-              className={cn(
-                "flex w-full gap-1.5",
-                isCompactDashboard ? "flex-col" : "items-center",
-              )}
-            >
+            <div className="flex w-full max-md:flex-col gap-1.5 md:items-center">
               {toolbarRight ? (
-                <div className={cn("min-w-0", isCompactDashboard ? "w-full" : "shrink-0")}>
-                  {toolbarRight}
-                </div>
+                <div className="min-w-0 max-md:w-full md:shrink-0">{toolbarRight}</div>
               ) : null}
-              <div className="min-w-0 flex-1">{typeToggleButtons}</div>
+              <div className="min-w-0 max-md:w-full md:flex-1">{typeToggleButtons}</div>
             </div>
-            <div className="w-full lg:hidden">{dashboardMobileToolbarControls}</div>
-            <div className="hidden w-full lg:block">{dashboardToolbarControls}</div>
+            <div className="w-full md:hidden">{dashboardMobileToolbarControls}</div>
+            <div className="hidden w-full md:block">{dashboardToolbarControls}</div>
           </div>
         ) : (
           <div className={cn("flex flex-col gap-2", embedded && "shrink-0")}>
@@ -1662,19 +1679,25 @@ export function CalendarWidget({
                 </div>
                 <div className="flex flex-col gap-2 lg:hidden">
                   <h1 className="min-w-0 text-base font-semibold text-brand">{pageTitle}</h1>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex w-full gap-2">
                     {!hideFilters && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="min-w-0 flex-1"
                         onClick={() => setFiltersOpen(true)}
                       >
                         <Filter className="mr-1.5 h-3.5 w-3.5" />
                         Filtros
                       </Button>
                     )}
-                    <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setCurrentDate(new Date())}
+                    >
                       Hoy
                     </Button>
                   </div>

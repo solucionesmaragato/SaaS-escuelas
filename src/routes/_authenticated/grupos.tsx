@@ -1828,7 +1828,7 @@ function GruposPage() {
                       </label>
                       {slot.enabled && (
                         <div className="space-y-2 pl-6">
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <div className="space-y-1">
                               <Label className="text-xs text-muted-foreground">Inicio</Label>
                               <Input
@@ -1854,7 +1854,7 @@ function GruposPage() {
                               />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <div className="space-y-1">
                               <Label className="text-xs text-muted-foreground">Profesor</Label>
                               <Select
@@ -1910,7 +1910,7 @@ function GruposPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="create-plazas">Plazas máximas</Label>
                 <Input
@@ -2191,7 +2191,7 @@ function GruposPage() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Inicio</Label>
                             <Input
@@ -2219,7 +2219,7 @@ function GruposPage() {
                             />
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Profesor</Label>
                             <Select

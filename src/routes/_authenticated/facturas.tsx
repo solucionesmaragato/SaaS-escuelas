@@ -369,10 +369,26 @@ function FacturaVentasLineasSection({ reciboId, canEdit }: { reciboId: string; c
     }
   };
 
+  const tableColSpan = canEdit ? 6 : 5;
+  const rows = list.data ?? [];
+
+  const renderLineDraft = (row: VentaLineaRow) => {
+    const draft = drafts[row.ID_LINEA] ?? ventaLineaToDraft(row);
+    const previewSubtotal = calcVentaLineaSubtotal(
+      Number(draft.CANTIDAD),
+      Number(draft.PRECIO_UNITARIO),
+      Number(draft.IVA_PORCENTAJE),
+    );
+    const subtotalDisplay = Number.isFinite(previewSubtotal) ? previewSubtotal : row.SUBTOTAL;
+
+    return { draft, subtotalDisplay };
+  };
+
   return (
     <div className="space-y-2 border-t pt-2">
       <h3 className="text-xs font-bold text-slate-900">Líneas del recibo</h3>
-      <div className="overflow-x-auto rounded-md border">
+
+      <div className="hidden overflow-x-auto rounded-md border md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -387,42 +403,25 @@ function FacturaVentasLineasSection({ reciboId, canEdit }: { reciboId: string; c
           <TableBody>
             {list.isLoading ? (
               <TableRow>
-                <TableCell
-                  colSpan={canEdit ? 6 : 5}
-                  className="py-6 text-center text-muted-foreground"
-                >
+                <TableCell colSpan={tableColSpan} className="py-6 text-center text-muted-foreground">
                   Cargando líneas...
                 </TableCell>
               </TableRow>
             ) : list.isError ? (
               <TableRow>
-                <TableCell
-                  colSpan={canEdit ? 6 : 5}
-                  className="py-6 text-center text-sm text-destructive"
-                >
+                <TableCell colSpan={tableColSpan} className="py-6 text-center text-sm text-destructive">
                   {(list.error as Error)?.message ?? "Error al cargar las líneas del recibo."}
                 </TableCell>
               </TableRow>
-            ) : (list.data ?? []).length === 0 ? (
+            ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={canEdit ? 6 : 5}
-                  className="py-6 text-center text-muted-foreground"
-                >
+                <TableCell colSpan={tableColSpan} className="py-6 text-center text-muted-foreground">
                   Este recibo no tiene líneas registradas.
                 </TableCell>
               </TableRow>
             ) : (
-              (list.data ?? []).map((row) => {
-                const draft = drafts[row.ID_LINEA] ?? ventaLineaToDraft(row);
-                const previewSubtotal = calcVentaLineaSubtotal(
-                  Number(draft.CANTIDAD),
-                  Number(draft.PRECIO_UNITARIO),
-                  Number(draft.IVA_PORCENTAJE),
-                );
-                const subtotalDisplay = Number.isFinite(previewSubtotal)
-                  ? previewSubtotal
-                  : row.SUBTOTAL;
+              rows.map((row) => {
+                const { draft, subtotalDisplay } = renderLineDraft(row);
 
                 return (
                   <TableRow key={row.ID_LINEA}>
@@ -518,6 +517,119 @@ function FacturaVentasLineasSection({ reciboId, canEdit }: { reciboId: string; c
           </TableBody>
         </Table>
       </div>
+
+      <ul className="space-y-2 md:hidden">
+        {list.isLoading ? (
+          <li className="rounded-md border p-4 text-center text-sm text-muted-foreground">
+            Cargando líneas...
+          </li>
+        ) : list.isError ? (
+          <li className="rounded-md border p-4 text-center text-sm text-destructive">
+            {(list.error as Error)?.message ?? "Error al cargar las líneas del recibo."}
+          </li>
+        ) : rows.length === 0 ? (
+          <li className="rounded-md border p-4 text-center text-sm text-muted-foreground">
+            Este recibo no tiene líneas registradas.
+          </li>
+        ) : (
+          rows.map((row) => {
+            const { draft, subtotalDisplay } = renderLineDraft(row);
+
+            return (
+              <li key={row.ID_LINEA} className="space-y-3 rounded-md border p-3">
+                <div className="min-w-0 space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Concepto</Label>
+                  {canEdit ? (
+                    <Input
+                      value={draft.CONCEPTO}
+                      onChange={(e) =>
+                        handleDraftChange(row.ID_LINEA, "CONCEPTO", e.target.value)
+                      }
+                      disabled={savingId === row.ID_LINEA}
+                      className="h-8 w-full text-xs"
+                    />
+                  ) : (
+                    <p className="text-xs font-medium">{row.CONCEPTO}</p>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Cantidad</Label>
+                    {canEdit ? (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={draft.CANTIDAD}
+                        onChange={(e) =>
+                          handleDraftChange(row.ID_LINEA, "CANTIDAD", e.target.value)
+                        }
+                        disabled={savingId === row.ID_LINEA}
+                        className="h-8 w-full text-right text-xs font-mono"
+                      />
+                    ) : (
+                      <p className="font-mono text-xs">{row.CANTIDAD}</p>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Precio unit.</Label>
+                    {canEdit ? (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={draft.PRECIO_UNITARIO}
+                        onChange={(e) =>
+                          handleDraftChange(row.ID_LINEA, "PRECIO_UNITARIO", e.target.value)
+                        }
+                        disabled={savingId === row.ID_LINEA}
+                        className="h-8 w-full text-right text-xs font-mono"
+                      />
+                    ) : (
+                      <p className="font-mono text-xs">{formatCurrency(row.PRECIO_UNITARIO)}</p>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">IVA %</Label>
+                    {canEdit ? (
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={draft.IVA_PORCENTAJE}
+                        onChange={(e) =>
+                          handleDraftChange(row.ID_LINEA, "IVA_PORCENTAJE", e.target.value)
+                        }
+                        disabled={savingId === row.ID_LINEA}
+                        className="h-8 w-full text-right text-xs font-mono"
+                      />
+                    ) : (
+                      <p className="font-mono text-xs">{row.IVA_PORCENTAJE ?? 0}%</p>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-[10px] text-muted-foreground">Subtotal</Label>
+                    <p className="font-mono text-xs font-semibold">{formatCurrency(subtotalDisplay)}</p>
+                  </div>
+                </div>
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 w-full text-xs"
+                    disabled={savingId === row.ID_LINEA}
+                    onClick={() => void handleSaveLine(row)}
+                  >
+                    {savingId === row.ID_LINEA ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      "Guardar"
+                    )}
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })
+        )}
+      </ul>
     </div>
   );
 }
