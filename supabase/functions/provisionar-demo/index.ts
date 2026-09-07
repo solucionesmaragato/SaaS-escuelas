@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { notifyDemoSignup } from "../_shared/notifyDemoSignup.ts";
 
 interface RequestBody {
   nombre?: string;
@@ -104,6 +105,17 @@ export default {
           },
           400,
         );
+      }
+
+      if (result.already_exists !== true) {
+        void notifyDemoSignup({
+          nombre,
+          telefono,
+          email,
+          idCliente: result.id_cliente as string | undefined,
+          idCentro: result.id_centro as string | undefined,
+          source: "provision",
+        }).catch((err) => console.error("[provisionar-demo] notifyDemoSignup failed", err));
       }
 
       return jsonResponse({
