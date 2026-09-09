@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  useProfesorRol,
   type AulaLookup,
   type EspecialidadLookup,
   type ProfesorCreateInput,
@@ -107,9 +106,7 @@ export function ProfesorForm({
   const [idCentro, setIdCentro] = useState("");
   const [rol, setRol] = useState<Rol>("PROFESOR");
   const showCentroField = showCentroSelector && !selfProfile;
-  const showRolField = isCreate || (!selfProfile && !!initial);
-  const rolQuery = useProfesorRol(showRolField && !isCreate ? initial?.ID_PROFESOR : null);
-  const rolLoading = showRolField && !isCreate && rolQuery.isLoading;
+  const showRolField = !!isCreate;
 
   const especialidadesOrdenadas = useMemo(
     () =>
@@ -143,15 +140,6 @@ export function ProfesorForm({
       setRol("PROFESOR");
     }
   }, [initial, isCreate, assignedCenterId]);
-
-  useEffect(() => {
-    if (!showRolField || isCreate) return;
-    if (rolQuery.data) {
-      setRol(rolQuery.data);
-    } else if (!rolQuery.isLoading) {
-      setRol("PROFESOR");
-    }
-  }, [showRolField, isCreate, rolQuery.data, rolQuery.isLoading]);
 
   const toggleEspecialidad = (id: string) => {
     setEspecialidadIds((prev) =>
@@ -216,9 +204,6 @@ export function ProfesorForm({
           return;
         }
         values.FECHA_ALTA = fechaAlta || null;
-        if (showRolField) {
-          values.ROL = rol;
-        }
         onSubmit(values);
       }}
       className="space-y-4"
@@ -256,17 +241,23 @@ export function ProfesorForm({
         />
       </div>
 
+      {!isCreate && !selfProfile ? (
+        <p className="text-xs text-muted-foreground">
+          Los roles de acceso se gestionan en Usuarios.
+        </p>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
-        {showRolField && (
+        {showRolField ? (
           <div className="space-y-2">
             <Label htmlFor="prof-rol">Rol</Label>
             <Select
               value={rol}
               onValueChange={(v) => setRol(v as Rol)}
-              disabled={rolLoading || submitting}
+              disabled={submitting}
             >
               <SelectTrigger id="prof-rol">
-                <SelectValue placeholder={rolLoading ? "Cargando rol..." : undefined} />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {PROFESOR_ROL_OPTIONS.map((opt) => (
@@ -277,7 +268,7 @@ export function ProfesorForm({
               </SelectContent>
             </Select>
           </div>
-        )}
+        ) : null}
         <div className="space-y-2">
           <Label htmlFor="prof-email">Email</Label>
           <Input

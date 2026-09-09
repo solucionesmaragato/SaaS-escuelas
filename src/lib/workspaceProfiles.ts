@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { isPerfilActivo } from "@/lib/perfilEstado";
 import type { Centro, Cliente, Perfil } from "@/types/database";
 
 export const PERFIL_WORKSPACE_SELECT = `
@@ -49,5 +50,7 @@ export async function fetchUserWorkspaceProfiles(userId: string): Promise<Worksp
     .eq("ID", userId);
 
   if (error) throw error;
-  return ((data ?? []) as PerfilWorkspaceRow[]).map(toWorkspaceOption);
+  return ((data ?? []) as PerfilWorkspaceRow[])
+    .map(toWorkspaceOption)
+    .filter((option) => isPerfilActivo(option.perfil.ESTADO));
 }

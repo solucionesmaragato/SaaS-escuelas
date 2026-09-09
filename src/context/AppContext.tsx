@@ -19,6 +19,7 @@ import {
 } from "@/lib/workspaceProfiles";
 import type { Perfil } from "@/types/database";
 import { enforceDemoTrial, isDemoTenantId } from "@/lib/demoTrial";
+import { isPerfilActivo } from "@/lib/perfilEstado";
 
 export type { WorkspaceOption };
 
@@ -115,6 +116,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const stored =
           typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+        if (
+          stored &&
+          typeof window !== "undefined" &&
+          !rows.some((p) => p.ID_PERFIL === stored)
+        ) {
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
         const storedValid = stored ? rows.find((p) => p.ID_PERFIL === stored) : null;
         const jwtPerfilId = String(session.user.user_metadata?.current_perfil_id ?? "").trim();
         const jwtValid = jwtPerfilId ? rows.find((p) => p.ID_PERFIL === jwtPerfilId) : null;
@@ -265,6 +273,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const option = workspaceOptions.find((o) => o.perfil.ID_PERFIL === perfilId);
       const perfil = option?.perfil ?? perfiles.find((p) => p.ID_PERFIL === perfilId);
       if (!perfil) throw new Error("Perfil de workspace no encontrado.");
+      if (!isPerfilActivo(perfil.ESTADO)) {
+        throw new Error("Este perfil está inactivo y no puede usarse.");
+      }
 
       await syncWorkspaceMetadataWithRetry(perfil);
       setWorkspaceSyncError(null);

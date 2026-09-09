@@ -179,7 +179,27 @@ function rethrowProfesorEmailSyncError(error: unknown, profesorId: string): neve
   if (message.includes("profesor_email_sync_failed")) {
     throw new ProfesorEmailSyncError(profesorId, "No se pudo sincronizar el email con Usuarios.");
   }
+  if (message.includes("PGRST116") || message.includes("multiple (or no) rows returned")) {
+    throw new ProfesorEmailSyncError(
+      profesorId,
+      "No se pudo verificar la sincronización del email con Usuarios.",
+    );
+  }
   throw error instanceof Error ? error : new Error(message);
+}
+
+async function fetchProfesorEmail(
+  profesorId: string,
+  tenantId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("PROFESOR")
+    .select("EMAIL_PROFESORES")
+    .eq("ID_PROFESOR", profesorId)
+    .eq("ID_CLIENTE", tenantId)
+    .maybeSingle();
+  if (error) throw error;
+  return normalizeProfesorEmail(data?.EMAIL_PROFESORES);
 }
 
 async function assertProfesorEmailSynced(
@@ -190,17 +210,19 @@ async function assertProfesorEmailSynced(
   const normalizedExpected = normalizeProfesorEmail(expectedEmail);
   if (!normalizedExpected) return;
 
-  const { data: perfil, error } = await supabase
+  const { data: perfiles, error } = await supabase
     .from("PERFILES")
     .select("EMAIL")
     .eq("ID_PROFESOR", profesorId)
-    .eq("ID_CLIENTE", tenantId)
-    .maybeSingle();
+    .eq("ID_CLIENTE", tenantId);
 
   if (error) rethrowProfesorEmailSyncError(error, profesorId);
-  if (!perfil) return;
+  if (!perfiles?.length) return;
 
-  if (normalizeProfesorEmail(perfil.EMAIL) !== normalizedExpected) {
+  const mismatch = perfiles.some(
+    (perfil) => normalizeProfesorEmail(perfil.EMAIL) !== normalizedExpected,
+  );
+  if (mismatch) {
     throw new ProfesorEmailSyncError(profesorId, "No se pudo sincronizar el email con Usuarios.");
   }
 }
@@ -478,10 +500,17 @@ export function useProfesores() {
         effectivePatch = restrictSelfProfilePatch(patch);
       }
 
-      const { ROL: selectedRol, ...profesorPatch } = effectivePatch;
+      const { ROL: _ignoredRol, ...profesorPatch } = effectivePatch;
       const payload = sanitizeProfesorPayload(profesorPatch, "update");
       if (payload.ESPECIALIDAD === ("" as unknown)) payload.ESPECIALIDAD = null;
       if (payload.AULA === ("" as unknown)) payload.AULA = null;
+
+      let emailChanged = false;
+      if ("EMAIL_PROFESORES" in payload) {
+        const currentEmail = await fetchProfesorEmail(id, tenantId);
+        const nextEmail = normalizeProfesorEmail(payload.EMAIL_PROFESORES as string | null);
+        emailChanged = currentEmail !== nextEmail;
+      }
 
       const { data, error } = await supabase
         .from("PROFESOR")
@@ -492,21 +521,8 @@ export function useProfesores() {
         .single();
       if (error) rethrowProfesorEmailSyncError(error, id);
 
-      if ("EMAIL_PROFESORES" in payload) {
+      if (emailChanged) {
         await assertProfesorEmailSynced(id, tenantId, payload.EMAIL_PROFESORES as string | null);
-      }
-
-      if (selectedRol !== undefined && !selfProfile) {
-        const { error: perfilError } = await supabase
-          .from("PERFILES")
-          .update({ ROL: selectedRol })
-          .eq("ID_PROFESOR", id)
-          .eq("ID_CLIENTE", tenantId);
-
-        if (perfilError) {
-          await qc.invalidateQueries({ queryKey });
-          throw new ProfesorPerfilRolUpdateError(id);
-        }
       }
 
       return data;
@@ -580,23 +596,4 @@ export function useProfesores() {
   });
 
   return { list, create, update, remove, toggleEstado };
-}
-
-export function useProfesorRol(profesorId: string | null | undefined) {
-  const { tenantId } = useActiveTenant();
-
-  return useQuery({
-    queryKey: ["profesor-rol", tenantId, profesorId],
-    enabled: !!profesorId,
-    queryFn: async (): Promise<Rol> => {
-      const { data, error } = await supabase
-        .from("PERFILES")
-        .select("ROL")
-        .eq("ID_PROFESOR", profesorId!)
-        .eq("ID_CLIENTE", tenantId)
-        .maybeSingle();
-      if (error) throw error;
-      return (data?.ROL as Rol | undefined) ?? "PROFESOR";
-    },
-  });
 }
