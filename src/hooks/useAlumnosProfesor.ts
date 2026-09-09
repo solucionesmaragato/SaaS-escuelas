@@ -13,6 +13,7 @@ export type ProfesorAlumnoLista = {
   ID_CLIENTE: string;
   NOMBRE_ALUMNO: string;
   NACIMIENTO: string | null;
+  FOTO: string | null;
   EDAD: number | null;
   TUTORES: ProfesorAlumnoTutor[];
 };
@@ -61,7 +62,7 @@ export function useAlumnosProfesor() {
     queryFn: async (): Promise<ProfesorAlumnoLista[]> => {
       const { data, error } = await supabase
         .from("VISTA_PROFESOR_ALUMNOS_LISTA")
-        .select("ID_ALUMNO, ID_CLIENTE, NOMBRE_ALUMNO, NACIMIENTO, EDAD, TUTORES")
+        .select("ID_ALUMNO, ID_CLIENTE, NOMBRE_ALUMNO, NACIMIENTO, FOTO, EDAD, TUTORES")
         .order("NOMBRE_ALUMNO", { ascending: true });
       if (error) throw error;
 
@@ -70,6 +71,7 @@ export function useAlumnosProfesor() {
         ID_CLIENTE: row.ID_CLIENTE,
         NOMBRE_ALUMNO: row.NOMBRE_ALUMNO ?? "",
         NACIMIENTO: row.NACIMIENTO ?? null,
+        FOTO: row.FOTO ?? null,
         EDAD: typeof row.EDAD === "number" ? row.EDAD : row.EDAD != null ? Number(row.EDAD) : null,
         TUTORES: parseTutores(row.TUTORES),
       }));

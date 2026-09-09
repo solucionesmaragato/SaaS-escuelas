@@ -25,6 +25,7 @@ import {
   canEditCargoExtraRole,
   type CargoExtraRow,
 } from "@/hooks/useCargosExtra";
+import { AlumnoFotoField } from "@/components/alumnos/AlumnoFotoField";
 import { CargoExtraDetailDialog } from "@/components/alumnos/CargoExtraDetailDialog";
 import { useActiveTenant } from "@/context/AppContext";
 import { formatCurrency } from "@/lib/format";
@@ -105,6 +106,7 @@ import {
   normalizeMetodoPago,
   type MetodoPagoOption,
 } from "@/lib/alumnoPaymentUtils";
+import { canWriteUi } from "@/lib/rbac";
 
 function resolveMetodoPagoSelectValue(value: string | null | undefined): string {
   const normalized = normalizeMetodoPago(value);
@@ -3439,7 +3441,7 @@ export function AlumnoFormDialog({
   onRemoveHorario: (id: string) => Promise<void>;
   variant?: "dialog" | "embedded";
 }) {
-  const { rol } = useActiveTenant();
+  const { rol, tenantId } = useActiveTenant();
   const initialId = initial?.ID_ALUMNO ?? null;
   const isCreate = !initial;
   const {
@@ -3466,6 +3468,7 @@ export function AlumnoFormDialog({
   const alumnoCenterId =
     watchedCentro?.trim() || initial?.ID_CENTRO?.trim() || assignedCenterId?.trim() || null;
   const nombreAlumno = form.watch("NOMBRE_ALUMNO") ?? "";
+  const canEditAlumnoFoto = canWriteUi(rol, "alumnos:write");
   const metodoPago = normalizeMetodoPago(form.watch("METODO_PAGO"));
   const tlfComunicacion = form.watch("TLF_COMUNICACION");
   const tlfAlumno = form.watch("TLF_ALUMNO");
@@ -3627,7 +3630,29 @@ export function AlumnoFormDialog({
             </p>
           )}
 
-          <TabsContent value="resumen" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <TabsContent value="resumen" className="space-y-4">
+            {canEditAlumnoFoto ? (
+              <FormField
+                control={form.control as any}
+                name="FOTO"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <AlumnoFotoField
+                        name={nombreAlumno || "Alumno"}
+                        tenantId={tenantId ?? ""}
+                        alumnoId={initialId ?? draftAlumnoId}
+                        photoUrl={field.value}
+                        onPhotoUrlChange={field.onChange}
+                        disabled={submitting}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {showCentroSelector && (
               <FormField
                 control={form.control as any}
@@ -3789,6 +3814,7 @@ export function AlumnoFormDialog({
                 </FormItem>
               )}
             />
+            </div>
           </TabsContent>
 
           <TabsContent value="personales" className="space-y-4">

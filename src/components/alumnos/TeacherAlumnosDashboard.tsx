@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Calendar, ChevronRight, GraduationCap, UserRound } from "lucide-react";
+import { Calendar, ChevronRight, GraduationCap } from "lucide-react";
+import { PersonAvatar } from "@/components/PersonAvatar";
 import {
   useAlumnosProfesor,
   type ProfesorAlumnoHorario,
@@ -74,7 +75,11 @@ function AlumnoRow({ alumno, onOpen }: { alumno: ProfesorAlumnoLista; onOpen: ()
   return (
     <Card className="p-4">
       <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 text-left">
-        <UserRound className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+        <PersonAvatar
+          name={alumno.NOMBRE_ALUMNO}
+          photoUrl={alumno.FOTO}
+          className="h-10 w-10 shrink-0"
+        />
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -157,7 +162,7 @@ export function TeacherAlumnosDashboard() {
       {list.isLoading || horarios.isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-20 w-full rounded-xl" />
+            <Skeleton key={index} className="h-[72px] w-full rounded-xl" />
           ))}
         </div>
       ) : null}
@@ -195,9 +200,22 @@ export function TeacherAlumnosDashboard() {
 
       <Dialog open={!!selectedAlumno} onOpenChange={(open) => !open && setSelectedAlumno(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{selectedAlumno?.NOMBRE_ALUMNO ?? "Alumno"}</DialogTitle>
-          </DialogHeader>
+          {selectedAlumno ? (
+            <div className="flex items-center gap-3">
+              <PersonAvatar
+                name={selectedAlumno.NOMBRE_ALUMNO}
+                photoUrl={selectedAlumno.FOTO}
+                className="h-12 w-12 shrink-0"
+              />
+              <DialogHeader className="space-y-1 text-left">
+                <DialogTitle>{selectedAlumno.NOMBRE_ALUMNO}</DialogTitle>
+              </DialogHeader>
+            </div>
+          ) : (
+            <DialogHeader>
+              <DialogTitle>Alumno</DialogTitle>
+            </DialogHeader>
+          )}
 
           {selectedAlumno ? (
             <div className="space-y-4">

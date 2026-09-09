@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PersonAvatar } from "@/components/PersonAvatar";
+import { AlumnoFotoField } from "@/components/alumnos/AlumnoFotoField";
+import { useActiveTenant } from "@/context/AppContext";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -57,6 +58,7 @@ function DetailField({ label, children }: { label: string; children: ReactNode }
 }
 
 export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }: Props) {
+  const { tenantId } = useActiveTenant();
   const [draft, setDraft] = useState<AlumnoRow | null>(null);
 
   useEffect(() => {
@@ -93,23 +95,15 @@ export function StudentDetailsModal({ alumno, open, onClose, canWrite, onPatch }
         </DialogHeader>
         <ScrollArea className="max-h-[calc(90vh-5rem)] px-4 pb-4 sm:px-6 sm:pb-6">
           <div className="space-y-6 pr-2 pt-4 sm:pr-4">
-            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-              <PersonAvatar
-                name={draft.NOMBRE_ALUMNO}
-                photoUrl={draft.FOTO}
-                className="h-20 w-20"
-                fallbackClassName="text-lg"
-              />
-              <DetailField label="Foto">
-                <Input
-                  value={draft.FOTO ?? ""}
-                  disabled={!canWrite}
-                  onChange={(e) => setDraft({ ...draft, FOTO: e.target.value || null })}
-                  onBlur={() => canWrite && save({ FOTO: draft.FOTO })}
-                  placeholder="URL de la foto"
-                />
-              </DetailField>
-            </div>
+            <AlumnoFotoField
+              name={draft.NOMBRE_ALUMNO}
+              tenantId={tenantId ?? ""}
+              alumnoId={draft.ID_ALUMNO}
+              photoUrl={draft.FOTO}
+              readOnly={!canWrite}
+              onPhotoUrlChange={(value) => setDraft((current) => (current ? { ...current, FOTO: value } : current))}
+              onPhotoSaved={(value) => save({ FOTO: value })}
+            />
 
             <div className="grid gap-4 sm:grid-cols-2">
               <DetailField label="Nombre del alumno">
